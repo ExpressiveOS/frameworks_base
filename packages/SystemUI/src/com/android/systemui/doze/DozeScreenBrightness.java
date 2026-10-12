@@ -429,6 +429,14 @@ public class DozeScreenBrightness extends BroadcastReceiver implements DozeMachi
                 && mState == DozeMachine.State.INITIALIZED;
         if (screenTurningOff
                 && mWakefulnessLifecycle.getLastSleepReason() == GO_TO_SLEEP_REASON_TIMEOUT) {
+            // DisplayPowerController dimmed the current screen brightness, not the doze
+            // brightness. In auto-brightness mode the doze brightness isn't clamped to the screen
+            // brightness, and in the dark the screen can be far below mScreenBrightnessDim, so
+            // AOD would start brighter than the dimmed screen until the light sensor reports.
+            final float screenBrightness = getScreenBrightness();
+            if (!Float.isNaN(screenBrightness)) {
+                brightness = Math.min(brightness, screenBrightness);
+            }
             return Math.max(
                     PowerManager.BRIGHTNESS_MIN,
                     // Use the lower of either the dim brightness, or the current brightness reduced
