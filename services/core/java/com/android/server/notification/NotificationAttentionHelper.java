@@ -1094,7 +1094,10 @@ public final class NotificationAttentionHelper {
 
         if (favoritesIncomingCallLights()) {
             if (!isCallLight(ledNotification) || mUserPresent || isInCall()) {
-                if (!mLineageNotificationLights.showLightsScreenOn()) {
+                // The LineageNotificationLights constructor calls back into
+                // updateLightsLocked() before mLineageNotificationLights is assigned.
+                if (mLineageNotificationLights == null
+                        || !mLineageNotificationLights.showLightsScreenOn()) {
                     stopPriorityNotificationLight();
                 }
             }
