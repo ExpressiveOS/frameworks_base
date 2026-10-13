@@ -141,6 +141,9 @@ public class Typeface {
             new LongSparseArray<>(3);
     private static final Object sStyledCacheLock = new Object();
 
+    @GuardedBy("sStyledCacheLock")
+    private static final ArrayMap<String, Typeface> sDefaultFontCopies = new ArrayMap<>();
+
     /**
      * Cache for Typeface objects for weight variant. Currently max size is 3.
      */
@@ -1675,6 +1678,9 @@ public class Typeface {
         // sSystemFontMap by their list name, falling back through known
         // aliases to Typeface.DEFAULT.
         Typeface tf = FontController.resolveBaseTypeface();
+        if (tf != DEFAULT && tf.getSystemFontFamilyName() != null) {
+            tf = getDefaultFontCopy(tf);
+        }
 
         Typeface tfBold = create(tf, BOLD);
         Typeface tfItalic = create(tf, ITALIC);
@@ -1704,6 +1710,29 @@ public class Typeface {
                 Arrays.asList(
                         tf, tfBold, tfItalic, tfItalicBold),
                 Arrays.asList(tf, Typeface.SERIF, Typeface.MONOSPACE));
+    }
+
+    /**
+     * Returns a copy of {@code tf} for the default typefaces, made once per font family and kept
+     * for the life of the process, since paints keep the native instance of the typeface they
+     * were set to.
+     *
+     * Apps (Jetpack Compose's DeviceFontFamilyName among them) treat a named family that equals
+     * Typeface.DEFAULT as not installed, so if the defaults shared the chosen font's instance,
+     * asking for that family by name would fall back to the default without the app's font
+     * variation settings.
+     */
+    private static Typeface getDefaultFontCopy(Typeface tf) {
+        final String familyName = tf.getSystemFontFamilyName();
+        synchronized (sStyledCacheLock) {
+            Typeface copy = sDefaultFontCopies.get(familyName);
+            if (copy == null) {
+                copy = new Typeface(nativeCreateFromTypeface(tf.getNativeInstance(), tf.mStyle),
+                        familyName, tf);
+                sDefaultFontCopies.put(familyName, copy);
+            }
+            return copy;
+        }
     }
 
     /** @hide */
