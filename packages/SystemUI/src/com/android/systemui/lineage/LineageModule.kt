@@ -25,6 +25,7 @@ import com.android.systemui.qs.tiles.AODTile
 import com.android.systemui.qs.tiles.AutoBrightnessTile
 import com.android.systemui.qs.tiles.BlurTile
 import com.android.systemui.qs.tiles.CPUInfoTile
+import com.android.systemui.qs.tiles.ExtremeChargingTile
 import com.android.systemui.qs.tiles.CaffeineTile
 import com.android.systemui.qs.tiles.CompassTile
 import com.android.systemui.qs.tiles.DataSwitchTile
@@ -130,6 +131,12 @@ interface LineageModule {
     @StringKey(OnTheGoTile.TILE_SPEC)
     fun bindOnTheGoTile(onTheGoTile: OnTheGoTile): QSTileImpl<*>
 
+    /** Inject ExtremeChargingTile into tileMap in QSModule */
+    @Binds
+    @IntoMap
+    @StringKey(ExtremeChargingTile.TILE_SPEC)
+    fun bindExtremeChargingTile(extremeChargingTile: ExtremeChargingTile): QSTileImpl<*>
+
     /** Inject PowerShareTile into tileMap in QSModule */
     @Binds
     @IntoMap
@@ -225,6 +232,7 @@ interface LineageModule {
         const val FPS_INFO_TILE_SPEC = "fpsinfo"
         const val HEADS_UP_TILE_SPEC = "heads_up"
         const val LOCALE_TILE_SPEC = "locale"
+        const val EXTREME_CHARGING_TILE_SPEC = "extremecharging"
         const val POWERSHARE_TILE_SPEC = "powershare"
         const val PREFERRED_NETWORK_TILE_SPEC = "preferred_network"
         const val PROFILES_TILE_SPEC = "profiles"
@@ -327,6 +335,21 @@ interface LineageModule {
                     ),
                 instanceId = uiEventLogger.getNewInstanceId(),
                 category = TileCategory.ACCESSIBILITY,
+            )
+
+        @Provides
+        @IntoMap
+        @StringKey(EXTREME_CHARGING_TILE_SPEC)
+        fun provideExtremeChargingTileConfig(uiEventLogger: QsEventLogger): QSTileConfig =
+            QSTileConfig(
+                tileSpec = TileSpec.create(EXTREME_CHARGING_TILE_SPEC),
+                uiConfig =
+                    QSTileUIConfig.Resource(
+                        iconRes = R.drawable.ic_qs_extreme_charging,
+                        labelRes = R.string.quick_settings_extreme_charging_label
+                    ),
+                instanceId = uiEventLogger.getNewInstanceId(),
+                category = TileCategory.UTILITIES,
             )
 
         @Provides

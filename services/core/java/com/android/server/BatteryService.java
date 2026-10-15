@@ -92,6 +92,7 @@ import com.android.server.lights.LogicalLight;
 
 import org.lineageos.internal.notification.LedValues;
 import org.lineageos.internal.notification.LineageBatteryLights;
+import com.android.server.power.ExtremeChargingController;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -388,6 +389,7 @@ public final class BatteryService extends SystemService {
     private MetricsLogger mMetricsLogger;
 
     private LineageBatteryLights mLineageBatteryLights;
+    private ExtremeChargingController mExtremeChargingController;
 
     private static final int MSG_BROADCAST_BATTERY_CHANGED = 1;
     private static final int MSG_BROADCAST_POWER_CONNECTION_CHANGED = 2;
@@ -565,6 +567,15 @@ public final class BatteryService extends SystemService {
                 updateBatteryWarningLevelLocked();
             }
         } else if (phase == PHASE_BOOT_COMPLETED) {
+            mExtremeChargingController = new ExtremeChargingController(mContext, mHandler);
+            mExtremeChargingController.init();
+            synchronized (mLock) {
+                if (mHealthInfo != null) {
+                    mExtremeChargingController.onBatteryValuesChanged(
+                            mPlugType, mHealthInfo.batteryLevel, mHealthInfo.batteryStatus, mHealthInfo.chargingState);
+                }
+            }
+
             mLineageBatteryLights = new LineageBatteryLights(mContext,
                     new LineageBatteryLights.LedUpdater() {
                 public void update() {
@@ -1042,6 +1053,11 @@ public final class BatteryService extends SystemService {
 
             // Update the battery LED
             mLed.updateLightsLocked();
+
+            if (mExtremeChargingController != null) {
+                mExtremeChargingController.onBatteryValuesChanged(
+                        mPlugType, mHealthInfo.batteryLevel, mHealthInfo.batteryStatus, mHealthInfo.chargingState);
+            }
 
             // This needs to be done after sendIntent() so that we get the lastest battery stats.
             if (logOutlier && dischargeDuration != 0) {
@@ -1761,6 +1777,9 @@ public final class BatteryService extends SystemService {
                 pw.println("  Capacity level: " + mHealthInfo.batteryCapacityLevel);
                 pw.println("  Maximum capacity: " + mHealthInfo.batteryFullChargeUah);
                 pw.println("  Design capacity: " + mHealthInfo.batteryFullChargeDesignCapacityUah);
+                if (mExtremeChargingController != null) {
+                    mExtremeChargingController.dump(pw);
+                }
             } else {
                 Shell shell = new Shell();
                 shell.exec(mBinderService, null, fd, null, args, null, new ResultReceiver(null));
