@@ -395,7 +395,8 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
 
     private static final int LINEAGE_VERSION_INIT = 1;
     private static final int LINEAGE_VERSION_REINSTATED_POLICY_REJECT_ALL = 2;
-    private static final int LINEAGE_VERSION_LATEST = LINEAGE_VERSION_REINSTATED_POLICY_REJECT_ALL;
+    private static final int LINEAGE_VERSION_HEALED_RESTORED_APPS = 3;
+    private static final int LINEAGE_VERSION_LATEST = LINEAGE_VERSION_HEALED_RESTORED_APPS;
 
     @VisibleForTesting
     public static final int TYPE_WARNING = SystemMessage.NOTE_NET_WARNING;
@@ -1548,28 +1549,6 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                     updateRestrictionRulesForUidUL(uid);
                 }
             }
-        }
-
-        private boolean requestsInternetPermission(int uid) {
-            final PackageManager pm = mContext.getPackageManager();
-            final String[] packageNames = pm.getPackagesForUid(uid);
-            // Not installed for this user any more (removed, archived or changing): no
-            // evidence that the app lacks INTERNET, so don't restrict it.
-            if (packageNames == null) return true;
-            for (String packageName : packageNames) {
-                try {
-                    final PackageInfo info = pm.getPackageInfoAsUser(packageName,
-                            PackageManager.GET_PERMISSIONS
-                                    | PackageManager.MATCH_UNINSTALLED_PACKAGES,
-                            UserHandle.getUserId(uid));
-                    if (ArrayUtils.contains(info.requestedPermissions,
-                            Manifest.permission.INTERNET)) {
-                        return true;
-                    }
-                } catch (PackageManager.NameNotFoundException ignored) {
-                }
-            }
-            return false;
         }
 
         private boolean isSystemApp(int uid) {
@@ -2907,6 +2886,69 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         }
     }
 
+    private boolean requestsInternetPermission(int uid) {
+        final PackageManager pm = mContext.getPackageManager();
+        final String[] packageNames = pm.getPackagesForUid(uid);
+        // Not installed for this user any more (removed, archived or changing): no
+        // evidence that the app lacks INTERNET, so don't restrict it.
+        if (packageNames == null) return true;
+        for (String packageName : packageNames) {
+            try {
+                final PackageInfo info = pm.getPackageInfoAsUser(packageName,
+                        PackageManager.GET_PERMISSIONS
+                                | PackageManager.MATCH_UNINSTALLED_PACKAGES,
+                        UserHandle.getUserId(uid));
+                if (ArrayUtils.contains(info.requestedPermissions,
+                        Manifest.permission.INTERNET)) {
+                    return true;
+                }
+            } catch (PackageManager.NameNotFoundException ignored) {
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Gives network access back, once, to apps the package receiver blocked while they were
+     * restored. Play restores apps as archived installs first; those hold no permissions, so
+     * the receiver gave them POLICY_REJECT_ALL, and the block outlived the real APK. Only apps
+     * installed for a device restore or setup that request and hold INTERNET are cleared, so
+     * blocks users set on other apps stay. The rest are logged with their install reason.
+     */
+    private void healRestoredAppsBlockedWithoutInternet() {
+        final Set<Integer> uidsToAllow = new ArraySet<>();
+        final PackageManager pm = mContext.getPackageManager();
+        synchronized (mUidRulesFirstLock) {
+            for (int i = 0; i < mUidPolicy.size(); i++) {
+                final int uid = mUidPolicy.keyAt(i);
+                if ((mUidPolicy.valueAt(i) & POLICY_REJECT_ALL) == 0) continue;
+                final String[] packageNames = pm.getPackagesForUid(uid);
+                if (packageNames == null) continue;
+                final UserHandle user = UserHandle.getUserHandleForUid(uid);
+                boolean restored = false;
+                final StringBuilder reasons = new StringBuilder();
+                for (String packageName : packageNames) {
+                    final int reason = pm.getInstallReason(packageName, user);
+                    reasons.append(packageName).append('=').append(reason).append(' ');
+                    if (reason == PackageManager.INSTALL_REASON_DEVICE_RESTORE
+                            || reason == PackageManager.INSTALL_REASON_DEVICE_SETUP) {
+                        restored = true;
+                    }
+                }
+                mInternetPermissionMap.delete(uid);
+                if (restored && hasInternetPermissionUL(uid) && requestsInternetPermission(uid)) {
+                    Slog.i(TAG, "Restoring network access for restored uid=" + uid + ": "
+                            + reasons);
+                    uidsToAllow.add(uid);
+                } else {
+                    Slog.i(TAG, "Keeping REJECT_ALL for uid=" + uid + ", install reasons: "
+                            + reasons);
+                }
+            }
+        }
+        setPolicyForUids(uidsToAllow, POLICY_REJECT_ALL, false /* enabled */);
+    }
+
     private void migrateToPolicyRejectAll() {
         final Set<Integer> uidsAllowedOnRestrictedNetworks =
                 ConnectivitySettingsManager.getUidsAllowedOnRestrictedNetworks(mContext);
@@ -3304,6 +3346,9 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         if (!forRestore && lineageVersion < LINEAGE_VERSION_REINSTATED_POLICY_REJECT_ALL
                 && isMigratingFromAtLeastAndroid12) {
             migrateToPolicyRejectAll();
+        }
+        if (!forRestore && lineageVersion < LINEAGE_VERSION_HEALED_RESTORED_APPS) {
+            healRestoredAppsBlockedWithoutInternet();
         }
     }
 
