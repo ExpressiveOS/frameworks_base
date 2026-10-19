@@ -1526,18 +1526,50 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
             if (uid == -1) return;
 
             if (ACTION_PACKAGE_ADDED.equals(action)) {
+                // An archived install has no APK and so no permissions yet; the real
+                // APK arrives later as an update.
+                final boolean archival = intent.getBooleanExtra(Intent.EXTRA_ARCHIVAL, false);
                 // update rules for UID, since it might be subject to
                 // global background data policy
                 // Clear the cache for the app
                 synchronized (mUidRulesFirstLock) {
                     mInternetPermissionMap.delete(uid);
-                    if (!hasInternetPermissionUL(uid) && !isSystemApp(uid)) {
-                        Slog.i(TAG, "ACTION_PACKAGE_ADDED for uid=" + uid + ", no INTERNET");
-                        addUidPolicy(uid, POLICY_REJECT_ALL);
+                    if (!archival && !hasInternetPermissionUL(uid) && !isSystemApp(uid)) {
+                        // The grant can be momentarily missing while an install or update
+                        // settles, so decide from what the manifest requests.
+                        if (requestsInternetPermission(uid)) {
+                            Slog.w(TAG, "ACTION_PACKAGE_ADDED for uid=" + uid
+                                    + ", INTERNET requested or package unresolved; not restricting");
+                        } else {
+                            Slog.i(TAG, "ACTION_PACKAGE_ADDED for uid=" + uid + ", no INTERNET");
+                            addUidPolicy(uid, POLICY_REJECT_ALL);
+                        }
                     }
                     updateRestrictionRulesForUidUL(uid);
                 }
             }
+        }
+
+        private boolean requestsInternetPermission(int uid) {
+            final PackageManager pm = mContext.getPackageManager();
+            final String[] packageNames = pm.getPackagesForUid(uid);
+            // Not installed for this user any more (removed, archived or changing): no
+            // evidence that the app lacks INTERNET, so don't restrict it.
+            if (packageNames == null) return true;
+            for (String packageName : packageNames) {
+                try {
+                    final PackageInfo info = pm.getPackageInfoAsUser(packageName,
+                            PackageManager.GET_PERMISSIONS
+                                    | PackageManager.MATCH_UNINSTALLED_PACKAGES,
+                            UserHandle.getUserId(uid));
+                    if (ArrayUtils.contains(info.requestedPermissions,
+                            Manifest.permission.INTERNET)) {
+                        return true;
+                    }
+                } catch (PackageManager.NameNotFoundException ignored) {
+                }
+            }
+            return false;
         }
 
         private boolean isSystemApp(int uid) {
