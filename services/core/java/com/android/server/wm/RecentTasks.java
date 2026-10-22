@@ -2124,7 +2124,13 @@ class RecentTasks {
         if (!getTasksAllowed) {
             Task.trimIneffectiveInfo(tr, rti);
         }
-        AxSandboxService.get().isTopAppLocked(rti, tr.effectiveUid);
+        final String basePackage = tr.getBasePackageName();
+        if (AxSandboxService.get().isTopAppLocked(rti, tr.effectiveUid)
+                || (basePackage != null
+                        && AxSandboxService.get().hasAppLock(basePackage, tr.mUserId))) {
+            // Launchers that support App Lock (Pixel Launcher among them) hide the task content.
+            rti.isRealActivityAppLockEnabled = true;
+        }
         return rti;
     }
 
