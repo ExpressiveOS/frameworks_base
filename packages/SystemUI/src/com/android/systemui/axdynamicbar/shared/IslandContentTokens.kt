@@ -177,7 +177,10 @@ internal fun Modifier.islandBlur(
     highlightWidth: Dp = AxBlurSurfaceDefaults.HighlightWidth,
 ): Modifier =
     axBlurBackground(
-        enabled = true,
+        // A blur region in the status bar window makes SurfaceFlinger composite the app below
+        // on the GPU every frame while the island shows, which drops frames when scrolling.
+        // Draw the island on its solid fallback instead.
+        enabled = false,
         fallbackColor = fallbackColor,
         tintColor = tint ?: AxBlurSurfaceDefaults.tintColor(),
         cornerRadius = cornerRadius,
