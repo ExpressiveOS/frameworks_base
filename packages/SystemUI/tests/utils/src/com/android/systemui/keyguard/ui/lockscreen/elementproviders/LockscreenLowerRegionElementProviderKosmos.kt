@@ -121,5 +121,6 @@ private fun hiddenAxDynamicBarChipViewModel(): AxDynamicBarChipViewModel {
         whenever(this.keyguardBatteryInfo)
             .thenReturn(MutableStateFlow(KeyguardBatteryInfo(0, false, false, false, null)))
         whenever(this.batteryString).thenReturn(MutableStateFlow(""))
+        whenever(this.animationsAllowed).thenReturn(MutableStateFlow(false))
     }
 }

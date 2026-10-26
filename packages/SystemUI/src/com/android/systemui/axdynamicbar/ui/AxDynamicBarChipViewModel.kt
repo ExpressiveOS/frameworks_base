@@ -8,6 +8,7 @@ import com.android.systemui.biometrics.AuthController
 import com.android.systemui.biometrics.domain.interactor.UdfpsOverlayInteractor
 import com.android.systemui.dagger.SysUISingleton
 import com.android.systemui.dagger.qualifiers.Application
+import com.android.systemui.power.domain.interactor.PowerInteractor
 import com.android.systemui.statusbar.KeyguardIndicationController
 import com.android.systemui.statusbar.pipeline.battery.domain.interactor.BatteryInteractor
 import com.android.systemui.statusbar.policy.BatteryController
@@ -53,6 +54,7 @@ constructor(
     private val batteryController: BatteryController,
     authController: AuthController,
     udfpsOverlayInteractor: UdfpsOverlayInteractor,
+    powerInteractor: PowerInteractor,
     private val keyguardIndicationController: KeyguardIndicationController,
     val keyguardExpansion: AxDynamicBarKeyguardExpansion,
     val statusBarExpansion: AxDynamicBarStatusBarExpansion,
@@ -92,6 +94,17 @@ constructor(
     val isKeyguardMusicPillEnabled: StateFlow<Boolean> = interactor.settings.isKeyguardMusicPillEnabled
     val mediaUseWaveform: StateFlow<Boolean> = interactor.mediaUseWaveform
     val chipStyle: StateFlow<Int> = interactor.settings.chipStyle
+
+    /**
+     * False while the screen is off or dozing. An endless animation requests a frame on every
+     * vsync even when the display is off and nothing gets drawn, which keeps the main thread busy.
+     */
+    val animationsAllowed: StateFlow<Boolean> =
+        combine(powerInteractor.isInteractive, interactor.isDozing) { interactive, dozing ->
+                interactive && !dozing
+            }
+            .distinctUntilChanged()
+            .stateIn(applicationScope, SharingStarted.Eagerly, true)
 
     val keyguardBatteryInfo: StateFlow<KeyguardBatteryInfo> =
         combine(

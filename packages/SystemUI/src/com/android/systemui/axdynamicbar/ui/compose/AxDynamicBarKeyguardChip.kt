@@ -182,6 +182,7 @@ fun AxDynamicBarKeyguardChip(
     val isKeyguardExpanded by viewModel.isKeyguardExpanded.collectAsStateWithLifecycle()
     val touchSlop = LocalViewConfiguration.current.touchSlop
     val batteryString by viewModel.batteryString.collectAsStateWithLifecycle()
+    val animationsAllowed by viewModel.animationsAllowed.collectAsStateWithLifecycle()
 
     val motionScheme = MaterialTheme.motionScheme
     val expandableController = rememberExpandableController(color = Color.Transparent, shape = ChipShape)
@@ -298,6 +299,7 @@ fun AxDynamicBarKeyguardChip(
                         keyguardBatteryChipMode,
                         batteryString,
                         blurAlpha = chipBlurAlpha,
+                        animate = animationsAllowed,
                     )
                     return@AnimatedVisibility
                 }
@@ -369,6 +371,7 @@ fun AxDynamicBarKeyguardChip(
                     keyguardBatteryChipMode,
                     batteryString,
                     blurAlpha = chipBlurAlpha,
+                    animate = animationsAllowed,
                 )
             }
         }
@@ -641,6 +644,7 @@ private fun KeyguardBatteryChip(
     keyguardBatteryChipMode: Int,
     batteryString: String,
     blurAlpha: Float,
+    animate: Boolean,
 ) {
     if (keyguardBatteryChipMode <= 0) return
 
@@ -671,7 +675,7 @@ private fun KeyguardBatteryChip(
         ) {
             
             if (info.isCharging) {
-                AnimatedChargingBoltIcon(accent, BatteryIconSize)
+                AnimatedChargingBoltIcon(accent, BatteryIconSize, animate)
             } else {
                 AnimatedBatteryFillIcon(info.level, accent, BatteryIconSize)
             }
@@ -753,17 +757,26 @@ private fun KeyguardBatteryChip(
 }
 
 @Composable
-private fun AnimatedChargingBoltIcon(color: Color, iconSize: Dp = BatteryIconSize) {
-    val transition = rememberInfiniteTransition(label = "kg_bolt")
-    val glow by transition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            tween(800, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "kg_bolt_glow",
-    )
+private fun AnimatedChargingBoltIcon(
+    color: Color,
+    iconSize: Dp = BatteryIconSize,
+    animate: Boolean = true,
+) {
+    // The chip stays on the lock screen for as long as the phone is plugged in, AOD and screen
+    // off included, so only pulse the bolt while someone can see it.
+    val glow by if (animate) {
+        rememberInfiniteTransition(label = "kg_bolt").animateFloat(
+            initialValue = 0.5f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                tween(800, easing = FastOutSlowInEasing),
+                RepeatMode.Reverse,
+            ),
+            label = "kg_bolt_glow",
+        )
+    } else {
+        rememberUpdatedState(1f)
+    }
     val boltPath = remember { Path() }
     Canvas(modifier = Modifier.size(iconSize)) {
         val w = size.width
