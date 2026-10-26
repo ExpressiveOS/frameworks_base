@@ -25,6 +25,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.ContentObserver;
+import android.net.ConnectivityManager;
+import android.net.ConnectivityManager.NetworkCallback;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -73,6 +77,10 @@ public class AxSpoofManager implements IAxSpoofManager {
     private static final long BOOTSTRAP_INITIAL_DELAY_MS = TimeUnit.MINUTES.toMillis(2);
     private static final long BOOTSTRAP_RETRY_MS = TimeUnit.MINUTES.toMillis(10);
     private static final int BOOTSTRAP_MAX_RETRIES = 6;
+    // After a pass that failed, the next one waits twice as long as the last wait (and
+    // never less than usual), up to a day, so a keybox mirror that is down isn't asked
+    // every hour for as long as it stays down. A pass that works resets it.
+    private static final long FAILURE_BACKOFF_MAX_MS = TimeUnit.DAYS.toMillis(1);
     private static final long REFRESH_STEP_DEADLINE_MS = TimeUnit.SECONDS.toMillis(20);
     // After the PIF config is cleared (reset to defaults, or deleted), give the
     // rest of a multi-key reset a moment to land, then refresh straight away
@@ -146,6 +154,12 @@ public class AxSpoofManager implements IAxSpoofManager {
     private final ExecutorService mFingerprintExecutor = Executors.newSingleThreadExecutor();
     private BroadcastReceiver mPackageAddedReceiver;
     private int mBootstrapRetries;
+    // The wait after the last failed pass (0 once one works), and whether a pass found
+    // no validated network and waits for mNetworkCallback to run it. Both are only
+    // used on mHandler, like mBootstrapRetries.
+    private long mFailureBackoffMs;
+    private boolean mWaitingForNetwork;
+    private NetworkCallback mNetworkCallback;
     // Nothing spoof-related runs until the user first opens Settings (after setup):
     // the config getters below return null, the refresh never starts and GMS is
     // left alone. Set once by enableSpoofing() and persisted in ACTIVATED_KEY.
@@ -233,8 +247,51 @@ public class AxSpoofManager implements IAxSpoofManager {
     }
 
     private void scheduleFirstRefresh() {
+        registerNetworkCallback();
         mHandler.postDelayed(this::performScheduledRefresh,
                 isBootstrapPending() ? BOOTSTRAP_INITIAL_DELAY_MS : REFRESH_INTERVAL_MS);
+    }
+
+    /**
+     * Runs a pass that found no validated network as soon as the default network
+     * has one, instead of polling for it. Registered once, with the schedule; if
+     * that fails, passes run on schedule whatever the network, as they used to.
+     */
+    private void registerNetworkCallback() {
+        if (mNetworkCallback != null) return;
+        mNetworkCallback = new NetworkCallback() {
+            @Override
+            public void onCapabilitiesChanged(Network network, NetworkCapabilities caps) {
+                if (mWaitingForNetwork && isValidated(caps)) performScheduledRefresh();
+            }
+        };
+        try {
+            mContext.getSystemService(ConnectivityManager.class)
+                    .registerDefaultNetworkCallback(mNetworkCallback, mHandler);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to watch the network, refreshing on schedule regardless", e);
+            mNetworkCallback = null;
+        }
+    }
+
+    /**
+     * True when the default network, which the fetches go out on, has validated
+     * internet access. Also true when that can't be read, so the pass runs anyway.
+     */
+    private boolean hasValidatedNetwork() {
+        try {
+            final ConnectivityManager cm = mContext.getSystemService(ConnectivityManager.class);
+            return isValidated(cm.getNetworkCapabilities(cm.getActiveNetwork()));
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to read the network state", e);
+            return true;
+        }
+    }
+
+    private static boolean isValidated(NetworkCapabilities caps) {
+        return caps != null
+                && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
     }
 
     /**
@@ -406,15 +463,27 @@ public class AxSpoofManager implements IAxSpoofManager {
      * the Pixel fingerprint and the official keybox without requiring the
      * Settings app to be opened. Each network step runs under a hard deadline
      * so a stalled connection can't stop future ticks from firing. Runs hourly,
-     * or sooner while a fresh install is still missing its keybox or PIF config.
+     * or sooner while a fresh install is still missing its keybox or PIF config,
+     * and only on a validated network; after failed passes it backs off.
      */
     private void performScheduledRefresh() {
         if (!mActivated) return;
-        refreshNow();
+        // Without a validated network the pass can only fail; mNetworkCallback runs it
+        // once there is one.
+        mWaitingForNetwork = mNetworkCallback != null && !hasValidatedNetwork();
+        if (mWaitingForNetwork) return;
+        final boolean ok = refreshNow();
         long delay = REFRESH_INTERVAL_MS;
         if (isBootstrapPending() && mBootstrapRetries < BOOTSTRAP_MAX_RETRIES) {
             mBootstrapRetries++;
             delay = BOOTSTRAP_RETRY_MS;
+        }
+        if (ok) {
+            mFailureBackoffMs = 0;
+        } else {
+            mFailureBackoffMs = Math.min(
+                    Math.max(delay, mFailureBackoffMs * 2), FAILURE_BACKOFF_MAX_MS);
+            delay = mFailureBackoffMs;
         }
         mHandler.postDelayed(this::performScheduledRefresh, delay);
     }
@@ -447,21 +516,27 @@ public class AxSpoofManager implements IAxSpoofManager {
         return s == null || s.trim().isEmpty();
     }
 
-    /** One fingerprint + keybox pass, without touching the hourly schedule. */
-    private void refreshNow() {
-        if (!mActivated) return;
+    /**
+     * One fingerprint + keybox pass, without touching the hourly schedule. False
+     * when either step failed, for the schedule to back off on.
+     */
+    private boolean refreshNow() {
+        if (!mActivated) return true;
         // Keybox first: it is one small request, while the fingerprint crawl is
         // the slow one and shouldn't be able to starve it.
+        boolean ok = false;
         try {
-            refreshKeyboxIfStale();
+            ok = refreshKeyboxIfStale();
         } catch (Exception e) {
             Log.e(TAG, "Keybox refresh failed", e);
         }
         try {
             refreshPixelFingerprintIfStale();
         } catch (Exception e) {
+            ok = false;
             Log.e(TAG, "Fingerprint refresh failed", e);
         }
+        return ok;
     }
 
     /**
@@ -574,19 +649,21 @@ public class AxSpoofManager implements IAxSpoofManager {
      * different from what's cached. Deliberately does none of its own cert
      * parsing or revocation checking — TrickyStoreService.refreshKeyBox()
      * already re-validates and re-checks revocation on every read of
-     * SPOOF_TRICKYSTORE_KEYBOX, so this only needs to fetch and dedupe.
+     * SPOOF_TRICKYSTORE_KEYBOX, so this only needs to fetch and dedupe. Returns
+     * false when the mirror answers without a keybox (an error status, an empty
+     * body or some other page); one that can't be reached throws.
      */
-    private void refreshKeyboxIfStale() throws Exception {
-        if (mResolver == null) return;
+    private boolean refreshKeyboxIfStale() throws Exception {
+        if (mResolver == null) return true;
         if (Settings.System.getIntForUser(
                 mResolver, TRICKYSTORE_ENABLED_KEY, 1, UserHandle.USER_SYSTEM) == 0) {
-            return;
+            return true;
         }
 
         String source = Settings.Secure.getStringForUser(
                 mResolver, KEYBOX_SOURCE_KEY, UserHandle.USER_SYSTEM);
         if (KEYBOX_SOURCE_USER.equals(source)) {
-            return; // user manages their own keybox — never overwrite it
+            return true; // user manages their own keybox — never overwrite it
         }
 
         String xml = runBounded(mNetworkExecutor, () -> {
@@ -596,19 +673,19 @@ public class AxSpoofManager implements IAxSpoofManager {
             if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) return null;
             return new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         });
-        if (xml == null || xml.trim().isEmpty()) return;
+        if (xml == null || xml.trim().isEmpty()) return false;
         if (!looksLikeKeybox(xml)) {
             // A captive portal or error page can come back as a 200; never let
             // that replace a working keybox.
             Log.w(TAG, "Keybox mirror returned something that is not a keybox, keeping the current one");
-            return;
+            return false;
         }
 
         // The stored value is Base64 (that's how Evolver writes it) while the
         // download is raw XML, so compare decoded XML with decoded XML.
         String currentXml = decodeKeyboxXml(getCached(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX));
         if (currentXml != null && sha256(currentXml).equals(sha256(xml))) {
-            return; // unchanged
+            return true; // unchanged
         }
 
         String encoded = Base64.encodeToString(xml.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
@@ -617,6 +694,7 @@ public class AxSpoofManager implements IAxSpoofManager {
 
         killGmsFamily();
         Log.i(TAG, "Auto-refreshed official keybox");
+        return true;
     }
 
     /** Keybox XML from a stored value that is either raw XML or Base64 of it; null if neither. */
