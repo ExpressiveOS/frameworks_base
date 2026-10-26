@@ -23,6 +23,7 @@ import android.content.IntentFilter;
 import android.graphics.PixelFormat;
 import android.os.BatteryManager;
 import android.os.Handler;
+import android.os.PowerManager;
 import android.view.WindowManager;
 
 import com.android.systemui.CoreStartable;
@@ -92,6 +93,15 @@ public class CutoutProgressController implements CoreStartable {
         }
     };
 
+    // The ring's charging pulse repeats forever; let it hold still while the phone is asleep
+    // or dozing (not interactive), when nobody sees it pulse.
+    private final BroadcastReceiver mScreenReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            mRingView.setScreenOn(Intent.ACTION_SCREEN_ON.equals(intent.getAction()));
+        }
+    };
+
     @Inject
     public CutoutProgressController(
             Context context,
@@ -110,6 +120,11 @@ public class CutoutProgressController implements CoreStartable {
         mRingView = new CutoutRingView(mContext);
         mRingView.applySettings(mSettings);
         bindTrackerToView();
+
+        IntentFilter screenFilter = new IntentFilter(Intent.ACTION_SCREEN_ON);
+        screenFilter.addAction(Intent.ACTION_SCREEN_OFF);
+        mContext.registerReceiver(mScreenReceiver, screenFilter);
+        mRingView.setScreenOn(mContext.getSystemService(PowerManager.class).isInteractive());
 
         mMusicController = new MusicRingController(mContext, mMainHandler, mRingView);
         mMusicController.applySettings(mSettings);

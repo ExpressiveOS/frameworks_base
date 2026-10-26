@@ -100,6 +100,8 @@ public final class CutoutRingView extends View {
     private boolean mChargingPulseEnabled = true;
     private float mChargingPulsePhase = 0f;
     private ValueAnimator mChargingPulseAnim = null;
+    private boolean mScreenOn = true;
+    private boolean mAggregatedVisible = true;
     private float mChargingDisplayPct = 0f;
     private ValueAnimator mChargingLevelAnim = null;
 
@@ -425,6 +427,32 @@ public final class CutoutRingView extends View {
             invalidate();
         });
         mChargingPulseAnim.start();
+        updateChargingPulsePaused();
+    }
+
+    /** Set by CutoutProgressController: false while the phone is asleep or dozing. */
+    public void setScreenOn(boolean screenOn) {
+        mScreenOn = screenOn;
+        updateChargingPulsePaused();
+    }
+
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        mAggregatedVisible = isVisible;
+        updateChargingPulsePaused();
+    }
+
+    // The pulse repeats forever and asks for a frame on every vsync. Hold it while it can't be
+    // seen; the ring is then drawn at the charge level without the pulse.
+    private void updateChargingPulsePaused() {
+        if (mChargingPulseAnim == null) return;
+        if (mScreenOn && mAggregatedVisible) {
+            mChargingPulseAnim.resume();
+        } else {
+            mChargingPulseAnim.pause();
+        }
+        invalidate();
     }
 
     private void stopChargingPulse() {
@@ -716,7 +744,8 @@ public final class CutoutRingView extends View {
         int levelColor = chargingColor(mChargingDisplayPct);
         applyStroke(mChargingPaint, levelColor, sCfgStrokeDp * mDp, baseAlpha);
 
-        if (mChargingPulseEnabled && sCfgChargingPulse && mChargingPulseAnim != null) {
+        if (mChargingPulseEnabled && sCfgChargingPulse && mChargingPulseAnim != null
+                && !mChargingPulseAnim.isPaused()) {
             float drawFraction = mChargingPulsePhase * (mChargingDisplayPct / 100f);
             drawSymmetricArc(canvas, drawFraction, mChargingPaint);
         } else {
