@@ -124,6 +124,8 @@ constructor(
 
     private val settingsObserver = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) {
+            // The cached colored icons value has its own observer, which may run after this one.
+            StatusBarIconView.reloadColoredIcons(shadeContext)
             for (entry in notifCollection.allNotifs) {
                 updateIconsSafe(entry, true)
             }
@@ -167,8 +169,7 @@ constructor(
      */
     fun createSbIconView(context: Context, entry: NotificationEntry): StatusBarIconView =
         traceSection("IconManager.createSbIconView") {
-            val iconStyle = Settings.System.getIntForUser(context.contentResolver,
-                Settings.System.STATUSBAR_COLORED_ICONS, 0, UserHandle.USER_CURRENT) == 1
+            val iconStyle = StatusBarIconView.useColoredIcons(context)
             val showCount = Settings.System.getIntForUser(context.contentResolver,
                 Settings.System.STATUSBAR_NOTIF_COUNT, 0, UserHandle.USER_CURRENT) == 1
             val sbIcon = iconBuilder.createIconView(entry, context)
@@ -204,8 +205,7 @@ constructor(
             // Set the icon views' icons
             val (normalIconDescriptor, sensitiveIconDescriptor) = getIconDescriptors(entry)
 
-            val iconStyle = Settings.System.getIntForUser(shadeContext.contentResolver,
-                Settings.System.STATUSBAR_COLORED_ICONS, 0, UserHandle.USER_CURRENT) == 1
+            val iconStyle = StatusBarIconView.useColoredIcons(shadeContext)
             val showCount = Settings.System.getIntForUser(shadeContext.contentResolver,
                 Settings.System.STATUSBAR_NOTIF_COUNT, 0, UserHandle.USER_CURRENT) == 1
 
@@ -241,8 +241,7 @@ constructor(
     /** Update the [StatusBarIconView] for the given [NotificationEntry]. */
     fun updateSbIcon(entry: NotificationEntry, iconView: StatusBarIconView) =
         traceSection("IconManager.updateSbIcon") {
-            val iconStyle = Settings.System.getIntForUser(shadeContext.contentResolver,
-                Settings.System.STATUSBAR_COLORED_ICONS, 0, UserHandle.USER_CURRENT) == 1
+            val iconStyle = StatusBarIconView.useColoredIcons(shadeContext)
             val showCount = Settings.System.getIntForUser(shadeContext.contentResolver,
                 Settings.System.STATUSBAR_NOTIF_COUNT, 0, UserHandle.USER_CURRENT) == 1
             val (normalIconDescriptor, _) = getIconDescriptors(entry)
@@ -277,8 +276,7 @@ constructor(
             val notificationContentDescription =
                 entry.sbn.notification?.let { iconBuilder.getIconContentDescription(it) }
 
-            val iconStyle = Settings.System.getIntForUser(shadeContext.contentResolver,
-                Settings.System.STATUSBAR_COLORED_ICONS, 0, UserHandle.USER_CURRENT) == 1
+            val iconStyle = StatusBarIconView.useColoredIcons(shadeContext)
             val showCount = Settings.System.getIntForUser(shadeContext.contentResolver,
                 Settings.System.STATUSBAR_NOTIF_COUNT, 0, UserHandle.USER_CURRENT) == 1
 

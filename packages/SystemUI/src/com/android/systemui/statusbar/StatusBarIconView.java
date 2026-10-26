@@ -24,11 +24,15 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.annotation.IntDef;
 import android.app.Notification;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrixColorFilter;
@@ -38,6 +42,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Trace;
 import android.os.UserHandle;
 import android.provider.Settings;
@@ -211,8 +217,7 @@ public class StatusBarIconView extends AnimatedImageView implements StatusIconDi
         mDozer = new NotificationDozeHelper();
         mBlocked = blocked;
         mSlot = slot;
-        mNewIconStyle = Settings.System.getIntForUser(context.getContentResolver(),
-            Settings.System.STATUSBAR_COLORED_ICONS, 0, UserHandle.USER_CURRENT) == 1;
+        mNewIconStyle = useColoredIcons(context);
         mShowNotificationCount = Settings.System.getIntForUser(context.getContentResolver(),
             Settings.System.STATUSBAR_NOTIF_COUNT, 0, UserHandle.USER_CURRENT) == 1;
         mNumberPain = new Paint();
@@ -432,6 +437,51 @@ public class StatusBarIconView extends AnimatedImageView implements StatusIconDi
 
     public void setShowCount(boolean showCount) {
         mShowNotificationCount = showCount;
+    }
+
+    // STATUSBAR_COLORED_ICONS of the current user. It is checked for every icon on each icon
+    // update and NotificationIconContainer layout pass, and a USER_CURRENT read skips the
+    // settings cache and makes a binder call, so read it once and again only when it changes
+    // or the user switches.
+    private static volatile boolean sColoredIcons;
+    private static volatile boolean sColoredIconsTracked;
+
+    /** Returns whether the current user has colored status bar icons turned on. */
+    public static boolean useColoredIcons(Context context) {
+        if (!sColoredIconsTracked) {
+            trackColoredIcons(context.getApplicationContext());
+        }
+        return sColoredIcons;
+    }
+
+    /**
+     * Re-reads the colored icons setting. Callers that react to it changing call this first,
+     * as their observer can run before the one here.
+     */
+    public static void reloadColoredIcons(Context context) {
+        sColoredIcons = Settings.System.getIntForUser(context.getContentResolver(),
+                Settings.System.STATUSBAR_COLORED_ICONS, 0, UserHandle.USER_CURRENT) == 1;
+    }
+
+    private static synchronized void trackColoredIcons(Context context) {
+        if (sColoredIconsTracked) return;
+        final Handler handler = new Handler(Looper.getMainLooper());
+        context.getContentResolver().registerContentObserver(
+                Settings.System.getUriFor(Settings.System.STATUSBAR_COLORED_ICONS), false,
+                new ContentObserver(handler) {
+                    @Override
+                    public void onChange(boolean selfChange) {
+                        reloadColoredIcons(context);
+                    }
+                }, UserHandle.USER_ALL);
+        context.registerReceiverAsUser(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context receiverContext, Intent intent) {
+                reloadColoredIcons(context);
+            }
+        }, UserHandle.ALL, new IntentFilter(Intent.ACTION_USER_SWITCHED), null, handler);
+        reloadColoredIcons(context);
+        sColoredIconsTracked = true;
     }
 
     /**
