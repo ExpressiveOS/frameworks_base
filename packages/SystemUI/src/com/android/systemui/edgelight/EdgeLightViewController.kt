@@ -167,7 +167,15 @@ constructor(
     }
 
     override fun setPulsing(pulsing: Boolean) {
-        if (!currentSettings.isEnabled || !pulsing || !isDozing) return
+        if (!currentSettings.isEnabled) return
+        if (!pulsing) {
+            // The rainbow and effect animators repeat forever; stop them with the pulse, or they
+            // keep invalidating the hidden view for the rest of doze.
+            edgeLightView.pulseRunning = false
+            edgeLightView.visible = false
+            return
+        }
+        if (!isDozing) return
         edgeLightView.apply {
             visible = true
             pulseRunning = true
