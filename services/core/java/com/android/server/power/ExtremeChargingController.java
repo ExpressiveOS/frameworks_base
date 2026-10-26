@@ -57,6 +57,9 @@ public class ExtremeChargingController {
     private static final int TRANSACTION_SET_MODE = IBinder.FIRST_CALL_TRANSACTION; // 1
     private static final int TRANSACTION_IS_MODE_SUPPORTED = IBinder.FIRST_CALL_TRANSACTION + 1; // 2
     private static final String MODE_BODEGA = "BODEGA";
+    // Highest battery level Bodega may be turned on at; once on it runs until full or unplugged.
+    // The QS tile offers it only while bodega_eligible is set, which is worked out from this.
+    private static final int BODEGA_MAX_LEVEL = 50;
 
     private final Context mContext;
     private final Handler mHandler;
@@ -113,6 +116,7 @@ public class ExtremeChargingController {
             // Ensure HAL and settings start in clean disabled state
             setHalMode(MODE_BODEGA, false);
             mEnabled = false;
+            Settings.Global.putInt(mResolver, SETTING_BODEGA_ELIGIBLE, 0);
             Settings.Global.putInt(mResolver, SETTING_BODEGA_ENABLED, 0);
             Settings.Global.putString(mResolver, SETTING_BODEGA_TIMESTAMP_MS, "0");
 
@@ -155,7 +159,8 @@ public class ExtremeChargingController {
             }
 
             // Update eligibility: plugged in, level <= 50%, not full, not charge-limited
-            boolean eligible = plugged && (level <= 50) && !full && !chargeLimitReached;
+            boolean eligible = plugged && (level <= BODEGA_MAX_LEVEL) && !full
+                    && !chargeLimitReached;
             if (eligible != mEligible) {
                 mEligible = eligible;
                 Settings.Global.putInt(mResolver, SETTING_BODEGA_ELIGIBLE, eligible ? 1 : 0);
@@ -180,7 +185,7 @@ public class ExtremeChargingController {
             boolean full = (mLastStatus == BatteryManager.BATTERY_STATUS_FULL || mLastLevel >= 100);
             boolean chargeLimitReached = (mLastChargingState == 4 && mLastLevel >= 80);
 
-            if (!plugged || full || chargeLimitReached) {
+            if (!plugged || full || chargeLimitReached || mLastLevel > BODEGA_MAX_LEVEL) {
                 Slog.w(TAG, "Cannot activate Extreme Charging: device is not eligible (plugged="
                         + plugged + ", level=" + mLastLevel + ", status=" + mLastStatus + ")");
                 Settings.Global.putInt(mResolver, SETTING_BODEGA_ENABLED, 0);
@@ -209,7 +214,8 @@ public class ExtremeChargingController {
         boolean plugged = (mLastPlugType != 0);
         boolean full = (mLastStatus == BatteryManager.BATTERY_STATUS_FULL || mLastLevel >= 100);
         boolean chargeLimitReached = (mLastChargingState == 4 && mLastLevel >= 80);
-        boolean eligible = plugged && (mLastLevel <= 50) && !full && !chargeLimitReached;
+        boolean eligible = plugged && (mLastLevel <= BODEGA_MAX_LEVEL) && !full
+                && !chargeLimitReached;
         if (eligible != mEligible) {
             mEligible = eligible;
             Settings.Global.putInt(mResolver, SETTING_BODEGA_ELIGIBLE, eligible ? 1 : 0);
