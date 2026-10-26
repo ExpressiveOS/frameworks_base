@@ -200,7 +200,11 @@ class FaceUnlockImageView @JvmOverloads constructor(
     }
 
     private fun handleAnimationForState(state: State) {
-        if (mDozing) {
+        // KeyguardIndicationController drives a copy of this view that is never attached
+        // (KeyguardViewConfigurator only hands it over), so it gets no doze or detach callbacks
+        // and nothing could stop a scan pulse started on it.
+        if (mDozing || !isAttachedToWindow) {
+            cancelAllAnimations()
             visibility = View.GONE
             return
         }
