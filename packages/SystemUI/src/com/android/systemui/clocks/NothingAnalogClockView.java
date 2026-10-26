@@ -6,12 +6,17 @@ import android.graphics.Paint;
 import android.util.AttributeSet;
 import android.view.View;
 
+import com.android.systemui.Dependency;
+import com.android.systemui.plugins.statusbar.StatusBarStateController;
+
 import java.util.Calendar;
 
 public class NothingAnalogClockView extends View {
 
     private Paint mPaint;
     private float centerX, centerY, width, height;
+    private final StatusBarStateController mStatusBarStateController =
+            Dependency.get(StatusBarStateController.class);
 
     public NothingAnalogClockView(Context context) {
         super(context);
@@ -70,8 +75,11 @@ public class NothingAnalogClockView extends View {
         // Draw second hand
         drawSecondHand(canvas, second);
 
-        // Trigger continuous updates
-        postInvalidateDelayed(16); // Smooth 60 FPS animation
+        // Redraw at the start of the next second. On AOD ClockStyle redraws the clock with its
+        // minute tick instead, so don't ask for a frame every second there.
+        if (!mStatusBarStateController.isDozing()) {
+            postInvalidateDelayed(1000 - calendar.get(Calendar.MILLISECOND));
+        }
     }
 
     private void drawRectangularTicks(Canvas canvas) {

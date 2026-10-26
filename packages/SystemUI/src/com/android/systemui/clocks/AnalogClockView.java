@@ -8,12 +8,27 @@ import android.os.Looper;
 import android.util.AttributeSet;
 import android.view.View;
 
+import com.android.systemui.Dependency;
+import com.android.systemui.plugins.statusbar.StatusBarStateController;
+
 import java.util.Calendar;
 
 public class AnalogClockView extends View {
     private Paint mPaint;
     private float centerX, centerY, radius;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final StatusBarStateController mStatusBarStateController =
+            Dependency.get(StatusBarStateController.class);
+    private final Runnable mTicker = new Runnable() {
+        @Override
+        public void run() {
+            // On AOD ClockStyle redraws the clock with its minute tick
+            if (!mStatusBarStateController.isDozing()) {
+                invalidate(); // Redraw the view
+            }
+            handler.postDelayed(this, 1000); // Update every second
+        }
+    };
 
     public AnalogClockView(Context context) {
         super(context);
@@ -33,13 +48,6 @@ public class AnalogClockView extends View {
     private void init() {
         mPaint = new Paint();
         mPaint.setAntiAlias(true);  // Smooth edges
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                invalidate(); // Redraw the view
-                handler.postDelayed(this, 1000); // Update every second
-            }
-        }, 1000);
     }
 
     @Override
@@ -90,6 +98,12 @@ public class AnalogClockView extends View {
         canvas.rotate((float) Math.toDegrees(minuteAngle), centerX, centerY);
         canvas.drawLine(centerX, centerY, centerX, centerY - radius * 0.7f, mPaint);
         canvas.restore();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        handler.postDelayed(mTicker, 1000); // Start updates when attached
     }
 
     @Override

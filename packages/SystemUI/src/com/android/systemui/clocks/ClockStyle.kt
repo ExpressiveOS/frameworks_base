@@ -409,6 +409,8 @@ class ClockStyle @JvmOverloads constructor(
         for (i in textClocks.indices) {
             textClocks[i].refreshTime()
         }
+        // The analog faces only redraw themselves while awake; on AOD this redraws them.
+        currentClockView?.findViewById<View?>(R.id.analog_clock)?.invalidate()
         lastUpdateTimeMillis = System.currentTimeMillis()
     }
 
