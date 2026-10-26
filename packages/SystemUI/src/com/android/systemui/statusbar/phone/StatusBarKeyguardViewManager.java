@@ -379,6 +379,7 @@ public class StatusBarKeyguardViewManager implements RemoteInputController.Callb
                 mFaceRecognitionRunning = running;
                 if (!mFaceRecognitionRunning) {
                     mFaceRecognizingHandler.removeCallbacksAndMessages(null);
+                    FaceUnlockProxy.INSTANCE().stopScanning();
                 }else{
                     mFaceRecognizingHandler.postDelayed(() -> showFaceRecognizingMessage(), 100);
                 }

@@ -13,6 +13,12 @@ class FaceUnlockController private constructor() {
             faceUnlockImageView?.setState(state)
         }, 100)
     }
+
+    fun stopScanning() {
+        faceUnlockImageView?.postDelayed({
+            faceUnlockImageView?.stopScanning()
+        }, 100)
+    }
     
     companion object {
         @Volatile

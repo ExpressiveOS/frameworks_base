@@ -77,6 +77,10 @@ class FaceUnlockImageView @JvmOverloads constructor(
             }
             mDozing = dozing
             if (mDozing) {
+                // The scan pulse repeats forever; hidden on AOD it still asked for a frame on
+                // every vsync until the next face result.
+                cancelAllAnimations()
+                currentState = State.HIDDEN
                 visibility = View.GONE
             }
         }
@@ -98,6 +102,7 @@ class FaceUnlockImageView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         statusBarStateController.removeCallback(statusBarStateListener)
+        cancelAllAnimations()
     }
 
     fun updateColor() {
@@ -119,6 +124,13 @@ class FaceUnlockImageView @JvmOverloads constructor(
             currentState = state
             updateFaceIconState()
             handleAnimationForState(state)
+        }
+    }
+
+    /** Face auth stopped without a result, e.g. unlocked another way or timed out. */
+    fun stopScanning() {
+        if (currentState == State.SCANNING) {
+            setState(State.HIDDEN)
         }
     }
 
@@ -215,9 +227,18 @@ class FaceUnlockImageView @JvmOverloads constructor(
     }
 
     private fun ObjectAnimator.startWithEndAction(endAction: () -> Unit) {
+        // Once only, and not when cancelled: cancelAllAnimations() would otherwise start the
+        // next step of the chain, the endless scan pulse, right after stopping this one.
         addListener(object : AnimatorListenerAdapter() {
+            private var cancelled = false
+
+            override fun onAnimationCancel(animation: Animator) {
+                cancelled = true
+            }
+
             override fun onAnimationEnd(animation: Animator) {
-                endAction()
+                animation.removeListener(this)
+                if (!cancelled) endAction()
             }
         })
         start()
