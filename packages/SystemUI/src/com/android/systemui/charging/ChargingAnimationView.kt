@@ -293,6 +293,17 @@ class ChargingAnimationView(context: Context) : FrameLayout(context) {
         get() = isVisible
         set(value) { isVisible = value }
 
+    /**
+     * False while dozing. The effects below repeat forever, so on AOD they would ask for a frame
+     * on every vsync for the whole charge; paused, they hold their last frame instead.
+     */
+    var animationsAllowed: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            applyAnimationsAllowed()
+        }
+
     init {
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -599,6 +610,15 @@ class ChargingAnimationView(context: Context) : FrameLayout(context) {
             STYLE_DIGITAL_MATRIX -> startDigitalMatrixAnimation()
             STYLE_GEOFLOW -> startGeoFlowAnimation()
         }
+
+        if (!animationsAllowed) applyAnimationsAllowed()
+    }
+
+    private fun applyAnimationsAllowed() {
+        listOfNotNull(
+            bubbleAnimator, neonAnimator, beamAnimator, plasmaAnimator, quantumAnimator,
+            nebulaAnimator, matrixAnimator, geoflowAnimator, rainbowAnimator
+        ).forEach { if (animationsAllowed) it.resume() else it.pause() }
     }
 
     private fun startRainbowAnimation() {

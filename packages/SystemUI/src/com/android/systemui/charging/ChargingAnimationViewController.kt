@@ -24,6 +24,7 @@ import android.util.Log
 import android.widget.FrameLayout
 import com.android.settingslib.Utils
 import com.android.systemui.dagger.SysUISingleton
+import com.android.systemui.statusbar.phone.DozeParameters
 import com.android.systemui.util.ScrimUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -34,6 +35,7 @@ class ChargingAnimationViewController
 @Inject
 constructor(
     private val context: Context,
+    private val dozeParameters: DozeParameters,
 ) : ScrimUtils.ScrimEventListener {
 
     private val chargingView = ChargingAnimationView(context)
@@ -48,6 +50,7 @@ constructor(
     private var isKeyguardShowing: Boolean = false
     private var isKeyguardGoingAway: Boolean = false
     private var isDozing: Boolean = false
+    private var isScreenOff: Boolean = false
     private var wasCharging: Boolean = false
 
     private var shouldShowAnimation: Boolean = false
@@ -200,7 +203,8 @@ constructor(
 
         val shouldShow = when {
             !isPanelCollapsed -> false
-            isDozing -> currentSettings.showOnAod
+            // With AOD off the display is dark while dozing, so there is nothing to show it on.
+            isDozing -> currentSettings.showOnAod && dozeParameters.alwaysOn
             isKeyguardShowing -> currentSettings.showOnLockscreen
             else -> false
         }
@@ -234,6 +238,7 @@ constructor(
 
     override fun onDozingChanged(dozing: Boolean) {
         isDozing = dozing
+        updateAnimationsAllowed()
         updateVisibility()
     }
 
@@ -256,11 +261,23 @@ constructor(
     }
 
     override fun onStartedWakingUp() {
+        isScreenOff = false
+        updateAnimationsAllowed()
         updateVisibility()
     }
 
     override fun onScreenTurnedOff() {
+        // Without any ambient display the phone never dozes, so the lock-screen animation
+        // would keep running with the screen off.
+        isScreenOff = true
+        updateAnimationsAllowed()
         updateVisibility()
+    }
+
+    private fun updateAnimationsAllowed() {
+        val allowed = !isDozing && !isScreenOff
+        // Animators are paused and resumed on the thread that runs them.
+        chargingView.post { chargingView.animationsAllowed = allowed }
     }
 
     fun cleanup() {
