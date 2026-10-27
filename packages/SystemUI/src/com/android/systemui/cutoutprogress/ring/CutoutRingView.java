@@ -815,7 +815,7 @@ public final class CutoutRingView extends View {
 
         boolean geoPreview = mAnim.isGeometryPreviewActive();
         String fname = mFilenameHint != null ? mFilenameHint
-                : geoPreview ? "EvolutionX-16.0-arm64.zip" : null;
+                : geoPreview ? "ExpressiveOS-17.0-cheetah.zip" : null;
 
         if (sCfgFname && fname != null && (mDownloadCount <= 1 || geoPreview)) {
             String display = truncate(fname, sCfgFnameMaxChars, sCfgFnameTruncate);
