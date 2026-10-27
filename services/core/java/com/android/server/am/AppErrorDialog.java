@@ -17,8 +17,6 @@
 package com.android.server.am;
 
 import static android.app.ActivityTaskManager.INVALID_TASK_ID;
-import com.android.internal.util.PastyUtils;
-import com.android.internal.util.PastyUtils.UploadResultCallback;
 
 import android.content.ClipboardManager;
 import android.content.ClipData;
@@ -30,7 +28,6 @@ import android.os.Handler;
 import android.os.Message;
 import android.provider.Settings;
 import android.text.BidiFormatter;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowManager;
@@ -39,8 +36,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListener {
-
-    private static final String TAG = "AppErrorDialog";
 
     private final ActivityManagerService mService;
     private final ActivityManagerGlobalLock mProcLock;
@@ -65,6 +60,10 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
 
     // 5-minute timeout, then we automatically dismiss the crash dialog
     static final long DISMISS_TIMEOUT = 1000 * 60 * 5;
+
+    // Crash logs can be huge and a clip of a few hundred KB can fail to cross binder
+    // when it is read back, so only the first 100k chars of the log are copied
+    private static final int MAX_COPY_LENGTH = 100_000;
 
     public AppErrorDialog(Context context, ActivityManagerService service, Data data) {
         super(context);
@@ -198,7 +197,7 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
                 mHandler.obtainMessage(FORCE_QUIT_AND_REPORT).sendToTarget();
                 break;
             case com.android.internal.R.id.aerr_copy:
-                postToPastyAndCopyURL();
+                copyCrashLog();
                 mHandler.obtainMessage(FORCE_QUIT).sendToTarget();
                 break;
             case com.android.internal.R.id.aerr_close:
@@ -215,23 +214,19 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
         }
     }
 
-    private void postToPastyAndCopyURL() {
-        // Post to Pasty
-        PastyUtils.upload(mPaste, new UploadResultCallback() {
-            public void onSuccess(String url) {
-                // Copy to clipboard
-                ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-                clipboard.setPrimaryClip(ClipData.newPlainText("Log URL", url));
+    private void copyCrashLog() {
+        if (mPaste == null) {
+            return;
+        }
+        final String log = mPaste.length() > MAX_COPY_LENGTH
+                ? mPaste.substring(0, MAX_COPY_LENGTH) : mPaste;
 
-                // Show toast
-                Toast.makeText(getContext(), com.android.internal.R.string.url_copy_success, Toast.LENGTH_LONG).show();
-            }
+        // Copy the log text itself to the clipboard, nothing is uploaded
+        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("Crash log", log));
 
-            public void onFail(String message, Exception e) {
-                Toast.makeText(getContext(), com.android.internal.R.string.url_copy_failed, Toast.LENGTH_LONG).show();
-                Log.e(TAG, message, e);
-            }
-        });
+        // Show toast
+        Toast.makeText(getContext(), com.android.internal.R.string.url_copy_success, Toast.LENGTH_LONG).show();
     }
 
     static class Data {

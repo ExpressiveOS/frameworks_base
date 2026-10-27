@@ -703,7 +703,7 @@ class AppErrors {
                 return;
             }
 
-            // Add paste content for Pasty option
+            // Crash log text for the dialog's "Copy crash log" option
             data.paste = "time: " + timeMillis + "\n" +
             "msg: " + longMsg + "\n" +
             "stacktrace: " + stackTrace;
