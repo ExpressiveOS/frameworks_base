@@ -143,7 +143,6 @@
     <string name="omnijaws_label_default">Clima</string>
     <!-- Sleep Mode -->
     <string name="quick_settings_sleep_mode_label">Modo de suspensão</string>
-    <string name="default_user_name">Evolution X</string>
     <!-- Essential Notifications -->
     <string name="essential_notifications_title">Essenciais</string>
     <string name="essential_notifications_summary">Mensagens e alertas importantes</string>

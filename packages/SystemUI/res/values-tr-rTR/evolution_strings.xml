@@ -143,7 +143,6 @@
     <string name="omnijaws_label_default">Hava Durumu</string>
     <!-- Sleep Mode -->
     <string name="quick_settings_sleep_mode_label">Uyku Modu</string>
-    <string name="default_user_name">Evolution X</string>
     <!-- Essential Notifications -->
     <string name="essential_notifications_title">Önemliler</string>
     <string name="essential_notifications_summary">Önemli mesajlar ve uyarılar</string>

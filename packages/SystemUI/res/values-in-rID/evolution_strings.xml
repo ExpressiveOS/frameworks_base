@@ -142,7 +142,6 @@
     <string name="omnijaws_label_default">Cuaca</string>
     <!-- Sleep Mode -->
     <string name="quick_settings_sleep_mode_label">Mode Tidur</string>
-    <string name="default_user_name">Evolution X</string>
     <!-- Essential Notifications -->
     <string name="essential_notifications_title">Hal-hal penting</string>
     <string name="essential_notifications_summary">Pesan dan peringatan penting</string>

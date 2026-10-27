@@ -145,7 +145,6 @@
     <string name="omnijaws_label_default">Погода</string>
     <!-- Sleep Mode -->
     <string name="quick_settings_sleep_mode_label">Спящий режим</string>
-    <string name="default_user_name">Evolution X</string>
     <!-- Essential Notifications -->
     <string name="essential_notifications_title">Самое главное</string>
     <string name="essential_notifications_summary">Важные сообщения и уведомления</string>
