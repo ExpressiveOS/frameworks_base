@@ -372,9 +372,13 @@ constructor(
                             // The ColorOS layout puts tiles in different places and shapes than QQS,
                             // so morphing each tile across makes them fly over each other. There,
                             // QQS fades out and the panel fades/slides in.
-                            quickQuickSettingsToQuickSettings {
-                                viewModel.animateTilesExpansion && !colorOSQsStyle
-                            }
+                            quickQuickSettingsToQuickSettings(
+                                animateTilesExpansion = {
+                                    viewModel.animateTilesExpansion && !colorOSQsStyle
+                                },
+                                // The ColorOS panel has its own slider, so the QQS one fades out.
+                                fadeOutBrightnessSlider = { colorOSQsStyle },
+                            )
                         }
                         to(SceneKeys.EditMode) {
                             spec = tween(durationMillis = EDIT_MODE_TIME_MILLIS)
