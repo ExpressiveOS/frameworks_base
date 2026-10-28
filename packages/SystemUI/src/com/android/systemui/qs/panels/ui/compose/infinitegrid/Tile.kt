@@ -168,6 +168,8 @@ private val COLOROS_DATA_TILES = setOf("cell", "mobile_data", "mobiledata")
  * @param detailsViewModel An optional [DetailsViewModel] used to handle navigation to a detailed
  *   view when a tile is clicked, if applicable.
  * @param enableRevealEffect If `true`, the tiles will animate using the reveal animation.
+ * @param hideLabel If `true`, the label of a ColorOS style icon tile is not drawn (QQS shows only
+ *   the round icons). Ignored for the other panel styles, which follow the tile label setting.
  */
 @Composable
 fun ContentScope.Tile(
@@ -182,6 +184,7 @@ fun ContentScope.Tile(
     requestToggleTextFeedback: (TileSpec) -> Unit = {},
     detailsViewModel: DetailsViewModel?,
     enableRevealEffect: Boolean = false,
+    hideLabel: Boolean = false,
 ) {
     trace(tile.traceName) {
         val currentBounceableInfo by rememberUpdatedState(bounceableInfo)
@@ -226,7 +229,14 @@ fun ContentScope.Tile(
         val classicStyle = if (colorOSStyle) iconOnly else userClassicStyle
         val userIconShapeKey = rememberQSTileIconShapeKey()
         val iconShapeKey = if (colorOSStyle) QSTileIconShapes.DEFAULT_KEY else userIconShapeKey
-        val labelHide = classicStyle && !colorOSStyle && rememberQSTileLabelHide()
+        // The ColorOS style always shows the label below its icon tiles in the expanded panel and
+        // only drops it where the caller asks for it (QQS). Otherwise follow the user setting.
+        val labelHide =
+            if (colorOSStyle) {
+                classicStyle && hideLabel
+            } else {
+                classicStyle && rememberQSTileLabelHide()
+            }
         val tileHeight = if (!classicStyle || labelHide) {
             CommonTileDefaults.TileHeight
         } else {
