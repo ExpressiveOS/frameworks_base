@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +40,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -182,7 +184,7 @@ internal fun ColorOSMediaCard(
 
 @Composable
 private fun ColorOSMediaButton(action: MediaAction?, iconSize: Dp) {
-    val icon = action?.icon
+    val icon = rememberActionIconBitmap(action?.icon, iconSize)
     Box(
         contentAlignment = Alignment.Center,
         modifier =
@@ -193,11 +195,39 @@ private fun ColorOSMediaButton(action: MediaAction?, iconSize: Dp) {
     ) {
         if (icon != null) {
             Icon(
-                painter = rememberDrawablePainter(icon),
+                bitmap = icon,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(iconSize),
             )
+        }
+    }
+}
+
+/**
+ * Returns a static snapshot of a media action icon.
+ *
+ * The [Drawable] of a [MediaAction] is shared with the stock media player (the QQS/QS player binds
+ * the very same instance to its ImageButton), so it must never be handed to a Compose painter.
+ * `rememberDrawablePainter` takes over the drawable: it replaces its callback, starts it when it is
+ * an [android.graphics.drawable.Animatable] and overwrites its colour filter. For the play/pause
+ * AnimatedVectorDrawable that runs the pause to play morph, which left the stock QQS player showing
+ * a play glyph while media was playing, and the white filter beat the player's own tint, giving a
+ * white icon on its light button.
+ *
+ * So a private copy is drawn once into a bitmap instead, which shows the icon in its initial,
+ * non-animated frame (pause while playing, play while paused) and leaves the original untouched.
+ */
+@Composable
+private fun rememberActionIconBitmap(icon: Drawable?, size: Dp): ImageBitmap? {
+    val resources = LocalContext.current.resources
+    val sizePx = with(LocalDensity.current) { size.roundToPx() }.coerceAtLeast(1)
+    return remember(icon, sizePx) {
+        icon?.let { source ->
+            // Fall back to the source if it has no constant state; toBitmap() restores its bounds
+            // and only reads from it.
+            val copy = source.constantState?.newDrawable(resources)?.mutate() ?: source
+            runCatching { copy.toBitmap(sizePx, sizePx).asImageBitmap() }.getOrNull()
         }
     }
 }
