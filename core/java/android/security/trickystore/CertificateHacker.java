@@ -368,8 +368,9 @@ public final class CertificateHacker {
             bootKey = AttestationUtils.getBootKey();
         }
 
+        // Same for the hash: a TEE that measured nothing reports zeros here too.
         byte[] bootHash = rootOfTrustOctet(originalRootOfTrust, 3);
-        if (bootHash == null) {
+        if (bootHash == null || isAllZero(bootHash)) {
             bootHash = AttestationUtils.getBootHash();
         }
 
