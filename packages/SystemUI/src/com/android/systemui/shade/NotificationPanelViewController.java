@@ -3663,6 +3663,14 @@ public final class NotificationPanelViewController implements
         }
 
         @Override
+        public void onUiModeChanged() {
+            // The header provider's picture can have a light and a dark version: ask again
+            if (mHeaderImageEnabled) {
+                mStatusBarHeaderMachine.updateEnablement();
+            }
+        }
+
+        @Override
         public void onDensityOrFontScaleChanged() {
             debugLog("onDensityOrFontScaleChanged");
             loadDimens();

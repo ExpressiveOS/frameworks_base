@@ -228,6 +228,7 @@ private:
     void checkExit();
 
     void handleViewport(nsecs_t timestep, const Display& display);
+    void loadDynamicColorHints();
     void initDynamicColors();
 
     sp<SurfaceComposerClient>       mSession;
@@ -246,7 +247,13 @@ private:
     bool        mTimeIsAccurate;
     bool        mTimeFormat12Hour;
     bool        mShuttingDown;
+    // A boot, as opposed to a shutdown or userspace reboot. Only a boot can start before persist
+    // props are loaded, so only a boot reads init's copies of them or falls back to the default
+    // animation.
+    bool        mBooting = false;
     bool        mDynamicColorsApplied = false;
+    // init's copies of persist.bootanim.color1..4, for the colors that were empty at preload.
+    std::string mDynamicColorHints[4];
     bool        mDecodeOpaqueImageTo565 = false;
     String8     mZipFileName;
     SortedVector<String8> mLoadedFiles;
