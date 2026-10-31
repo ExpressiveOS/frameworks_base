@@ -359,8 +359,12 @@ public final class CertificateHacker {
             Map<Integer, byte[]> attestationIdOverrides,
             String[] packages) throws Exception {
 
+        // With the bootloader unlocked the TEE measures no verified-boot key and
+        // reports 32 zero bytes. Copying that next to deviceLocked=true and
+        // Verified would describe a state no locked device can be in, so treat
+        // an all-zero key as missing and use our own boot key instead.
         byte[] bootKey = rootOfTrustOctet(originalRootOfTrust, 0);
-        if (bootKey == null) {
+        if (bootKey == null || isAllZero(bootKey)) {
             bootKey = AttestationUtils.getBootKey();
         }
 
@@ -433,6 +437,13 @@ public final class CertificateHacker {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static boolean isAllZero(byte[] value) {
+        for (byte b : value) {
+            if (b != 0) return false;
+        }
+        return true;
     }
 
     public static void storeLeafAlgorithm(String alias, int uid, String algorithm) {
