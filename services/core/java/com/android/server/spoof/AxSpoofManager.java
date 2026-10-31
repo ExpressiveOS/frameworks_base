@@ -102,7 +102,7 @@ public class AxSpoofManager implements IAxSpoofManager {
     private static final String KEYBOX_SOURCE_KEY = "spoof_trickystore_keybox_source";
     private static final String KEYBOX_SOURCE_USER = "user";
     private static final String OFFICIAL_KEYBOX_URL =
-            "https://git.evolution-x.org/EvoX/keybox/raw/branch/main/keybox.xml";
+            "https://ota-mirror.daryldenson-apps.workers.dev/expressiveos/keybox.xml";
 
     private static final String VENDING_PACKAGE = "com.android.vending";
     private static final String[] GMS_FAMILY = {
@@ -668,10 +668,16 @@ public class AxSpoofManager implements IAxSpoofManager {
 
         String xml = runBounded(mNetworkExecutor, () -> {
             HttpURLConnection conn = (HttpURLConnection) new URL(OFFICIAL_KEYBOX_URL).openConnection();
-            conn.setConnectTimeout(10_000);
-            conn.setReadTimeout(10_000);
-            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) return null;
-            return new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            try {
+                conn.setUseCaches(false);
+                conn.setRequestProperty("Cache-Control", "no-cache");
+                conn.setConnectTimeout(10_000);
+                conn.setReadTimeout(10_000);
+                if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) return null;
+                return new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            } finally {
+                conn.disconnect();
+            }
         });
         if (xml == null || xml.trim().isEmpty()) return false;
         if (!looksLikeKeybox(xml)) {
