@@ -101,6 +101,12 @@ public class AxSpoofManager implements IAxSpoofManager {
 
     private static final String KEYBOX_SOURCE_KEY = "spoof_trickystore_keybox_source";
     private static final String KEYBOX_SOURCE_USER = "user";
+    private static final String LAST_REVOCATION_STATUS_KEY =
+            "spoof_trickystore_last_revocation_status";
+    private static final String LAST_REVOCATION_REASON_KEY =
+            "spoof_trickystore_last_revocation_reason";
+    private static final String LAST_REVOCATION_CHECK_KEY =
+            "spoof_trickystore_last_revocation_check";
     private static final String OFFICIAL_KEYBOX_URL =
             "https://ota-mirror.daryldenson-apps.workers.dev/expressiveos/keybox.xml";
 
@@ -160,6 +166,13 @@ public class AxSpoofManager implements IAxSpoofManager {
     // the config getters below return null, the refresh never starts and GMS is
     // left alone. Set once by enableSpoofing() and persisted in ACTIVATED_KEY.
     private volatile boolean mActivated;
+    // The Play Integrity and TrickyStore switches in Settings > Spoofing (Settings.System,
+    // on by default). Off means off: the getters below serve nothing for that side, and
+    // the staged PIF props are cleared, so a user running their own modules isn't spoofed
+    // twice.
+    private volatile boolean mPifEnabled = true;
+    private volatile boolean mTrickyStoreEnabled = true;
+    private ContentObserver mSwitchObserver;
     private TaskStackListener mTaskListener;
     private final Runnable mRefreshAfterClear = this::refreshNow;
 
@@ -207,6 +220,19 @@ public class AxSpoofManager implements IAxSpoofManager {
         for (String key : WATCHED_KEYS) {
             mResolver.registerContentObserver(
                     Settings.Secure.getUriFor(key), false, mObserver, UserHandle.USER_ALL);
+        }
+
+        mPifEnabled = readSwitch(PIF_ENABLED_KEY);
+        mTrickyStoreEnabled = readSwitch(TRICKYSTORE_ENABLED_KEY);
+        mSwitchObserver = new ContentObserver(mHandler) {
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                onSwitchesChanged();
+            }
+        };
+        for (String key : new String[] {PIF_ENABLED_KEY, TRICKYSTORE_ENABLED_KEY}) {
+            mResolver.registerContentObserver(
+                    Settings.System.getUriFor(key), false, mSwitchObserver, UserHandle.USER_ALL);
         }
 
         mActivated = Settings.Secure.getIntForUser(
@@ -345,6 +371,40 @@ public class AxSpoofManager implements IAxSpoofManager {
         stagePifPropOverrides(getCached(Settings.Secure.SPOOF_PIF_CONFIG));
         scheduleFirstRefresh();
         killGmsFamily();
+    }
+
+    private boolean readSwitch(String key) {
+        return Settings.System.getIntForUser(mResolver, key, 1, UserHandle.USER_SYSTEM) != 0;
+    }
+
+    /**
+     * A Spoofing switch flipped. Turning PIF off drops the staged props (on stages the
+     * config again); either way the GMS family restarts so its processes pick up what the
+     * getters now serve. TrickyStoreService drops a null keybox on its own refresh.
+     */
+    private void onSwitchesChanged() {
+        final boolean pif = readSwitch(PIF_ENABLED_KEY);
+        final boolean trickyStore = readSwitch(TRICKYSTORE_ENABLED_KEY);
+        if (pif == mPifEnabled && trickyStore == mTrickyStoreEnabled) return;
+        final boolean pifChanged = pif != mPifEnabled;
+        mPifEnabled = pif;
+        mTrickyStoreEnabled = trickyStore;
+        Log.i(TAG, "Spoofing switches: PIF " + (pif ? "on" : "off")
+                + ", TrickyStore " + (trickyStore ? "on" : "off"));
+        if (pifChanged) {
+            if (pif && mActivated) {
+                stagePifPropOverrides(getCached(Settings.Secure.SPOOF_PIF_CONFIG));
+            } else if (!pif) {
+                clearPifPropOverrides();
+            }
+        }
+        killGmsFamily();
+        // A side that was off since activation may never have fetched its config or keybox
+        // (the refresh skips it): fetch now rather than at the next hourly tick.
+        if (mActivated && (pif || trickyStore)) {
+            mHandler.removeCallbacks(mRefreshAfterClear);
+            mHandler.postDelayed(mRefreshAfterClear, REFRESH_AFTER_CLEAR_DELAY_MS);
+        }
     }
 
     private void refreshKey(String key) {
@@ -696,6 +756,15 @@ public class AxSpoofManager implements IAxSpoofManager {
         String encoded = Base64.encodeToString(xml.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
         Settings.Secure.putStringForUser(
                 mResolver, Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX, encoded, UserHandle.USER_SYSTEM);
+        // The stored revocation result described the old keybox. Clear it as Evolver's
+        // deleteKeybox() does, check time included, so Spoofing shows the new one as
+        // unchecked rather than a stale VALID and the next TrickyStore visit checks it.
+        Settings.Secure.putStringForUser(mResolver, LAST_REVOCATION_STATUS_KEY, "",
+                UserHandle.USER_SYSTEM);
+        Settings.Secure.putStringForUser(mResolver, LAST_REVOCATION_REASON_KEY, "",
+                UserHandle.USER_SYSTEM);
+        Settings.Secure.putLongForUser(mResolver, LAST_REVOCATION_CHECK_KEY, 0L,
+                UserHandle.USER_SYSTEM);
 
         killGmsFamily();
         Log.i(TAG, "Auto-refreshed official keybox");
@@ -792,6 +861,10 @@ public class AxSpoofManager implements IAxSpoofManager {
      * itself, so this is where the switch has to be honored.
      */
     private void stagePifPropOverrides(String config) {
+        if (!mPifEnabled) {
+            clearPifPropOverrides();
+            return;
+        }
         final Map<String, String> fields = parsePifConfig(config);
         if (!isSpoofPropsEnabled(fields)) {
             clearPifPropOverrides();
@@ -1004,7 +1077,7 @@ public class AxSpoofManager implements IAxSpoofManager {
 
     @Override
     public String getPifConfig() {
-        if (!mActivated) return null;
+        if (!mActivated || !mPifEnabled) return null;
         return getCached(Settings.Secure.SPOOF_PIF_CONFIG);
     }
 
@@ -1016,19 +1089,19 @@ public class AxSpoofManager implements IAxSpoofManager {
 
     @Override
     public String getTrickyStoreTarget() {
-        if (!mActivated) return null;
+        if (!mActivated || !mTrickyStoreEnabled) return null;
         return getCached(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
     }
 
     @Override
     public String getTrickyStoreKeyBox() {
-        if (!mActivated) return null;
+        if (!mActivated || !mTrickyStoreEnabled) return null;
         return getCached(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX);
     }
 
     @Override
     public String getTrickyStorePatch() {
-        if (!mActivated) return null;
+        if (!mActivated || !mTrickyStoreEnabled) return null;
         return getCached(Settings.Secure.SPOOF_TRICKYSTORE_PATCH);
     }
 }

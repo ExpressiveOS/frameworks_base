@@ -843,6 +843,9 @@ public class TrickyStoreService {
     }
 
     public boolean hasKeyboxes() {
+        // The keystore hooks gate on this: refresh first (5 s cooldown), so a process that
+        // started while TrickyStore was off or before the first keybox fetch picks it up.
+        maybeRefreshKeyBox();
         return mKeyBoxManager.hasKeyboxes();
     }
 
