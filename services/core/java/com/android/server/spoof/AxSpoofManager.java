@@ -103,6 +103,10 @@ public class AxSpoofManager implements IAxSpoofManager {
     private static final String KEYBOX_SOURCE_USER = "user";
     private static final String LAST_REVOCATION_STATUS_KEY =
             "spoof_trickystore_last_revocation_status";
+    private static final String LAST_REVOCATION_REASON_KEY =
+            "spoof_trickystore_last_revocation_reason";
+    private static final String LAST_REVOCATION_CHECK_KEY =
+            "spoof_trickystore_last_revocation_check";
     private static final String OFFICIAL_KEYBOX_URL =
             "https://ota-mirror.daryldenson-apps.workers.dev/expressiveos/keybox.xml";
 
@@ -395,6 +399,12 @@ public class AxSpoofManager implements IAxSpoofManager {
             }
         }
         killGmsFamily();
+        // A side that was off since activation may never have fetched its config or keybox
+        // (the refresh skips it): fetch now rather than at the next hourly tick.
+        if (mActivated && (pif || trickyStore)) {
+            mHandler.removeCallbacks(mRefreshAfterClear);
+            mHandler.postDelayed(mRefreshAfterClear, REFRESH_AFTER_CLEAR_DELAY_MS);
+        }
     }
 
     private void refreshKey(String key) {
@@ -746,9 +756,14 @@ public class AxSpoofManager implements IAxSpoofManager {
         String encoded = Base64.encodeToString(xml.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
         Settings.Secure.putStringForUser(
                 mResolver, Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX, encoded, UserHandle.USER_SYSTEM);
-        // The stored revocation result described the old keybox. Clear it, as Evolver does
-        // on import, so Spoofing shows the new one as unchecked rather than a stale VALID.
+        // The stored revocation result described the old keybox. Clear it as Evolver's
+        // deleteKeybox() does, check time included, so Spoofing shows the new one as
+        // unchecked rather than a stale VALID and the next TrickyStore visit checks it.
         Settings.Secure.putStringForUser(mResolver, LAST_REVOCATION_STATUS_KEY, "",
+                UserHandle.USER_SYSTEM);
+        Settings.Secure.putStringForUser(mResolver, LAST_REVOCATION_REASON_KEY, "",
+                UserHandle.USER_SYSTEM);
+        Settings.Secure.putLongForUser(mResolver, LAST_REVOCATION_CHECK_KEY, 0L,
                 UserHandle.USER_SYSTEM);
 
         killGmsFamily();
