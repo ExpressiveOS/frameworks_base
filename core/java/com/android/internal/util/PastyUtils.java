@@ -31,7 +31,7 @@ import javax.net.ssl.HttpsURLConnection;
  */
 public final class PastyUtils {
     private static final String TAG = "PastyUtils";
-    private static final String BASE_URL = "https://paste.evolution-x.org";
+    private static final String BASE_URL = "https://paste.expressiveos.org";
     private static final String API_URL = String.format("%s/documents", BASE_URL);
     private static Handler handler;
 
