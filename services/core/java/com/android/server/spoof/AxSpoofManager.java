@@ -101,6 +101,8 @@ public class AxSpoofManager implements IAxSpoofManager {
 
     private static final String KEYBOX_SOURCE_KEY = "spoof_trickystore_keybox_source";
     private static final String KEYBOX_SOURCE_USER = "user";
+    private static final String LAST_REVOCATION_STATUS_KEY =
+            "spoof_trickystore_last_revocation_status";
     private static final String OFFICIAL_KEYBOX_URL =
             "https://ota-mirror.daryldenson-apps.workers.dev/expressiveos/keybox.xml";
 
@@ -744,6 +746,10 @@ public class AxSpoofManager implements IAxSpoofManager {
         String encoded = Base64.encodeToString(xml.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
         Settings.Secure.putStringForUser(
                 mResolver, Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX, encoded, UserHandle.USER_SYSTEM);
+        // The stored revocation result described the old keybox. Clear it, as Evolver does
+        // on import, so Spoofing shows the new one as unchecked rather than a stale VALID.
+        Settings.Secure.putStringForUser(mResolver, LAST_REVOCATION_STATUS_KEY, "",
+                UserHandle.USER_SYSTEM);
 
         killGmsFamily();
         Log.i(TAG, "Auto-refreshed official keybox");
