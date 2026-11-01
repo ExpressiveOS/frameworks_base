@@ -949,7 +949,9 @@ public class ApplicationPackageManager extends PackageManager {
                 "com.google.android.apps.pixel.creativeassistant"
         );
 
-        final String device = SystemProperties.get("ro.evolution.device");
+        // Integrity modules can delete ro.evolution.* at runtime; the vendor device prop stays.
+        final String device = SystemProperties.get("ro.evolution.device",
+                SystemProperties.get("ro.product.vendor.device"));
         IS_TENSOR_DEVICE = TENSOR_CODENAMES.contains(device);
     }
 
