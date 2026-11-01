@@ -117,6 +117,7 @@ public class AxSpoofManager implements IAxSpoofManager {
             "com.google.android.gms",
             "com.google.android.gms.persistent",
             "com.google.android.rkpdapp",
+            "com.android.rkpdapp",
             "com.google.android.gsf",
             "com.google.android.contactkeys",
             "com.google.android.safetycore",

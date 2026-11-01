@@ -96,6 +96,7 @@ public final class CertificateHacker {
 
             ASN1EncodableVector vector = new ASN1EncodableVector();
             ASN1Encodable originalRootOfTrust = null;
+            java.util.Set<Integer> presentIdTags = new java.util.HashSet<>();
 
             for (ASN1Encodable element : teeEnforced) {
                 ASN1TaggedObject taggedObject = (ASN1TaggedObject) element;
@@ -107,6 +108,7 @@ public final class CertificateHacker {
                     // them with the configured values, so keeping the originals would
                     // emit each tag twice.
                 } else if (attestationIdOverrides.containsKey(tagNo)) {
+                    presentIdTags.add(tagNo);
                     // Dropped here; the spoofed replacement is added back in
                     // hackAttestExtension() so the certified identity and the
                     // GMS-visible Build fields can't disagree.
@@ -154,7 +156,7 @@ public final class CertificateHacker {
                 keybox.keyPair.getPrivate());
 
             Extension hackedExtension = hackAttestExtension(
-                originalRootOfTrust, vector, encodables, attestationIdOverrides, packages);
+                originalRootOfTrust, vector, encodables, attestationIdOverrides, presentIdTags, packages);
 
             // Keep the leaf's original extension order (KeyUsage, then attestation)
             // instead of moving the attestation extension to the front.
@@ -328,7 +330,15 @@ public final class CertificateHacker {
     private static Map<Integer, byte[]> getAttestationIdOverrides() {
         Map<Integer, byte[]> overrides = new java.util.HashMap<>();
         try {
+            String processName = android.app.ActivityThread.currentProcessName();
             PlayIntegritySpoofService pif = PlayIntegritySpoofService.getInstance();
+            if (processName == null || !pif.isDroidGuard(processName)) {
+                // Only override attestation IDs if this process is DroidGuard (which sees spoofed build
+                // fields). Unspoofed callers must never have their attestation IDs overridden to mismatch
+                // their actual runtime Build fields!
+                return overrides;
+            }
+
             if (!pif.isSpoofBuildEnabled()) {
                 return overrides;
             }
@@ -357,6 +367,7 @@ public final class CertificateHacker {
             ASN1EncodableVector vector,
             ASN1Encodable[] originalEncodables,
             Map<Integer, byte[]> attestationIdOverrides,
+            java.util.Set<Integer> presentIdTags,
             String[] packages) throws Exception {
 
         // With the bootloader unlocked the TEE measures no verified-boot key and
@@ -408,10 +419,14 @@ public final class CertificateHacker {
         // Re-add the hardware identity tags dropped in hackCertificateChain(),
         // using the same certified profile PlayIntegritySpoofService serves
         // to GMS/DroidGuard, so the attestation cert and the spoofed Build
-        // fields tell the same story.
+        // fields tell the same story. Only re-add tags that were actually present
+        // in the original TEE certificate to avoid injecting unsolicited tags into
+        // challenges that didn't request device-ID attestation.
         for (Map.Entry<Integer, byte[]> entry : attestationIdOverrides.entrySet()) {
-            ordered.put(entry.getKey(), new DERTaggedObject(true, entry.getKey(),
-                new DEROctetString(entry.getValue())));
+            if (presentIdTags != null && presentIdTags.contains(entry.getKey())) {
+                ordered.put(entry.getKey(), new DERTaggedObject(true, entry.getKey(),
+                    new DEROctetString(entry.getValue())));
+            }
         }
 
         ASN1EncodableVector orderedVector = new ASN1EncodableVector();

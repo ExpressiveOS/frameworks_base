@@ -831,10 +831,9 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
             boolean needHack = false;
             String[] packages = null;
             final int requesterUid = Process.myUid();
-            // Only attested, standard RSA/EC keys are eligible. Ordinary keys,
-            // StrongBox keys and internal hardware probes must follow Keystore.
+            // Only attested, standard RSA/EC keys are eligible. Ordinary un-attested keys
+            // and internal hardware probes must follow Keystore.
             final boolean eligible = mSpec.getAttestationChallenge() != null
-                    && !mSpec.isStrongBoxBacked()
                     && (mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_EC
                         || mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_RSA)
                     && !"TrickyStoreTeeCheck".equals(mEntryAlias)
@@ -893,6 +892,11 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
                                 descriptor, metadata, packages);
                     }
                 }
+            }
+
+            if (metadata != null && metadata.keySecurityLevel != 0
+                    && metadata.keySecurityLevel != securityLevel) {
+                iSecurityLevel = mKeyStore.getSecurityLevel(metadata.keySecurityLevel);
             }
 
             AndroidKeyStorePublicKey publicKey =
@@ -1036,6 +1040,16 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
         try {
             metadata = iSecurityLevel.importKey(descriptor, null,
                     constructKeyImportArguments(), flags, keyBytes);
+        } catch (KeyStoreException e) {
+            if (mSpec.isStrongBoxBacked()) {
+                Log.w(TAG, "StrongBox importKey failed; importing into TRUSTED_ENVIRONMENT instead", e);
+                KeyStoreSecurityLevel teeSecurityLevel =
+                        mKeyStore.getSecurityLevel(SecurityLevel.TRUSTED_ENVIRONMENT);
+                metadata = teeSecurityLevel.importKey(descriptor, null,
+                        constructKeyImportArguments(), flags, keyBytes);
+            } else {
+                throw e;
+            }
         } finally {
             Arrays.fill(keyBytes, (byte) 0);
         }
