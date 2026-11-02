@@ -45,7 +45,10 @@
 #include <utils/Log.h>
 #include <utils/SystemClock.h>
 
+#include <android-base/file.h>
+#include <android-base/parseint.h>
 #include <android-base/properties.h>
+#include <android-base/strings.h>
 
 #include <ui/DisplayMode.h>
 #include <ui/PixelFormat.h>
@@ -100,6 +103,10 @@ static constexpr const char* OEM_USERSPACE_REBOOT_ANIMATION_FILE = "/oem/media/u
 static constexpr const char* SYSTEM_USERSPACE_REBOOT_ANIMATION_FILE = "/system/media/userspace-reboot.zip";
 
 static const char BOOTANIM_DATA_DIR_PATH[] = "/data/misc/bootanim";
+// Copies of persist.sys.bootanim.name and persist.bootanim.color1..4 that init keeps up to
+// date (expressiveos-bootanim-hint.rc). /metadata is mounted in first stage, so they can be
+// read on devices that start bootanim before /data is mounted and persist props are loaded.
+static const char BOOTANIM_HINT_DIR_PATH[] = "/metadata/bootanim";
 static const char BOOTANIM_TIME_DIR_NAME[] = "time";
 static const char BOOTANIM_TIME_DIR_PATH[] = "/data/misc/bootanim/time";
 static const char CLOCK_FONT_ASSET[] = "images/clock_font.png";
@@ -662,17 +669,61 @@ bool BootAnimation::preloadAnimation() {
     findBootAnimationFile();
     if (!mZipFileName.empty()) {
         mAnimation = loadAnimation(mZipFileName);
+        // A boot animation that can't be opened or has no parts would leave the boot without
+        // one: play the default animation instead.
+        if (mBooting && (mAnimation == nullptr || mAnimation->parts.empty()) &&
+                mZipFileName != BOOT_ANIMATION_FILES[0] &&
+                access(BOOT_ANIMATION_FILES[0], R_OK) == 0) {
+            SLOGW("%s is unusable, falling back to %s", mZipFileName.c_str(),
+                  BOOT_ANIMATION_FILES[0]);
+            if (mAnimation != nullptr) {
+                releaseAnimation(mAnimation);
+            }
+            mZipFileName = BOOT_ANIMATION_FILES[0];
+            mAnimation = loadAnimation(mZipFileName);
+        }
+        if (mBooting && mAnimation != nullptr && mAnimation->dynamicColoringEnabled) {
+            loadDynamicColorHints();
+        }
         return (mAnimation != nullptr);
     }
 
     return false;
 }
 
+// Reads one of init's copies in BOOTANIM_HINT_DIR_PATH, or returns "" if there is none.
+static std::string readBootAnimHint(const std::string& name) {
+    std::string hint;
+    if (!android::base::ReadFileToString(std::string(BOOTANIM_HINT_DIR_PATH) + "/" + name,
+                                         &hint)) {
+        return "";
+    }
+    return android::base::Trim(hint);
+}
+
+// The name hint may only pick a /product style: init writes "default" for an empty name,
+// and "custom" lives in /data, which isn't mounted yet.
+static bool isBootAnimNameHint(const std::string& name) {
+    return !name.empty() && name.size() <= 64 && name != "default" && name != "custom" &&
+            name.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") ==
+                    std::string::npos;
+}
+
+// A color hint is persist.bootanim.colorN as SystemUI writes it: a signed decimal ARGB int.
+// init writes "none" for an unset color; that and anything else is not a color.
+static bool isBootAnimColorHint(const std::string& color) {
+    int32_t value;
+    return color.find_first_not_of("-0123456789") == std::string::npos &&
+            android::base::ParseInt(color, &value);
+}
+
 // Resolves the requested boot animation. persist.sys.bootanim.name wins
 // ("custom" or a [a-z0-9_]+ key mapping to bootanimation_<key>.zip); the
 // legacy index in persist.sys.bootanimation_style is only used when no
-// name has been set yet.
-static std::string resolveBootAnimationPath() {
+// name has been set yet. While the name is empty, a boot (useHints) takes
+// a /product style from init's copy of the name, since persist props may
+// not be loaded yet.
+static std::string resolveBootAnimationPath(bool useHints) {
     const std::string name = android::base::GetProperty("persist.sys.bootanim.name", "");
     if (name == "custom") {
         return "/data/misc/bootanim/bootanimation.zip";
@@ -685,6 +736,17 @@ static std::string resolveBootAnimationPath() {
             if (access(path.c_str(), R_OK) == 0) return path;
         }
         return BOOT_ANIMATION_FILES[0];
+    }
+    if (useHints) {
+        const std::string hint = readBootAnimHint("name");
+        if (isBootAnimNameHint(hint)) {
+            const std::string path = "/product/media/bootanimation_" + hint + ".zip";
+            if (access(path.c_str(), R_OK) == 0) {
+                ALOGI("persist.sys.bootanim.name is empty, using the hint '%s' from %s",
+                      hint.c_str(), BOOTANIM_HINT_DIR_PATH);
+                return path;
+            }
+        }
     }
     // A legacy index was written against an older style order than BOOT_ANIMATION_FILES, so
     // it can't be mapped here. SystemServer pins it to a name on this boot; show the default
@@ -721,7 +783,12 @@ bool BootAnimation::findBootAnimationFileInternal(const std::vector<std::string>
 
 void BootAnimation::findBootAnimationFile() {
     ATRACE_CALL();
-    const std::string selectedBootAnimation = resolveBootAnimationPath();
+    const bool userspaceReboot =
+            android::base::GetBoolProperty("sys.init.userspace_reboot.in_progress", false);
+    // Only a boot can start before persist props are loaded. A shutdown or a userspace reboot
+    // plays its own animation and never uses the hints.
+    mBooting = !mShuttingDown && !userspaceReboot;
+    const std::string selectedBootAnimation = resolveBootAnimationPath(mBooting);
     ALOGD("Bootanimation requested -> %s (exists=%d)",
           selectedBootAnimation.c_str(), access(selectedBootAnimation.c_str(), R_OK) == 0);
     std::vector<std::string> bootFiles = {selectedBootAnimation};
@@ -737,7 +804,7 @@ void BootAnimation::findBootAnimationFile() {
         SYSTEM_USERSPACE_REBOOT_ANIMATION_FILE,
     };
 
-    if (android::base::GetBoolProperty("sys.init.userspace_reboot.in_progress", false)) {
+    if (userspaceReboot) {
         findBootAnimationFileInternal(userspaceRebootFiles);
     } else if (mShuttingDown) {
         findBootAnimationFileInternal(shutdownFiles);
@@ -1514,6 +1581,28 @@ void BootAnimation::drawTexturedQuad(float xStart, float yStart,
         sizeof(quadPositions) / sizeof(quadPositions[0]) / 2);
 }
 
+// Takes init's copies of the color sysprops that are still empty at preload, so that a boot
+// that starts before persist props are loaded shows the right colors from the first frame.
+void BootAnimation::loadDynamicColorHints() {
+    ATRACE_CALL();
+    std::string hints;
+    for (int i = 0; i < DYNAMIC_COLOR_COUNT; i++) {
+        const auto colorName = "color" + std::to_string(i + 1);
+        if (android::base::GetProperty("persist.bootanim." + colorName, "") != "") {
+            continue;
+        }
+        const std::string hint = readBootAnimHint(colorName);
+        if (isBootAnimColorHint(hint)) {
+            mDynamicColorHints[i] = hint;
+            hints += " " + colorName + "=" + hint;
+        }
+    }
+    if (!hints.empty()) {
+        ALOGI("persist.bootanim.color* are empty, using the hints%s from %s", hints.c_str(),
+              BOOTANIM_HINT_DIR_PATH);
+    }
+}
+
 void BootAnimation::initDynamicColors() {
     ATRACE_CALL();
     for (int i = 0; i < DYNAMIC_COLOR_COUNT; i++) {
@@ -1523,7 +1612,9 @@ void BootAnimation::initDynamicColors() {
             SLOGI("Loaded dynamic color: %s -> %s", syspropName.c_str(), syspropValue.c_str());
             mDynamicColorsApplied = true;
         }
-        parseColorDecimalString(syspropValue,
+        // Until the sysprop is loaded, use init's copy of it, if any. That leaves
+        // mDynamicColorsApplied alone, so playAnimation keeps trying the sysprops.
+        parseColorDecimalString(syspropValue != "" ? syspropValue : mDynamicColorHints[i],
             mAnimation->endColors[i], mAnimation->startColors[i]);
     }
     glUseProgram(mImageShader);

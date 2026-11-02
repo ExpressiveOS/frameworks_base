@@ -886,6 +886,11 @@
     <!-- Used for long press power torch feature - automatic turn off on timeout -->
     <protected-broadcast android:name="com.android.server.policy.PhoneWindowManager.ACTION_TORCH_OFF" />
 
+    <!-- ExpressiveOS additions -->
+
+    <!-- Sent by Settings when the boot animation or its holiday colors change, for SystemUI -->
+    <protected-broadcast android:name="org.evolution.intent.action.BOOTANIM_STYLE_CHANGED" />
+
     <!-- ====================================================================== -->
     <!--                          RUNTIME PERMISSIONS                           -->
     <!-- ====================================================================== -->
