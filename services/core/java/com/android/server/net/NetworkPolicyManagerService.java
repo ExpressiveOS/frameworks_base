@@ -35,6 +35,7 @@ import static android.app.ActivityManager.printCapabilitiesSummary;
 import static android.app.ActivityManager.procStateToString;
 import static android.app.PendingIntent.FLAG_IMMUTABLE;
 import static android.app.PendingIntent.FLAG_UPDATE_CURRENT;
+import static android.app.privatecompute.flags.Flags.enablePccFrameworkSupport;
 import static android.content.Intent.ACTION_PACKAGE_ADDED;
 import static android.content.Intent.ACTION_UID_REMOVED;
 import static android.content.Intent.ACTION_USER_ADDED;
@@ -299,6 +300,8 @@ import com.android.server.LocalServices;
 import com.android.server.ServiceThread;
 import com.android.server.SystemConfig;
 import com.android.server.connectivity.MultipathPolicyTracker;
+import com.android.server.pm.pkg.AndroidPackage;
+import com.android.server.pm.pkg.PackageStateInternal;
 import com.android.server.usage.AppStandbyInternal;
 import com.android.server.usage.AppStandbyInternal.AppIdleStateChangeListener;
 
@@ -6927,6 +6930,15 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
             final IntArray rules = new IntArray(size);
             for(int index = size - 1; index >= 0; --index) {
                 final int uid = uidRules.keyAt(index);
+                if (chain == FIREWALL_CHAIN_RESTRICTED) {
+                    // Before the check below: the app itself may lack INTERNET (Android System
+                    // Intelligence does) while its PCC sandbox still needs the network.
+                    final int pccUid = getPrivateComputeCoreUid(uid);
+                    if (pccUid != Process.INVALID_UID) {
+                        uids.add(pccUid);
+                        rules.add(uidRules.valueAt(index));
+                    }
+                }
                 if (mNeverApplyRulesToCoreUids && !isUidValidForRulesUL(uid)) {
                     continue;
                 }
@@ -6953,6 +6965,11 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
      */
     @GuardedBy("mUidRulesFirstLock")
     private void setUidFirewallRuleUL(int chain, int uid, int rule) {
+        if (chain == FIREWALL_CHAIN_RESTRICTED) {
+            // Before the check below: the app itself may lack INTERNET (Android System
+            // Intelligence does) while its PCC sandbox still needs the network.
+            setPrivateComputeCoreRestrictedRuleUL(uid, rule);
+        }
         if (mNeverApplyRulesToCoreUids && !isUidValidForRulesUL(uid)) {
             return;
         }
@@ -7005,6 +7022,56 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     }
 
     /**
+     * Returns the Private Compute Core (PCC) sandbox uid of the app with {@code uid}, or
+     * {@link Process#INVALID_UID} if the app has no PCC sandbox.
+     *
+     * <p>Restricted networking mode is an allowlist, and only app uids are ever put on it, so a
+     * PCC sandbox (Android System Intelligence runs its main process in one) would be cut off
+     * even when its app has network access. Stock Android has the mode off and never meets
+     * this. A PCC sandbox gets its app's restricted mode rule, the way an SDK sandbox does,
+     * even when the app itself has no INTERNET permission (Android System Intelligence has
+     * none; its sandbox reaches the network for its downloads). Every other chain is left as
+     * stock has it for PCC uids.
+     */
+    private int getPrivateComputeCoreUid(int uid) {
+        if (!enablePccFrameworkSupport() || !Process.isApplicationUid(uid)) {
+            return Process.INVALID_UID;
+        }
+        final PackageManagerInternal packageManagerInternal = LocalServices.getService(
+                PackageManagerInternal.class);
+        final AndroidPackage pkg = packageManagerInternal.getPackage(uid);
+        if (pkg == null) {
+            return Process.INVALID_UID;
+        }
+        final PackageStateInternal ps =
+                packageManagerInternal.getPackageStateInternal(pkg.getPackageName());
+        if (ps == null || !Process.isPrivateComputeCoreUid(ps.getPccId())) {
+            return Process.INVALID_UID;
+        }
+        return UserHandle.getUid(UserHandle.getUserId(uid), ps.getPccId());
+    }
+
+    /**
+     * Gives the PCC sandbox of the app with {@code uid}, if it has one, the app's restricted
+     * mode rule.
+     */
+    @GuardedBy("mUidRulesFirstLock")
+    private void setPrivateComputeCoreRestrictedRuleUL(int uid, int rule) {
+        final int pccUid = getPrivateComputeCoreUid(uid);
+        if (pccUid == Process.INVALID_UID) {
+            return;
+        }
+        try {
+            mNetworkManager.setFirewallUidRule(FIREWALL_CHAIN_RESTRICTED, pccUid, rule);
+            mLogger.uidFirewallRuleChanged(FIREWALL_CHAIN_RESTRICTED, pccUid, rule);
+        } catch (IllegalStateException e) {
+            Log.wtf(TAG, "problem setting firewall uid rules", e);
+        } catch (RemoteException e) {
+            // ignored; service lives in system_server
+        }
+    }
+
+    /**
      * Resets all firewall rules associated with an UID.
      */
     private void resetUidFirewallRules(int uid) {
@@ -7043,6 +7110,19 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
         }
         if (Process.isApplicationUid(uid)) {
             resetUidFirewallRules(Process.toSdkSandboxUid(uid));
+            if (enablePccFrameworkSupport()) {
+                // The package is gone by now, so its PCC uid can't be looked up; it is a fixed
+                // offset from the app uid, and only its restricted mode rule was ever set.
+                try {
+                    mNetworkManager.setFirewallUidRule(FIREWALL_CHAIN_RESTRICTED,
+                            Process.getPrivateComputeCoreUidForAppUid(uid),
+                            FIREWALL_RULE_DEFAULT);
+                } catch (IllegalStateException e) {
+                    Log.wtf(TAG, "problem resetting firewall uid rules for PCC uid of " + uid, e);
+                } catch (RemoteException e) {
+                    // ignored; service lives in system_server
+                }
+            }
         }
     }
 
