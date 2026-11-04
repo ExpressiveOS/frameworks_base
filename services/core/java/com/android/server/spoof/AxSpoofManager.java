@@ -425,7 +425,8 @@ public class AxSpoofManager implements IAxSpoofManager {
      * stop the GMS family so it stops running on the old fingerprint, then
      * refresh shortly after so the device isn't left without a fingerprint until
      * the next hourly tick. A non-empty config is staged as it stands, so a
-     * manual import or an Evolver edit reaches bionic the same way a refresh does.
+     * manual import or an Expressive Studio edit reaches bionic the same way a
+     * refresh does.
      */
     private void onPifConfigChanged() {
         final String config = getCached(Settings.Secure.SPOOF_PIF_CONFIG);
@@ -463,10 +464,10 @@ public class AxSpoofManager implements IAxSpoofManager {
 
     /**
      * Writes the default target list into a target setting that was never set,
-     * so a fresh install attests GMS and friends without anyone opening Evolver
-     * (TrickyStoreService ignores any package that isn't listed). Only a null
-     * value is seeded: an empty string means the user cleared the list on
-     * purpose and is left alone.
+     * so a fresh install attests GMS and friends without anyone opening
+     * Expressive Studio (TrickyStoreService ignores any package that isn't
+     * listed). Only a null value is seeded: an empty string means the user
+     * cleared the list on purpose and is left alone.
      */
     private void seedDefaultTargetsIfUnset() {
         String current = Settings.Secure.getStringForUser(
@@ -486,10 +487,10 @@ public class AxSpoofManager implements IAxSpoofManager {
      * inotify-driven auto-target, sourced from a live PACKAGE_ADDED broadcast
      * instead of a native watcher since this already runs in system_server.
      *
-     * Does nothing while the list is empty: Evolver seeds the default targets
-     * (GMS and friends) only when the list is empty, so writing a lone package
-     * here would leave those defaults unseeded. A JSON list can't be appended
-     * to as text either.
+     * Does nothing while the list is empty: Expressive Studio seeds the default
+     * targets (GMS and friends) only when the list is empty, so writing a lone
+     * package here would leave those defaults unseeded. A JSON list can't be
+     * appended to as text either.
      */
     private void onPackageAdded(String pkg) {
         if (!mActivated) return;
@@ -677,7 +678,7 @@ public class AxSpoofManager implements IAxSpoofManager {
         toSave.put("DEVICE_INITIAL_SDK_INT",
                 PixelDeviceRepository.getInitialSdkInt(matched.device));
         toSave.put("manually_imported", false);
-        // Same canary metadata Evolver writes, so the refetch window above can
+        // Same canary metadata Expressive Studio writes, so the refetch window above can
         // work out how long this fingerprint has left instead of always seeing
         // "unknown" and refetching daily.
         if (matched.isCanary) {
@@ -746,7 +747,7 @@ public class AxSpoofManager implements IAxSpoofManager {
             return false;
         }
 
-        // The stored value is Base64 (that's how Evolver writes it) while the
+        // The stored value is Base64 (that's how Expressive Studio writes it) while the
         // download is raw XML, so compare decoded XML with decoded XML.
         String currentXml = decodeKeyboxXml(getCached(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX));
         if (currentXml != null && sha256(currentXml).equals(sha256(xml))) {
@@ -756,9 +757,10 @@ public class AxSpoofManager implements IAxSpoofManager {
         String encoded = Base64.encodeToString(xml.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
         Settings.Secure.putStringForUser(
                 mResolver, Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX, encoded, UserHandle.USER_SYSTEM);
-        // The stored revocation result described the old keybox. Clear it as Evolver's
-        // deleteKeybox() does, check time included, so Spoofing shows the new one as
-        // unchecked rather than a stale VALID and the next TrickyStore visit checks it.
+        // The stored revocation result described the old keybox. Clear it as
+        // Expressive Studio's deleteKeybox() does, check time included, so Spoofing
+        // shows the new one as unchecked rather than a stale VALID and the next
+        // TrickyStore visit checks it.
         Settings.Secure.putStringForUser(mResolver, LAST_REVOCATION_STATUS_KEY, "",
                 UserHandle.USER_SYSTEM);
         Settings.Secure.putStringForUser(mResolver, LAST_REVOCATION_REASON_KEY, "",
@@ -794,7 +796,7 @@ public class AxSpoofManager implements IAxSpoofManager {
      * Keeps the TrickyStore attestation patch level in step with the fingerprint
      * that was just saved. With no patch set, attestation reports the device's
      * real patch while PIF spoofs the fingerprint's, and the two disagree. Same
-     * rule as Evolver's updatePatchDateIfSimple: only touch an empty value or a
+     * rule as Expressive Studio's updatePatchDateIfSimple: only touch an empty value or a
      * plain YYYY-MM-DD one, never a per-package block the user wrote.
      */
     private void updatePatchIfSimple(String patch) {
@@ -850,7 +852,7 @@ public class AxSpoofManager implements IAxSpoofManager {
      * getprop (rather than the Build class) would see the real device.
      *
      * The config is the source of truth whichever path wrote it (auto-refresh,
-     * manual import, Evolver). A field the config doesn't carry is staged empty,
+     * manual import, Expressive Studio). A field the config doesn't carry is staged empty,
      * which bionic treats as unset, so it never keeps a value from an older
      * config. Like PIFork, an explicit *.build.id, *.security_patch or
      * *api_level entry wins over the matching Build field; the build id falls

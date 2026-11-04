@@ -915,7 +915,7 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
         private const val CHIP_STYLE_CUSTOM_GRADIENT = 13
 
         // Chip styles (1-based, matches statusbar_clock_chip) with a light/near-white
-        // center that needs dark clock text. Keep in sync with Evolver's
+        // center that needs dark clock text. Keep in sync with Expressive Studio's
         // ClockBackgroundChipPreference.
         private val LIGHT_CHIP_STYLES = setOf(5)
         private const val CHIP_TEXT_DARK = 0xFF1B1B1F.toInt()
