@@ -7445,7 +7445,7 @@ message MetricsEvent {
     // Add new aosp constants above this line.
     // END OF AOSP CONSTANTS
 
-    // Evolver
+    // Expressive Studio
     EVOLVER = 4000;
   }
 }

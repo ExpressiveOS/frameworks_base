@@ -22444,21 +22444,21 @@ public final class Settings {
         public static final String SCENE_CONTAINER_ENABLED = "scene_container_enabled";
 
         /**
-         * Whether Evolution X should block screenshot detection.
+         * Whether the system should block screenshot detection.
          * 
          * @hide
          */
         public static final String EVOLUTION_WINDOW_BLOCK_SCREENSHOT_DETECTION = "window_block_screenshot_detection";
 
         /**
-         * Whether Evolution X should block screen recording detection.
+         * Whether the system should block screen recording detection.
          * 
          * @hide
          */
         public static final String EVOLUTION_WINDOW_BLOCK_SCREENRECORD_DETECTION = "window_block_screenrecord_detection";
 
         /**
-         * Whether Evolution X should hide screen capture status (both screenshot and screen
+         * Whether the system should hide screen capture status (both screenshot and screen
          * recording detection) from all apps. Acts as a master switch on top of
          * {@link #EVOLUTION_WINDOW_BLOCK_SCREENSHOT_DETECTION} and
          * {@link #EVOLUTION_WINDOW_BLOCK_SCREENRECORD_DETECTION}.

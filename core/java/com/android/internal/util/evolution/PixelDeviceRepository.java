@@ -183,7 +183,7 @@ public final class PixelDeviceRepository {
             ));
 
     // The one device Play Integrity spoofing targets by default (and the only one
-    // Evolver marks as recommended). The Pixel 6a canary print is reported to keep
+    // Expressive Studio marks as recommended). The Pixel 6a canary print is reported to keep
     // RCS working, unlike the flagship canary prints. This is deliberately separate
     // from GENERATION_ORDER, which still drives the Pixel props spoof for other apps.
     public static final String PIF_DEFAULT_CODENAME = "bluejay";

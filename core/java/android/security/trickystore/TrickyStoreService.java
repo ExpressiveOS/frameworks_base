@@ -77,7 +77,7 @@ public class TrickyStoreService {
     }
 
     // Kill switch for the background keybox revocation check (network, 24h cooldown,
-    // logging-only: it never changes keybox state). Evolver runs its own check.
+    // logging-only: it never changes keybox state). Expressive Studio runs its own check.
     private static final boolean ENABLE_REVOCATION_CHECK = true;
 
     // Publish package policy atomically. An attestation cannot see half a refresh.
@@ -122,8 +122,9 @@ public class TrickyStoreService {
     // Default TrickyStore targets, in the same syntax as SPOOF_TRICKYSTORE_TARGET:
     // "pkg" is AUTO, "pkg?" leaf hack, "pkg!" cert generation, "pkg-" skip.
     // AxSpoofManager writes this into a target setting that was never set, so a
-    // fresh install attests GMS and friends without anyone opening Evolver, and
-    // Evolver's reset and app picker read the same list rather than keeping a copy.
+    // fresh install attests GMS and friends without anyone opening Expressive
+    // Studio, and Expressive Studio's reset and app picker read the same list
+    // rather than keeping a copy.
     public static final String DEFAULT_TARGET_LIST = String.join("\n",
             "android",
             // GMS and friends, AUTO mode
