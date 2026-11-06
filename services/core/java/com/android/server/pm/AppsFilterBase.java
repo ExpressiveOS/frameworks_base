@@ -392,6 +392,7 @@ public abstract class AppsFilterBase implements AppsFilterSnapshot {
                 || packageName.startsWith("co.aospa.")
                 || packageName.startsWith("io.chaldeaprjkt.")
                 || packageName.startsWith("org.evolution.")
+                || packageName.startsWith("org.expressiveos.")
                 || packageName.startsWith("org.lunaris.")
                 || packageName.startsWith("org.omnirom.")
                 || packageName.startsWith("org.protonaosp.");
