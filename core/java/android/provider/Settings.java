@@ -15855,6 +15855,24 @@ public final class Settings {
          */
         @Readable
         public static final String STATUS_BAR_SHOW_LYRIC = "status_bar_show_lyric";
+
+        // Sandbox / App Lock keys, read and written only by the Sandbox and AppLocker apps,
+        // SystemUI and system_server. Declared without @Readable so they stay system-only.
+
+        /** @hide */
+        public static final String SANDBOX_SECURITY_TYPE = "sandbox_security_type";
+
+        /** @hide */
+        public static final String SANDBOX_CREDENTIAL_HASH = "sandbox_credential_hash";
+
+        /** @hide */
+        public static final String SANDBOX_SECURITY_QUESTION = "sandbox_security_question";
+
+        /** @hide */
+        public static final String SANDBOX_SECURITY_ANSWER = "sandbox_security_answer";
+
+        /** @hide */
+        public static final String SANDBOX_CONFIG = "sandbox_config";
     }
 
     /**

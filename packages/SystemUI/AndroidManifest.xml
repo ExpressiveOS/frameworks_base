@@ -446,6 +446,10 @@
     <!-- OmniJaws -->
     <uses-permission android:name="org.omnirom.omnijaws.READ_WEATHER" />
 
+    <!-- Triple-tap freeform (NotificationPanelViewController) sends LMOFreeform's START_FREEFORM
+         broadcast, whose receiver requires this permission. -->
+    <uses-permission android:name="com.libremobileos.permission.START_FREEFORM" />
+
     <!-- Kill button in notification guts -->
     <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
 

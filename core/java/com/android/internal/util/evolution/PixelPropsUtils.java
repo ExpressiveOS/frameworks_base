@@ -493,21 +493,54 @@ public final class PixelPropsUtils {
     }
 
     public static boolean isSystemLauncher(Context context) {
+        return isSystemLauncher(android.os.Binder.getCallingUid());
+    }
+
+    public static boolean isSystemLauncher(int callingUid) {
         try {
-            return isSystemLauncherInternal(
-                    context.getPackageManager().getNameForUid(android.os.Binder.getCallingUid()));
+            final String callerPackage =
+                    ActivityThread.getPackageManager().getNameForUid(callingUid);
+            // Only the preinstalled launcher counts, not any package with a launcher name.
+            return isSystemLauncherInternal(callerPackage)
+                    && isSystemAppWithUid(callerPackage, callingUid);
         } catch (Exception e) {
             return false;
         }
     }
 
-    public static boolean isSystemLauncher(int callingUid) {
+    /**
+     * True when {@code pkg} is installed for the caller's user with {@code callingUid} and is a
+     * system app (preinstalled, or an update of a preinstalled app signed with the same key).
+     */
+    private static boolean isSystemAppWithUid(String pkg, int callingUid) {
+        if (pkg == null) return false;
         try {
-            return isSystemLauncherInternal(
-                    ActivityThread.getPackageManager().getNameForUid(callingUid));
+            ApplicationInfo appInfo =
+                    ActivityThread.getPackageManager()
+                            .getApplicationInfo(pkg, 0, UserHandle.getUserId(callingUid));
+            return appInfo != null
+                    && appInfo.uid == callingUid
+                    && (appInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
         } catch (Exception e) {
+            dlog("isSystemAppWithUid: failed to get appInfo for " + pkg + ": " + e.getMessage());
             return false;
         }
+    }
+
+    /** True when one of the caller uid's packages is a Google system app. */
+    private static boolean isSystemGoogleUid(int callingUid) {
+        try {
+            final String[] pkgs = ActivityThread.getPackageManager().getPackagesForUid(callingUid);
+            if (pkgs == null) return false;
+            for (String pkg : pkgs) {
+                if (isPackageGoogle(pkg) && isSystemAppWithUid(pkg, callingUid)) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            dlog("isSystemGoogleUid: failed for uid " + callingUid + ": " + e.getMessage());
+        }
+        return false;
     }
 
     public static boolean isSystemLauncherInternal(String callerPackage) {
@@ -516,15 +549,9 @@ public final class PixelPropsUtils {
 
     public static boolean shouldBypassTaskPermission(int callingUid) {
         for (String pkg : getExemptedUidPkgs()) {
-            try {
-                ApplicationInfo appInfo =
-                        ActivityThread.getPackageManager()
-                                .getApplicationInfo(pkg, 0, UserHandle.getUserId(callingUid));
-                if (appInfo.uid == callingUid) {
-                    return true;
-                }
-            } catch (Exception e) {
-                dlog("shouldBypassTaskPermission: failed to get appInfo for uid " + callingUid + ": " + e.getMessage());
+            // Only the preinstalled app counts, not any package with a matching name.
+            if (isSystemAppWithUid(pkg, callingUid)) {
+                return true;
             }
         }
         return false;
@@ -532,14 +559,12 @@ public final class PixelPropsUtils {
 
     public static boolean shouldBypassManageActivityTaskPermission(Context context) {
         final int callingUid = Binder.getCallingUid();
-        return isSystemLauncher(callingUid)
-                || isPackageGoogle(context.getPackageManager().getNameForUid(callingUid));
+        return isSystemLauncher(callingUid) || isSystemGoogleUid(callingUid);
     }
 
     public static boolean shouldBypassMonitorInputPermission(Context context) {
         final int callingUid = Binder.getCallingUid();
-        return shouldBypassTaskPermission(callingUid)
-                || isPackageGoogle(context.getPackageManager().getNameForUid(callingUid));
+        return shouldBypassTaskPermission(callingUid) || isSystemGoogleUid(callingUid);
     }
 
     // Whitelist of package names to bypass FGS type validation
