@@ -71,7 +71,9 @@ class AxAppLockerHelper @Inject constructor(
     private val lockStateListener = object : IAppLockStateListener.Stub() {
         override fun onAppLockStateChanged(packageName: String, locked: Boolean) {
             if (packageName.isBlank()) return
-            hasLockCache[packageName] = locked
+            // hasAppLock() caches under "<package>:<userId>"; drop every user's entry so the
+            // next read asks system_server again.
+            hasLockCache.keys.removeAll { it.startsWith("$packageName:") }
             clearSessionCacheFor(packageName)
             if (!locked) {
                 val suffix = ":$packageName"

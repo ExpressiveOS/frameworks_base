@@ -224,15 +224,15 @@ class AxPlatformObservers @Inject constructor(
                 batteryInteractor.level,
                 batteryInteractor.isPluggedIn,
                 batteryInteractor.isCharging,
-                batteryInteractor.powerSave,
-                batteryInteractor.batteryTimeRemainingEstimate
-            ) { level, pluggedIn, charging, powerSave, estimate ->
+                batteryInteractor.powerSave
+            ) { level, pluggedIn, charging, powerSave ->
+                // No client reads a time-remaining estimate, and subscribing to it keeps
+                // SystemUI polling the estimate provider every 2 minutes, so it is not sent.
                 Bundle().apply {
                     putInt("level", level ?: -1)
                     putBoolean("isPluggedIn", pluggedIn)
                     putBoolean("isCharging", charging)
                     putBoolean("powerSave", powerSave)
-                    putString("batteryTimeRemainingEstimate", estimate?.toString() ?: "")
                 }
             }.flowOn(bgDispatcher).collect { bundle ->
                 withContext(mainDispatcher) {

@@ -236,9 +236,6 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
                 mCameraId = cameraIds[0];
             }
         } catch (Exception e) {}
-
-        IntentFilter ringerFilter = new IntentFilter(AudioManager.INTERNAL_RINGER_MODE_CHANGED_ACTION);
-        mContext.registerReceiver(mRingerModeReceiver, ringerFilter);
     }
 
     private final StatusBarStateController.StateListener mStatusBarStateListener =
@@ -314,6 +311,13 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
     }
 
     public void registerCallbacks() {
+        // Load the widget lists first: isWidgetEnabled() below reads them, and they are empty
+        // until the observer has run once.
+        mLockscreenWidgetsObserver.observe();
+        // Registered here, not in the constructor, because unregisterCallbacks() drops it on
+        // every detach.
+        mContext.registerReceiver(mRingerModeReceiver,
+                new IntentFilter(AudioManager.INTERNAL_RINGER_MODE_CHANGED_ACTION));
         if (isWidgetEnabled("hotspot")) {
             mHotspotController.addCallback(mHotspotCallback);
         }
@@ -335,7 +339,6 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
         mStatusBarStateController.addCallback(mStatusBarStateListener);
         mStatusBarStateListener.onDozingChanged(mStatusBarStateController.isDozing());
         mMediaSessionManagerHelper.addMediaMetadataListener(this);
-        mLockscreenWidgetsObserver.observe();
         updateWidgetViews();
         updateMediaPlaybackState();
     }
