@@ -19,6 +19,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -149,6 +150,11 @@ class QuickLookClient @Inject constructor(
 
     private fun bindService() {
         if (isBound) return
+        // Only bind a platform-signed AxQuickLook.
+        if (context.packageManager.checkSignatures("android", SERVICE_PACKAGE) !=
+                PackageManager.SIGNATURE_MATCH) {
+            return
+        }
         val intent = Intent(SERVICE_ACTION).apply {
             setPackage(SERVICE_PACKAGE)
         }

@@ -76,7 +76,7 @@ class MediaSessionManagerHelper private constructor(private val context: Context
     init {
         lastSavedPackageName = Settings.System.getString(
             context.contentResolver,
-            "media_session_last_package_name"
+            Settings.System.MEDIA_SESSION_LAST_PACKAGE_NAME
         )
 
         scope.launch {
@@ -164,7 +164,7 @@ class MediaSessionManagerHelper private constructor(private val context: Context
             if (pkg != lastSavedPackageName) {
                 Settings.System.putString(
                     context.contentResolver,
-                    "media_session_last_package_name",
+                    Settings.System.MEDIA_SESSION_LAST_PACKAGE_NAME,
                     pkg
                 )
                 lastSavedPackageName = pkg

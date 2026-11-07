@@ -940,7 +940,7 @@ public class ApplicationPackageManager extends PackageManager {
         Collections.addAll(TENSOR_CODENAMES,
                 "stallion","blazer","frankel","mustang","tegu","comet","komodo","caiman","tokay",
                 "akita","husky","shiba","felix","tangorpro","lynx","cheetah","panther",
-                "bluejay","oriole","raven"
+                "bluejay","oriole","raven","rango","kodiak","grizzly","cubs","yogi"
         );
 
         Collections.addAll(PRIV_PKGS,
@@ -953,7 +953,9 @@ public class ApplicationPackageManager extends PackageManager {
         // Integrity modules can delete ro.evolution.* at runtime; the vendor device prop stays.
         final String device = SystemProperties.get("ro.evolution.device",
                 SystemProperties.get("ro.product.vendor.device"));
-        IS_TENSOR_DEVICE = TENSOR_CODENAMES.contains(device);
+        // Every Tensor Pixel reports Google as the SoC maker, so new Pixels need no list edit.
+        IS_TENSOR_DEVICE = TENSOR_CODENAMES.contains(device)
+                || "Google".equalsIgnoreCase(SystemProperties.get("ro.soc.manufacturer"));
     }
 
     @Override

@@ -118,6 +118,9 @@ public final class GameSpaceService extends SystemService {
             return;
         }
         mStarted = true;
+        // No game runs at boot: clear a gaming-mode flag left by a reboot or crash mid-game,
+        // or SystemUI keeps suppressing full-screen alarms and calls.
+        mHandler.post(mGameStateDispatcher::clearStaleGamingMode);
         mGamePackageHandler.registerPackageReceiver();
         mGameListManager.registerGameListObserver(mHandler);
         mGameListManager.addListener(() -> mHandler.post(() -> {
