@@ -16,7 +16,6 @@
 
 package com.android.systemui.statusbar.notification.collection.coordinator
 
-import android.app.AxSandboxManager
 import android.app.Notification
 import android.os.UserHandle
 import com.android.app.tracing.coroutines.launchTraced as launch
@@ -219,12 +218,10 @@ constructor(
                 screenshareNotificationHiding() &&
                     sensitiveNotificationProtectionController.shouldProtectNotification(entry)
 
+            // The live lock state, not the extra NMS stamps at post time: a notification that
+            // was already showing when its app got locked has no extra.
             val isAppLocked =
-                entry.sbn.notification.extras.getBoolean(
-                    AxSandboxManager.EXTRA_NOTIFICATION_APP_LOCKED,
-                    false,
-                ) &&
-                    axAppLockerHelper.needsAuth(entry.sbn.packageName, entry.sbn.user.identifier)
+                axAppLockerHelper.needsAuth(entry.sbn.packageName, entry.sbn.user.identifier)
             val needsRedaction =
                 isAppLocked || lockscreenUserManager.getRedactionType(entry) != REDACTION_TYPE_NONE
             val isSensitive = userPublic && needsRedaction

@@ -347,21 +347,13 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
         if (isWidgetEnabled("weather")) {
             disableWeatherUpdates();
         }
-        if (isWidgetEnabled("wifi")) {
-            mNetworkController.removeCallback(mWifiSignalCallback);
-        }
-        if (isWidgetEnabled("data")) {
-            mNetworkController.removeCallback(mCellSignalCallback);
-        }
-        if (isWidgetEnabled("bt")) {
-            mBluetoothController.removeCallback(mBtCallback);
-        }
-        if (isWidgetEnabled("torch")) {
-            mFlashlightController.removeCallback(mFlashlightCallback);
-        }
-        if (isWidgetEnabled("hotspot")) {
-            mHotspotController.removeCallback(mHotspotCallback);
-        }
+        // Remove all of them: the lists may have changed since registerCallbacks(), and
+        // removing a callback that isn't registered does nothing.
+        mNetworkController.removeCallback(mWifiSignalCallback);
+        mNetworkController.removeCallback(mCellSignalCallback);
+        mBluetoothController.removeCallback(mBtCallback);
+        mFlashlightController.removeCallback(mFlashlightCallback);
+        mHotspotController.removeCallback(mHotspotCallback);
         mConfigurationController.removeCallback(mConfigurationListener);
         mStatusBarStateController.removeCallback(mStatusBarStateListener);
         try {

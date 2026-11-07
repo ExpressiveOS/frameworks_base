@@ -21348,6 +21348,7 @@ public class ActivityManagerService extends IActivityManager.Stub
     /**
      * The sandbox, App Lock and app-hiding calls below are for the system only: system_server,
      * the Sandbox and AppLocker apps (android.uid.system) and SystemUI (STATUS_BAR_SERVICE).
+     * STATUS_BAR_SERVICE is signature|recents, so the Recents app (the launcher) is excluded.
      */
     private void enforceAxSandboxCaller(String method) {
         final int callingUid = Binder.getCallingUid();
@@ -21356,7 +21357,8 @@ public class ActivityManagerService extends IActivityManager.Stub
             return;
         }
         if (checkCallingPermission(android.Manifest.permission.STATUS_BAR_SERVICE)
-                == PackageManager.PERMISSION_GRANTED) {
+                == PackageManager.PERMISSION_GRANTED
+                && !mAtmInternal.isCallerRecents(callingUid)) {
             return;
         }
         throw new SecurityException(method + ": uid " + callingUid + " is not allowed");

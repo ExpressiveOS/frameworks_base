@@ -31,7 +31,6 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator.AnimatorUpdateListener;
-import android.app.AxSandboxManager;
 import android.app.Notification;
 import android.content.Context;
 import android.content.res.Configuration;
@@ -461,13 +460,8 @@ public class ExpandableNotificationRow extends ActivatableNotificationView
     }
 
     private boolean isNotificationAppLocked() {
-        StatusBarNotification sbn = getAppLockSbn();
-        if (sbn == null) return false;
-        if (!sbn.getNotification().extras
-                .getBoolean(AxSandboxManager.EXTRA_NOTIFICATION_APP_LOCKED, false)) {
-            return false;
-        }
-        return mAxAppLockerHelper.needsAuth(sbn.getPackageName(), sbn.getUserId());
+        // The live lock state, not the post-time extra (see SensitiveContentCoordinator).
+        return doesNotificationNeedAuth();
     }
 
     private boolean doesNotificationNeedAuth() {
