@@ -236,9 +236,6 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
                 mCameraId = cameraIds[0];
             }
         } catch (Exception e) {}
-
-        IntentFilter ringerFilter = new IntentFilter(AudioManager.INTERNAL_RINGER_MODE_CHANGED_ACTION);
-        mContext.registerReceiver(mRingerModeReceiver, ringerFilter);
     }
 
     private final StatusBarStateController.StateListener mStatusBarStateListener =
@@ -314,6 +311,13 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
     }
 
     public void registerCallbacks() {
+        // Load the widget lists first: isWidgetEnabled() below reads them, and they are empty
+        // until the observer has run once.
+        mLockscreenWidgetsObserver.observe();
+        // Registered here, not in the constructor, because unregisterCallbacks() drops it on
+        // every detach.
+        mContext.registerReceiver(mRingerModeReceiver,
+                new IntentFilter(AudioManager.INTERNAL_RINGER_MODE_CHANGED_ACTION));
         if (isWidgetEnabled("hotspot")) {
             mHotspotController.addCallback(mHotspotCallback);
         }
@@ -335,30 +339,19 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
         mStatusBarStateController.addCallback(mStatusBarStateListener);
         mStatusBarStateListener.onDozingChanged(mStatusBarStateController.isDozing());
         mMediaSessionManagerHelper.addMediaMetadataListener(this);
-        mLockscreenWidgetsObserver.observe();
         updateWidgetViews();
         updateMediaPlaybackState();
     }
 
     public void unregisterCallbacks() {
-        if (isWidgetEnabled("weather")) {
-            disableWeatherUpdates();
-        }
-        if (isWidgetEnabled("wifi")) {
-            mNetworkController.removeCallback(mWifiSignalCallback);
-        }
-        if (isWidgetEnabled("data")) {
-            mNetworkController.removeCallback(mCellSignalCallback);
-        }
-        if (isWidgetEnabled("bt")) {
-            mBluetoothController.removeCallback(mBtCallback);
-        }
-        if (isWidgetEnabled("torch")) {
-            mFlashlightController.removeCallback(mFlashlightCallback);
-        }
-        if (isWidgetEnabled("hotspot")) {
-            mHotspotController.removeCallback(mHotspotCallback);
-        }
+        // Remove all of them: the lists may have changed since registerCallbacks(), and
+        // removing a callback or observer that isn't registered does nothing.
+        disableWeatherUpdates();
+        mNetworkController.removeCallback(mWifiSignalCallback);
+        mNetworkController.removeCallback(mCellSignalCallback);
+        mBluetoothController.removeCallback(mBtCallback);
+        mFlashlightController.removeCallback(mFlashlightCallback);
+        mHotspotController.removeCallback(mHotspotCallback);
         mConfigurationController.removeCallback(mConfigurationListener);
         mStatusBarStateController.removeCallback(mStatusBarStateListener);
         try {
@@ -711,7 +704,8 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
     }
 
     private String getLastUsedMedia() {
-        return Settings.System.getString(mContext.getContentResolver(), "media_session_last_package_name");
+        return Settings.System.getString(mContext.getContentResolver(),
+                Settings.System.MEDIA_SESSION_LAST_PACKAGE_NAME);
     }
 
     private void dispatchMediaKeyWithWakeLockToMediaSession(final int keycode) {

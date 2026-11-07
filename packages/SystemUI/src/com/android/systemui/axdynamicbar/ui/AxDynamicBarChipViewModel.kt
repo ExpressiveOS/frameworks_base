@@ -122,7 +122,9 @@ constructor(
             )
         }.stateIn(
             applicationScope,
-            SharingStarted.Lazily,
+            // Only while the lock screen chip collects it: the time-remaining estimate polls the
+            // estimate provider every 2 minutes for as long as anything subscribes.
+            SharingStarted.WhileSubscribed(5_000),
             KeyguardBatteryInfo(0, false, false, false, null),
         )
 
@@ -163,7 +165,7 @@ constructor(
                 }
             }
             .distinctUntilChanged()
-            .stateIn(applicationScope, SharingStarted.Lazily, "")
+            .stateIn(applicationScope, SharingStarted.WhileSubscribed(5_000), "")
 
     val isOnKeyguard: StateFlow<Boolean> = interactor.isOnKeyguard
 

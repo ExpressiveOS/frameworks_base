@@ -446,6 +446,10 @@
     <!-- OmniJaws -->
     <uses-permission android:name="org.omnirom.omnijaws.READ_WEATHER" />
 
+    <!-- Triple-tap freeform (NotificationPanelViewController) sends LMOFreeform's START_FREEFORM
+         broadcast, whose receiver requires this permission. -->
+    <uses-permission android:name="com.libremobileos.permission.START_FREEFORM" />
+
     <!-- Kill button in notification guts -->
     <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
 
@@ -633,11 +637,10 @@
         <service android:name=".recordissue.IssueRecordingServiceLegacy"
                 android:foregroundServiceType="systemExempted"/>
 
-        <!-- started from PhoneWindowManager -->
         <service
             android:name=".evolution.onthego.OnTheGoService"
             android:foregroundServiceType="camera"
-            android:exported="true" />
+            android:exported="false" />
 
         <receiver android:name=".SysuiRestartReceiver"
             android:exported="false">
@@ -649,10 +652,10 @@
         </receiver>
 
         <service android:name="com.android.systemui.CPUInfoService"
-                android:exported="true" />
+                android:exported="false" />
 
         <service android:name="com.android.systemui.FPSInfoService"
-                android:exported="true" />
+                android:exported="false" />
 
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>

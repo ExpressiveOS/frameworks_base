@@ -653,13 +653,20 @@ public class SettingsProvider extends ContentProvider {
         }
 
         String settings = null;
+        // The lookup is a system-only call: run it as SettingsProvider, not as the app that
+        // is reading the setting.
+        final int callingUserId = UserHandle.getCallingUserId();
+        final long identity = Binder.clearCallingIdentity();
         try {
             AxSandboxManager sandboxManager =
                     getContext().getSystemService(AxSandboxManager.class);
             if (sandboxManager != null) {
-                settings = sandboxManager.getSpoofedSetting(callingPackage, name, UserHandle.getCallingUserId());
+                settings = sandboxManager.getSpoofedSetting(callingPackage, name, callingUserId);
             }
-        } catch (Exception e) {}
+        } catch (Exception e) {
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
 
         return settings;
     }

@@ -97,7 +97,7 @@ public class ExtremeChargingTile extends QSTileImpl<BooleanState>
             }
         };
 
-        mBatteryController.addCallback(this);
+        mBatteryController.observe(getLifecycle(), this);
     }
 
     @Override

@@ -20,6 +20,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.database.ContentObserver;
 import android.os.BatteryManager;
+import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Parcel;
@@ -235,7 +236,8 @@ public class ExtremeChargingController {
                 Slog.w(TAG, "Power HAL service not found: " + POWER_HAL_SERVICE);
                 return null;
             }
-            mPowerExt = powerService.getExtension();
+            // getExtension() returns a fresh proxy that is not marked for blocking calls.
+            mPowerExt = Binder.allowBlocking(powerService.getExtension());
             if (mPowerExt != null) {
                 mPowerExt.linkToDeath(() -> {
                     synchronized (ExtremeChargingController.this) {

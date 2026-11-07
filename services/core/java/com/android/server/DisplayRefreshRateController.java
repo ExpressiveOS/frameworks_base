@@ -112,8 +112,10 @@ public final class DisplayRefreshRateController {
                     mAppRefreshRateConfigMap.remove(packageName);
                 }
                 mHandler.post(() -> {
-                    saveConfigIntoSettingsLocked();
-                    updateRefreshRateLocked(mSystemExService.getTopFullscreenPackage());
+                    synchronized (mConfigLock) {
+                        saveConfigIntoSettingsLocked();
+                        updateRefreshRateLocked(mSystemExService.getTopFullscreenPackage());
+                    }
                 });
             }
         }
@@ -125,8 +127,10 @@ public final class DisplayRefreshRateController {
                     logD("unsetRefreshRateForPackage, packageName: " + packageName);
                     mAppRefreshRateConfigMap.remove(packageName);
                     mHandler.post(() -> {
-                        saveConfigIntoSettingsLocked();
-                        updateRefreshRateLocked(mSystemExService.getTopFullscreenPackage());
+                        synchronized (mConfigLock) {
+                            saveConfigIntoSettingsLocked();
+                            updateRefreshRateLocked(mSystemExService.getTopFullscreenPackage());
+                        }
                     });
                 }
             }
@@ -141,11 +145,14 @@ public final class DisplayRefreshRateController {
                     Settings.System.putIntForUser(mSystemExService.getContentResolver(), EXTREME_REFRESH_RATE,
                             enabled ? 1 : 0, UserHandle.USER_CURRENT);
                     mHandler.post(() -> {
-                        if (enabled) {
-                            mRequestedRefreshRate = getMaxAllowedRefreshRate();
-                            notifyRefreshRateChanged();
-                        } else {
-                            updateRefreshRateLocked(mSystemExService.getTopFullscreenPackage());
+                        synchronized (mConfigLock) {
+                            if (enabled) {
+                                mRequestedRefreshRate = getMaxAllowedRefreshRate();
+                                notifyRefreshRateChanged();
+                            } else {
+                                updateRefreshRateLocked(
+                                        mSystemExService.getTopFullscreenPackage());
+                            }
                         }
                     });
                 }
@@ -369,6 +376,10 @@ public final class DisplayRefreshRateController {
     }
 
     private int getMaxAllowedRefreshRate() {
+        if (mHelper == null) {
+            // Set in onBootCompleted.
+            return -1;
+        }
         final ArrayList<Integer> supportedList = mHelper.getSupportedRefreshRateList();
         if (supportedList.size() > 0) {
             return supportedList.get(supportedList.size() - 1);

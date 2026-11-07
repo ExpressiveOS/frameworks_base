@@ -170,7 +170,7 @@ class PulseViewController @Inject constructor(
             if (show) {
                 audioProcessor.startCapture()
                 view.setVisibility(true, animate = true, durationMs = PULSE_FADE_IN_DURATION_MS)
-            } else if (pulseEnabled && hapticsMode > 1) {
+            } else if (pulseEnabled && hapticsMode > 1 && isMediaPlaying) {
                 audioProcessor.startCapture()
                 view.setVisibility(false, animate = true, durationMs = PULSE_FADE_OUT_DURATION_MS)
             } else {
@@ -195,6 +195,8 @@ class PulseViewController @Inject constructor(
     override fun onPlaybackStateChanged(state: Int) {
         isMediaPlaying = state == PlaybackState.STATE_PLAYING
         updateState()
+        // While the visualizer is hidden, "always" bass haptics capture only during playback.
+        if (!pulseRunning) updatePulseDisplay(false)
     }
 
     override fun onMediaColorsChanged(color: Int) {

@@ -17,6 +17,7 @@
 package com.android.systemui.ax
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.Bundle
 import android.os.IBinder
@@ -70,18 +71,28 @@ class AxPlatformServiceImpl @Inject constructor(
             scope.launch(mainDispatcher) { featureController.performAction(feature, param) }
         }
 
-        override fun getState(feature: String?): Bundle =
-            if (feature != null) stateManager.getState(feature) else Bundle.EMPTY
+        override fun getState(feature: String?): Bundle {
+            enforceSystemCaller()
+            return if (feature != null) stateManager.getState(feature) else Bundle.EMPTY
+        }
 
-        override fun getAllStates(): Bundle = stateManager.getAllStates()
+        override fun getAllStates(): Bundle {
+            enforceSystemCaller()
+            return stateManager.getAllStates()
+        }
 
-        override fun getSupportedFeatures(): Array<String> = featureController.supportedFeatures
+        override fun getSupportedFeatures(): Array<String> {
+            enforceSystemCaller()
+            return featureController.supportedFeatures
+        }
 
         override fun registerCallback(callback: IAxPlatformCallback?) {
+            enforceSystemCaller()
             callback?.let { stateManager.registerCallback(it) }
         }
 
         override fun unregisterCallback(callback: IAxPlatformCallback?) {
+            enforceSystemCaller()
             callback?.let { stateManager.unregisterCallback(it) }
         }
     }
@@ -94,17 +105,15 @@ class AxPlatformServiceImpl @Inject constructor(
         observers.registerAll()
     }
 
+    // Callers must be signed with the platform key: system_server, SystemUI itself, GameSpace
+    // (android.uid.system) and AxQuickLook (certificate "platform").
     private fun enforceSystemCaller() {
         val uid = Binder.getCallingUid()
         if (uid == Process.SYSTEM_UID || uid == Process.myUid()) return
         val token = Binder.clearCallingIdentity()
         try {
-            val packages = context.packageManager.getPackagesForUid(uid)
-            val allowed = packages?.any {
-                it.startsWith("com.android.axion.") ||
-                    it == "com.android.systemui" ||
-                    it == "io.chaldeaprjkt.gamespace"
-            } == true
+            val allowed = context.packageManager.checkSignatures(Process.myUid(), uid) ==
+                PackageManager.SIGNATURE_MATCH
             if (!allowed) {
                 throw SecurityException("AxPlatformService: caller uid=$uid not permitted")
             }

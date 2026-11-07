@@ -51,7 +51,9 @@ class AxAppLockerHelper @Inject constructor(
     }
 
     @Volatile private var listenersRegistered = false
-    private val hasLockCache = ConcurrentHashMap<String, Boolean>()
+    // userId -> (package -> has an App Lock). Keyed without building a string, because the
+    // notification rows ask on every layout pass.
+    private val hasLockCache = ConcurrentHashMap<Int, ConcurrentHashMap<String, Boolean>>()
     private val sessionAuthCache = ConcurrentHashMap<String, Boolean>()
     private val refreshListeners = CopyOnWriteArrayList<Runnable>()
     private val notifUnlocks = Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
@@ -71,7 +73,8 @@ class AxAppLockerHelper @Inject constructor(
     private val lockStateListener = object : IAppLockStateListener.Stub() {
         override fun onAppLockStateChanged(packageName: String, locked: Boolean) {
             if (packageName.isBlank()) return
-            hasLockCache[packageName] = locked
+            // Drop every user's cached entry so the next hasAppLock() asks system_server again.
+            hasLockCache.values.forEach { it.remove(packageName) }
             clearSessionCacheFor(packageName)
             if (!locked) {
                 val suffix = ":$packageName"
@@ -165,10 +168,10 @@ class AxAppLockerHelper @Inject constructor(
 
     fun hasAppLock(packageName: String, userId: Int = UserHandle.USER_SYSTEM): Boolean {
         if (packageName.isBlank()) return false
-        val cacheKey = "$packageName:$userId"
-        hasLockCache[cacheKey]?.let { return it }
+        val userCache = hasLockCache.getOrPut(userId) { ConcurrentHashMap() }
+        userCache[packageName]?.let { return it }
         val hasLock = getState(packageName, userId).hasAppLock()
-        hasLockCache[cacheKey] = hasLock
+        userCache[packageName] = hasLock
         return hasLock
     }
 

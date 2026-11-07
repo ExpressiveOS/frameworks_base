@@ -32,7 +32,6 @@ import static com.android.systemui.DejankUtils.whitelistIpcs;
 import android.annotation.SuppressLint;
 import android.annotation.UserIdInt;
 import android.app.ActivityOptions;
-import android.app.AxSandboxManager;
 import android.app.KeyguardManager;
 import android.app.admin.DevicePolicyManager;
 import android.content.BroadcastReceiver;
@@ -732,10 +731,9 @@ public class NotificationLockscreenUserManagerImpl implements
     public @RedactionType int getRedactionType(NotificationEntry ent) {
         int userId = ent.getSbn().getUserId();
 
-        if (ent.getSbn().getNotification().extras
-                        .getBoolean(AxSandboxManager.EXTRA_NOTIFICATION_APP_LOCKED, false)
-                && mAxAppLockerHelper.needsAuth(
-                        ent.getSbn().getPackageName(), ent.getSbn().getUserId())) {
+        // The live lock state, not the post-time extra (see SensitiveContentCoordinator).
+        if (mAxAppLockerHelper.needsAuth(
+                ent.getSbn().getPackageName(), ent.getSbn().getUserId())) {
             return REDACTION_TYPE_PUBLIC;
         }
 

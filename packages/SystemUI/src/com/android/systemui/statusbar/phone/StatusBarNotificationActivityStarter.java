@@ -25,7 +25,6 @@ import static com.android.systemui.statusbar.phone.ActivityStarterUtilsKt.create
 import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.app.ActivityOptions;
-import android.app.AxSandboxManager;
 import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.PendingIntent;
@@ -307,8 +306,6 @@ public class StatusBarNotificationActivityStarter implements NotificationActivit
         StatusBarNotification sbn = entry.getSbn();
         return mKeyguardStateController.isShowing()
                 && row.isOnKeyguard()
-                && sbn.getNotification().extras.getBoolean(
-                        AxSandboxManager.EXTRA_NOTIFICATION_APP_LOCKED, false)
                 && mAxAppLockerHelper.needsAuth(sbn.getPackageName(), sbn.getUserId());
     }
 

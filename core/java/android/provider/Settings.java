@@ -8215,6 +8215,15 @@ public final class Settings {
          */
         public static final String AUTO_LAUNCH_MEDIA_CONTROLS = "auto_launch_media_controls";
 
+        /**
+         * The package of the last app that played media, kept by SystemUI for its lock screen
+         * media widget. Declared without @Readable so other apps can't read it.
+         *
+         * @hide
+         */
+        public static final String MEDIA_SESSION_LAST_PACKAGE_NAME =
+                "media_session_last_package_name";
+
         // Settings moved to Settings.Secure
 
         /**
@@ -15855,6 +15864,24 @@ public final class Settings {
          */
         @Readable
         public static final String STATUS_BAR_SHOW_LYRIC = "status_bar_show_lyric";
+
+        // Sandbox / App Lock keys, read and written only by the Sandbox and AppLocker apps,
+        // SystemUI and system_server. Declared without @Readable so they stay system-only.
+
+        /** @hide */
+        public static final String SANDBOX_SECURITY_TYPE = "sandbox_security_type";
+
+        /** @hide */
+        public static final String SANDBOX_CREDENTIAL_HASH = "sandbox_credential_hash";
+
+        /** @hide */
+        public static final String SANDBOX_SECURITY_QUESTION = "sandbox_security_question";
+
+        /** @hide */
+        public static final String SANDBOX_SECURITY_ANSWER = "sandbox_security_answer";
+
+        /** @hide */
+        public static final String SANDBOX_CONFIG = "sandbox_config";
     }
 
     /**
