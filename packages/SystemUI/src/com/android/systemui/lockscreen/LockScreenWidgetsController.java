@@ -344,11 +344,9 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
     }
 
     public void unregisterCallbacks() {
-        if (isWidgetEnabled("weather")) {
-            disableWeatherUpdates();
-        }
         // Remove all of them: the lists may have changed since registerCallbacks(), and
-        // removing a callback that isn't registered does nothing.
+        // removing a callback or observer that isn't registered does nothing.
+        disableWeatherUpdates();
         mNetworkController.removeCallback(mWifiSignalCallback);
         mNetworkController.removeCallback(mCellSignalCallback);
         mBluetoothController.removeCallback(mBtCallback);
