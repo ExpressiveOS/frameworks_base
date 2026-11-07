@@ -8215,6 +8215,15 @@ public final class Settings {
          */
         public static final String AUTO_LAUNCH_MEDIA_CONTROLS = "auto_launch_media_controls";
 
+        /**
+         * The package of the last app that played media, kept by SystemUI for its lock screen
+         * media widget. Declared without @Readable so other apps can't read it.
+         *
+         * @hide
+         */
+        public static final String MEDIA_SESSION_LAST_PACKAGE_NAME =
+                "media_session_last_package_name";
+
         // Settings moved to Settings.Secure
 
         /**

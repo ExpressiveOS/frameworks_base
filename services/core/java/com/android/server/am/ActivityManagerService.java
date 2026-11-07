@@ -21581,11 +21581,24 @@ public class ActivityManagerService extends IActivityManager.Stub
 
     @Override
     public void setThreeFingersSwipeActive(boolean active) {
+        enforceThreeFingersCaller("setThreeFingersSwipeActive");
         mThreeFingersSwipeEnabled = active;
     }
 
     @Override
     public void setThreeGestureStateActive(boolean active) {
+        enforceThreeFingersCaller("setThreeGestureStateActive");
         mThreeFingerGestureActive = active;
+    }
+
+    /**
+     * The three-finger swipe state is set only by PhoneWindowManager and its
+     * ThreeFingersSwipeListener, both in system_server.
+     */
+    private static void enforceThreeFingersCaller(String method) {
+        final int appId = UserHandle.getAppId(Binder.getCallingUid());
+        if (appId != Process.SYSTEM_UID && appId != Process.ROOT_UID) {
+            throw new SecurityException(method + " is limited to the system");
+        }
     }
 }

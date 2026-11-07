@@ -714,7 +714,8 @@ public class LockScreenWidgetsController implements OmniJawsClient.OmniJawsObser
     }
 
     private String getLastUsedMedia() {
-        return Settings.System.getString(mContext.getContentResolver(), "media_session_last_package_name");
+        return Settings.System.getString(mContext.getContentResolver(),
+                Settings.System.MEDIA_SESSION_LAST_PACKAGE_NAME);
     }
 
     private void dispatchMediaKeyWithWakeLockToMediaSession(final int keycode) {
