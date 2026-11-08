@@ -4510,6 +4510,7 @@ public class SettingsProvider extends ContentProvider {
 
                 // If up do date - done.
                 if (oldVersion == newVersion) {
+                    ensureExpressiveOsDefaultsLocked();
                     return;
                 }
 
@@ -4554,6 +4555,37 @@ public class SettingsProvider extends ContentProvider {
                 SettingsState systemSettings = getSettingsLocked(
                         SETTINGS_TYPE_SYSTEM, mUserId, mDeviceId);
                 systemSettings.setVersionLocked(newVersion);
+
+                ensureExpressiveOsDefaultsLocked();
+            }
+
+            /**
+             * ExpressiveOS: defaults that need no version step. This runs each time a user's
+             * settings load, after any upgrade, and only fills a value that was never set, so a
+             * user's own choice stays and no version number can clash with a LineageOS or AOSP
+             * upgrade step.
+             *
+             * Circle to Search: Settings > System > Circle to Search shows an unset
+             * SEARCH_ALL_ENTRYPOINTS_ENABLED as config_searchAllEntrypointsEnabledDefault (on),
+             * but Pixel Launcher reads it as off ("Contextual Search invocation failed: setting
+             * disabled"), so holding the navigation handle did nothing. Write the default the
+             * switch shows.
+             */
+            private void ensureExpressiveOsDefaultsLocked() {
+                final SettingsState secureSettings = getSettingsLocked(
+                        SETTINGS_TYPE_SECURE, mUserId, mDeviceId);
+                if (secureSettings == null || !secureSettings.getSettingLocked(
+                        Settings.Secure.SEARCH_ALL_ENTRYPOINTS_ENABLED).isNull()) {
+                    return;
+                }
+                final boolean onByDefault = getContext().getResources().getBoolean(
+                        com.android.internal.R.bool.config_searchAllEntrypointsEnabledDefault);
+                secureSettings.insertSettingOverrideableByRestoreLocked(
+                        Settings.Secure.SEARCH_ALL_ENTRYPOINTS_ENABLED,
+                        onByDefault ? "1" : "0",
+                        null,
+                        true,
+                        SettingsState.SYSTEM_PACKAGE_NAME);
             }
 
             private SettingsState getGlobalSettingsLocked() {
