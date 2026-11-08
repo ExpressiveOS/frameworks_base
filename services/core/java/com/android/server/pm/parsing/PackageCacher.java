@@ -218,6 +218,11 @@ public class PackageCacher implements IPackageCacher {
                 return null;
             }
 
+            if (isStaticOverlay(parsed)) {
+                // An entry from before static overlays stopped being cached: parse it again.
+                return null;
+            }
+
             if (!android.content.pm.Flags.includeFeatureFlagsInPackageCacher()) {
                 return parsed;
             }
@@ -249,6 +254,18 @@ public class PackageCacher implements IPackageCacher {
     }
 
     /**
+     * Static overlays aren't cached. One can be gated on a system property
+     * (requiredSystemPropertyName), which is checked only while parsing, so a cached result
+     * would keep an overlay that a persistent property has since turned off, while the
+     * zygote's own overlay scan, which doesn't use this cache, drops it. ExpressiveOS's
+     * launcher switch flips such a property and reboots. Static overlays are small, so
+     * parsing them on every boot costs little.
+     */
+    private static boolean isStaticOverlay(ParsedPackage parsed) {
+        return parsed.isResourceOverlay() && parsed.isOverlayIsStatic();
+    }
+
+    /**
      * Caches the parse result for {@code packageFile} with flags {@code flags}.
      */
     @Override
@@ -261,6 +278,10 @@ public class PackageCacher implements IPackageCacher {
                 if (!cacheFile.delete()) {
                     Slog.e(TAG, "Unable to delete cache file: " + cacheFile);
                 }
+            }
+
+            if (isStaticOverlay(parsed)) {
+                return;
             }
 
             final byte[] cacheEntry = toCacheEntry(parsed);
