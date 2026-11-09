@@ -173,6 +173,7 @@ public class AxSpoofManager implements IAxSpoofManager {
     private volatile boolean mPifEnabled = true;
     private volatile boolean mTrickyStoreEnabled = true;
     private ContentObserver mSwitchObserver;
+    private ContentObserver mProvisioningObserver;
     private TaskStackListener mTaskListener;
     private final Runnable mRefreshAfterClear = this::refreshNow;
 
@@ -240,8 +241,12 @@ public class AxSpoofManager implements IAxSpoofManager {
         if (mActivated) {
             seedDefaultTargetsIfUnset();
             stagePifPropOverrides(getCached(Settings.Secure.SPOOF_PIF_CONFIG));
+        } else if (isDeviceProvisioned()) {
+            Log.i(TAG, "Device already provisioned, enabling spoofing immediately");
+            enableSpoofing();
         } else {
-            Log.i(TAG, "Spoofing off until Settings is opened for the first time");
+            Log.i(TAG, "Spoofing off until setup completes or Settings is opened");
+            registerProvisioningWatcher();
             registerSettingsWatcher();
         }
 
@@ -317,6 +322,40 @@ public class AxSpoofManager implements IAxSpoofManager {
     }
 
     /**
+     * Watches for Setup Wizard / provisioning completion (USER_SETUP_COMPLETE and
+     * DEVICE_PROVISIONED). As soon as the user completes setup, spoofing activates
+     * before the first RCS registration and Play Protect check can run without it.
+     */
+    private void registerProvisioningWatcher() {
+        if (mProvisioningObserver != null) return;
+        mProvisioningObserver = new ContentObserver(mHandler) {
+            @Override
+            public void onChange(boolean selfChange, Uri uri) {
+                if (!mActivated && isDeviceProvisioned()) {
+                    Log.i(TAG, "Setup completed, enabling spoofing");
+                    enableSpoofing();
+                }
+            }
+        };
+        mResolver.registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONED),
+                false, mProvisioningObserver, UserHandle.USER_ALL);
+        mResolver.registerContentObserver(
+                Settings.Secure.getUriFor(Settings.Secure.USER_SETUP_COMPLETE),
+                false, mProvisioningObserver, UserHandle.USER_ALL);
+    }
+
+    private void unregisterProvisioningWatcher() {
+        if (mProvisioningObserver == null) return;
+        try {
+            mResolver.unregisterContentObserver(mProvisioningObserver);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to unregister provisioning watcher", e);
+        }
+        mProvisioningObserver = null;
+    }
+
+    /**
      * Watches for the first time the user brings Settings to the front. Only
      * counts once setup is finished: Setup Wizard opens Settings screens (lock
      * screen, fingerprint) and must not trigger the GMS restart.
@@ -364,7 +403,8 @@ public class AxSpoofManager implements IAxSpoofManager {
         mActivated = true;
         Settings.Secure.putIntForUser(mResolver, ACTIVATED_KEY, 1, UserHandle.USER_SYSTEM);
         unregisterSettingsWatcher();
-        Log.i(TAG, "Settings opened, enabling spoofing");
+        unregisterProvisioningWatcher();
+        Log.i(TAG, "Enabling spoofing");
         PlayIntegritySpoofService.getInstance().loadConfig();
         TrickyStoreService.getInstance().initialize();
         seedDefaultTargetsIfUnset();
