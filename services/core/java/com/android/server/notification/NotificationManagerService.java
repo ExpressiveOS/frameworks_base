@@ -15430,6 +15430,19 @@ public class NotificationManagerService extends SystemService {
                         redactedText, /* isAppLocked= */ true);
 
                 Notification redacted = redactedNotifBuilder.build();
+                redacted.tickerText = null;
+                if (redacted.extras != null) {
+                    redacted.extras.remove(Notification.EXTRA_BIG_TEXT);
+                    redacted.extras.remove(Notification.EXTRA_TEXT_LINES);
+                    redacted.extras.remove(Notification.EXTRA_SUB_TEXT);
+                    redacted.extras.remove(Notification.EXTRA_INFO_TEXT);
+                    redacted.extras.remove(Notification.EXTRA_SUMMARY_TEXT);
+                    redacted.extras.remove(Notification.EXTRA_TITLE_BIG);
+                    redacted.extras.remove(Notification.EXTRA_MESSAGES);
+                    redacted.extras.remove(Notification.EXTRA_HISTORIC_MESSAGES);
+                    redacted.extras.remove(Notification.EXTRA_CONVERSATION_TITLE);
+                    redacted.extras.remove(Notification.EXTRA_LARGE_ICON_BIG);
+                }
                 return sbn.cloneShallow(redacted);
             } finally {
                 Trace.endSection();
