@@ -22,6 +22,8 @@ import com.android.systemui.axdynamicbar.model.RecordingState
 import com.android.systemui.dagger.SysUISingleton
 import com.android.systemui.dagger.qualifiers.Application
 import com.android.systemui.util.ScrimUtils
+import com.axion.applocker.AxAppLockerHelper
+import dagger.Lazy
 import java.util.Objects
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +41,7 @@ class NotificationIslandManager
 constructor(
     @Application private val context: Context,
     @Application private val applicationScope: CoroutineScope,
+    private val appLockerHelper: Lazy<AxAppLockerHelper>,
 ) {
     companion object {
         private const val TAG = "NotificationIslandManager"
@@ -223,6 +226,9 @@ constructor(
 
             override fun onNotificationPosted(sbn: StatusBarNotification) {
                 val pkg = sbn.packageName ?: return
+                if (appLockerHelper.get().hasAppLock(pkg, sbn.normalizedUserId)) {
+                    return
+                }
                 val extras = sbn.notification?.extras ?: return
 
                 if (pkg in CLOCK_PACKAGES) {

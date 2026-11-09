@@ -47,7 +47,6 @@ import com.android.systemui.media.NotificationMediaManager
 import com.android.systemui.plugins.statusbar.StatusBarStateController
 import com.android.systemui.screenrecord.ScreenRecordUxController
 import com.android.systemui.statusbar.StatusBarState
-import com.android.systemui.statusbar.connectivity.AccessPointController
 import com.android.systemui.statusbar.connectivity.MobileDataIndicators
 import com.android.systemui.statusbar.connectivity.NetworkController
 import com.android.systemui.statusbar.connectivity.SignalCallback
@@ -69,7 +68,6 @@ import com.android.systemui.statusbar.policy.CastController
 import com.android.systemui.statusbar.policy.CastDevice
 import com.android.systemui.statusbar.policy.SecurityController
 import com.android.systemui.statusbar.policy.ZenModeController
-import com.android.wifitrackerlib.WifiEntry
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.combine
@@ -95,7 +93,6 @@ class AxPlatformObservers @Inject constructor(
     private val stateManager: AxPlatformStateManager,
     private val featureController: AxPlatformFeatureController,
     private val networkController: NetworkController,
-    private val accessPointController: AccessPointController,
     private val bluetoothController: BluetoothController,
     private val hotspotController: HotspotController,
     private val flashlightController: FlashlightController,
@@ -159,7 +156,6 @@ class AxPlatformObservers @Inject constructor(
         configurationController.addCallback(configurationListener)
         statusBarStateController.addCallback(dozeCallback)
         keyguardStateController.addCallback(keyguardCallback)
-        accessPointController.addAccessPointCallback(accessPointCallback)
         securityController.addCallback(vpnCallback)
         castController.addCallback(castCallback)
     }
@@ -371,32 +367,6 @@ class AxPlatformObservers @Inject constructor(
                 )
             }
         }
-    }
-
-    private val accessPointCallback = object : AccessPointController.AccessPointCallback {
-        override fun onAccessPointsChanged(accessPoints: List<WifiEntry>) {
-            featureController.latestAccessPoints = accessPoints.toList()
-            val networks = ArrayList<Bundle>()
-            accessPoints.forEach { ap ->
-                if (ap.getLevel() != -1) {
-                    networks.add(Bundle().apply {
-                        putString("title", ap.getTitle())
-                        putString("key", ap.getKey())
-                        putBoolean("isConnected",
-                            ap.getConnectedState() == WifiEntry.CONNECTED_STATE_CONNECTED)
-                        putBoolean("isSaved", ap.isSaved())
-                        putInt("level", ap.getLevel())
-                        putInt("security", ap.getSecurity())
-                    })
-                }
-            }
-            stateManager.broadcastState(AxPlatformClient.KEY_WIFI_SCAN, Bundle().apply {
-                putParcelableArrayList("networks", networks)
-            })
-        }
-
-        override fun onSettingsActivityTriggered(intent: Intent?) {}
-        override fun onWifiScan(isScan: Boolean) {}
     }
 
     private fun getAllBluetoothDevices() = featureController.getAllBluetoothDevices()
