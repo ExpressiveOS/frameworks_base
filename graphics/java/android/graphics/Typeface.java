@@ -283,6 +283,16 @@ public class Typeface {
                     + " is not a placeholder Typeface, cannot repoint in place.");
             return false;
         }
+        // A placeholder must never resolve to itself, directly or through other placeholders:
+        // getNativeInstance() would then recurse until the stack overflows. This happens when
+        // the selected font resolves to the default family ("sans-serif"), whose entry in
+        // sSystemFontMap is the DEFAULT/SANS_SERIF placeholder itself. Keep the current target.
+        for (Typeface t = resolvedTypeface; t != null && t.mPendingTypeface != null;
+                t = t.mPendingTypeface.get()) {
+            if (t == this) {
+                return true;
+            }
+        }
         mPendingTypeface.set(resolvedTypeface);
         return true;
     }
