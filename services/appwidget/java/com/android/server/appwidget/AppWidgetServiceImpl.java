@@ -3164,7 +3164,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                 || (widget.views == null)) {
             return;
         }
-        boolean isExemptLauncher = com.android.internal.util.evolution.PixelPropsUtils
+        boolean isExemptLauncher = com.android.internal.util.expressiveos.PixelPropsUtils
                 .isSystemLauncher(Binder.getCallingUid());
         long bitmapCacheMemoryUsage = widget.views.estimateMemoryUsage();
         long totalMemoryUsage = bitmapCacheMemoryUsage + widget.views.estimateIconMemoryUsage();

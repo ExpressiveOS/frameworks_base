@@ -889,7 +889,7 @@
     <!-- ExpressiveOS additions -->
 
     <!-- Sent by Settings when the boot animation or its holiday colors change, for SystemUI -->
-    <protected-broadcast android:name="org.evolution.intent.action.BOOTANIM_STYLE_CHANGED" />
+    <protected-broadcast android:name="org.expressiveos.intent.action.BOOTANIM_STYLE_CHANGED" />
 
     <!-- ====================================================================== -->
     <!--                          RUNTIME PERMISSIONS                           -->

@@ -482,7 +482,7 @@ class BroadcastController {
                 // sticky broadcast, no flag specified (flag isn't required)
                 flags |= Context.RECEIVER_EXPORTED;
             } else if (requireExplicitFlagForDynamicReceivers && !explicitExportStateDefined
-                    && !com.android.internal.util.evolution.PixelPropsUtils.shouldBypassBroadcastReceiverValidation(callerPackage)) {
+                    && !com.android.internal.util.expressiveos.PixelPropsUtils.shouldBypassBroadcastReceiverValidation(callerPackage)) {
                 throw new SecurityException(
                         callerPackage + ": One of RECEIVER_EXPORTED or "
                                 + "RECEIVER_NOT_EXPORTED should be specified when a receiver "

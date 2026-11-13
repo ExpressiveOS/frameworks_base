@@ -150,4 +150,4 @@
 -keep,allowoptimization,allowaccessmodification class vendor.lineage.** { *; }
 
 # ExpressiveOS
--keep,allowoptimization,allowaccessmodification class com.android.server.EvolutionSystemExService { *; }
+-keep,allowoptimization,allowaccessmodification class com.android.server.ExpressiveSystemExService { *; }

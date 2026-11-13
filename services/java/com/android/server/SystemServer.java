@@ -182,7 +182,7 @@ import com.android.server.display.FreeformService;
 import com.android.server.display.color.ColorDisplayService;
 import com.android.server.dreams.DreamManagerService;
 import com.android.server.emergency.EmergencyAffordanceService;
-import com.android.server.evolution.CustomDeviceConfigService;
+import com.android.server.expressiveos.CustomDeviceConfigService;
 import com.android.server.files.FileService;
 import com.android.server.flags.FeatureFlagsService;
 import com.android.server.gpu.GpuService;
@@ -357,7 +357,7 @@ import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 
-import com.android.server.EvolutionSystemExService;
+import com.android.server.ExpressiveSystemExService;
 
 /**
  * Entry point to {@code system_server}.
@@ -1847,8 +1847,8 @@ public final class SystemServer implements Dumpable {
             mSystemServiceManager.startService(GameSpaceService.class);
             t.traceEnd();
 
-            t.traceBegin("StartEvolutionSystemExService");
-            mSystemServiceManager.startService(EvolutionSystemExService.class);
+            t.traceBegin("StartExpressiveSystemExService");
+            mSystemServiceManager.startService(ExpressiveSystemExService.class);
             t.traceEnd();
 
             // Start receiving calls from SensorManager services. Start in a separate thread

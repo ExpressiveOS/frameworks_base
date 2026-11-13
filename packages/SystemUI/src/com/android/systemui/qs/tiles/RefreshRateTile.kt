@@ -147,7 +147,7 @@ class RefreshRateTile @Inject constructor(
         logD("secondaryLabel = ${state.secondaryLabel}")
     }
 
-    override fun getMetricsCategory(): Int = MetricsEvent.EVOLVER
+    override fun getMetricsCategory(): Int = MetricsEvent.EXPRESSIVE_STUDIO
 
     override fun destroy() {
         settingsObserver.unobserve()

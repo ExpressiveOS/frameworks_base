@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.android.internal.util.evolution;
+package com.android.internal.util.expressiveos;
 
 import static android.provider.Settings.System.MIN_REFRESH_RATE;
 import static android.provider.Settings.System.PEAK_REFRESH_RATE;

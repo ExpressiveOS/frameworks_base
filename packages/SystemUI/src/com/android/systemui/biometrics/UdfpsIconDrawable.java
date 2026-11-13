@@ -29,7 +29,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.res.ResourcesCompat;
 
-import com.android.internal.util.evolution.Utils;
+import com.android.internal.util.expressiveos.Utils;
 import com.android.systemui.Dependency;
 import com.android.systemui.res.R;
 import com.android.systemui.tuner.TunerService;
@@ -41,7 +41,7 @@ import com.android.systemui.tuner.TunerService;
 public abstract class UdfpsIconDrawable extends Drawable {
 
     private static final String UDFPS_ICON = "system:" + Settings.System.UDFPS_ICON;
-    private final String udfpsResourcesPackage = "org.evolution.udfps.icons";
+    private final String udfpsResourcesPackage = "org.expressiveos.udfps.icons";
 
     @NonNull private final Context mContext;
     private Drawable mUdfpsDrawable;

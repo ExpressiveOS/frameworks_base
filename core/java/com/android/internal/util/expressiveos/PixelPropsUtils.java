@@ -18,7 +18,7 @@
  * limitations under the License.
  */
 
-package com.android.internal.util.evolution;
+package com.android.internal.util.expressiveos;
 
 import android.app.ActivityTaskManager;
 import android.app.ActivityThread;
@@ -41,8 +41,8 @@ import android.util.ArraySet;
 import android.util.Log;
 
 import com.android.internal.R;
-import com.android.internal.util.evolution.PixelDeviceRepository;
-import com.android.internal.util.evolution.Utils;
+import com.android.internal.util.expressiveos.PixelDeviceRepository;
+import com.android.internal.util.expressiveos.Utils;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;

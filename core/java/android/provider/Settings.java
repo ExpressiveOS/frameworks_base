@@ -129,7 +129,7 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
-import com.android.internal.util.evolution.DeviceConfigUtils;
+import com.android.internal.util.expressiveos.DeviceConfigUtils;
 
 /**
  * The Settings provider contains global system-level device preferences.
@@ -22475,20 +22475,20 @@ public final class Settings {
          * 
          * @hide
          */
-        public static final String EVOLUTION_WINDOW_BLOCK_SCREENSHOT_DETECTION = "window_block_screenshot_detection";
+        public static final String EXPRESSIVE_WINDOW_BLOCK_SCREENSHOT_DETECTION = "window_block_screenshot_detection";
 
         /**
          * Whether the system should block screen recording detection.
          * 
          * @hide
          */
-        public static final String EVOLUTION_WINDOW_BLOCK_SCREENRECORD_DETECTION = "window_block_screenrecord_detection";
+        public static final String EXPRESSIVE_WINDOW_BLOCK_SCREENRECORD_DETECTION = "window_block_screenrecord_detection";
 
         /**
          * Whether the system should hide screen capture status (both screenshot and screen
          * recording detection) from all apps. Acts as a master switch on top of
-         * {@link #EVOLUTION_WINDOW_BLOCK_SCREENSHOT_DETECTION} and
-         * {@link #EVOLUTION_WINDOW_BLOCK_SCREENRECORD_DETECTION}.
+         * {@link #EXPRESSIVE_WINDOW_BLOCK_SCREENSHOT_DETECTION} and
+         * {@link #EXPRESSIVE_WINDOW_BLOCK_SCREENRECORD_DETECTION}.
          *
          * @hide
          */

@@ -3,15 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package org.evolution.display;
+package org.expressiveos.display;
 
 import android.annotation.SystemService;
 import android.content.Context;
 import android.os.RemoteException;
 import android.util.Slog;
 
-import com.android.internal.util.evolution.DisplayRefreshRateHelper;
-import com.android.internal.util.evolution.Utils;
+import com.android.internal.util.expressiveos.DisplayRefreshRateHelper;
+import com.android.internal.util.expressiveos.Utils;
 
 /** @hide */
 @SystemService(Context.REFRESH_RATE_MANAGER_SERVICE)

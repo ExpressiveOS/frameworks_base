@@ -32,7 +32,7 @@ import android.util.Log;
 import java.util.Calendar;
 
 import com.android.systemui.res.R;
-import com.android.internal.util.evolution.Utils;
+import com.android.internal.util.expressiveos.Utils;
 
 public class StaticHeaderProvider implements
         StatusBarHeaderMachine.IStatusBarHeaderProvider {

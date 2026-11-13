@@ -7446,6 +7446,6 @@ message MetricsEvent {
     // END OF AOSP CONSTANTS
 
     // Expressive Studio
-    EVOLVER = 4000;
+    EXPRESSIVE_STUDIO = 4000;
   }
 }

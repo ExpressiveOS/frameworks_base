@@ -2574,7 +2574,7 @@ class ContextImpl extends Context {
             String permission, int resultOfCheck,
             boolean selfToo, int uid, String message) {
         if (resultOfCheck != PERMISSION_GRANTED
-            && !com.android.internal.util.evolution.PixelPropsUtils.shouldBypassTaskPermission(uid)) {
+            && !com.android.internal.util.expressiveos.PixelPropsUtils.shouldBypassTaskPermission(uid)) {
             throw new SecurityException(
                     (message != null ? (message + ": ") : "") +
                     (selfToo

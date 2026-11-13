@@ -61,8 +61,8 @@ import static android.provider.Settings.Global.DEVELOPMENT_ENABLE_NON_RESIZABLE_
 import static android.provider.Settings.Global.DEVELOPMENT_FORCE_DESKTOP_MODE_ON_EXTERNAL_DISPLAYS;
 import static android.provider.Settings.Global.DEVELOPMENT_FORCE_RESIZABLE_ACTIVITIES;
 import static android.provider.Settings.Global.DEVELOPMENT_WM_DISPLAY_SETTINGS_PATH;
-import static android.provider.Settings.Global.EVOLUTION_WINDOW_BLOCK_SCREENRECORD_DETECTION;
-import static android.provider.Settings.Global.EVOLUTION_WINDOW_BLOCK_SCREENSHOT_DETECTION;
+import static android.provider.Settings.Global.EXPRESSIVE_WINDOW_BLOCK_SCREENRECORD_DETECTION;
+import static android.provider.Settings.Global.EXPRESSIVE_WINDOW_BLOCK_SCREENSHOT_DETECTION;
 import static android.provider.Settings.Global.HIDE_SCREEN_CAPTURE_STATUS;
 import static android.service.dreams.Flags.dreamHandlesConfirmKeys;
 import static android.view.ContentRecordingSession.RECORD_CONTENT_TASK;
@@ -798,9 +798,9 @@ public class WindowManagerService extends IWindowManager.Stub
 
     // Cached screen capture detection preferences. Volatile since they are written from the
     // settings observer and read from binder threads / under mGlobalLock.
-    private volatile boolean mEvolutionWindowBlockScreenshotDetection = false;
-    private volatile boolean mEvolutionWindowBlockScreenrecordDetection = false;
-    private volatile boolean mEvolutionHideScreenCaptureStatus = false;
+    private volatile boolean mExpressiveWindowBlockScreenshotDetection = false;
+    private volatile boolean mExpressiveWindowBlockScreenrecordDetection = false;
+    private volatile boolean mExpressiveHideScreenCaptureStatus = false;
 
     final H mH = new H();
 
@@ -880,11 +880,11 @@ public class WindowManagerService extends IWindowManager.Stub
                 Settings.Global.MAXIMUM_OBSCURING_OPACITY_FOR_TOUCH);
         private final Uri mDevelopmentOverrideDesktopExperienceUri = Settings.Global.getUriFor(
                 Settings.Global.DEVELOPMENT_OVERRIDE_DESKTOP_EXPERIENCE_FEATURES);
-        private final Uri mEvolutionBlockScreenshotDetectionUri = Settings.Global.getUriFor(
-                EVOLUTION_WINDOW_BLOCK_SCREENSHOT_DETECTION);
-        private final Uri mEvolutionBlockScreenrecordDetectionUri = Settings.Global.getUriFor(
-                EVOLUTION_WINDOW_BLOCK_SCREENRECORD_DETECTION);
-        private final Uri mEvolutionHideScreenCaptureStatusUri = Settings.Global.getUriFor(
+        private final Uri mExpressiveBlockScreenshotDetectionUri = Settings.Global.getUriFor(
+                EXPRESSIVE_WINDOW_BLOCK_SCREENSHOT_DETECTION);
+        private final Uri mExpressiveBlockScreenrecordDetectionUri = Settings.Global.getUriFor(
+                EXPRESSIVE_WINDOW_BLOCK_SCREENRECORD_DETECTION);
+        private final Uri mExpressiveHideScreenCaptureStatusUri = Settings.Global.getUriFor(
                 HIDE_SCREEN_CAPTURE_STATUS);
 
         public SettingsObserver() {
@@ -930,11 +930,11 @@ public class WindowManagerService extends IWindowManager.Stub
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(mDevelopmentOverrideDesktopExperienceUri, false, this,
                     UserHandle.USER_ALL);
-            resolver.registerContentObserver(mEvolutionBlockScreenshotDetectionUri, false, this,
+            resolver.registerContentObserver(mExpressiveBlockScreenshotDetectionUri, false, this,
                     UserHandle.USER_ALL);
-            resolver.registerContentObserver(mEvolutionBlockScreenrecordDetectionUri, false, this,
+            resolver.registerContentObserver(mExpressiveBlockScreenrecordDetectionUri, false, this,
                     UserHandle.USER_ALL);
-            resolver.registerContentObserver(mEvolutionHideScreenCaptureStatusUri, false, this,
+            resolver.registerContentObserver(mExpressiveHideScreenCaptureStatusUri, false, this,
                     UserHandle.USER_ALL);
         }
 
@@ -993,10 +993,10 @@ public class WindowManagerService extends IWindowManager.Stub
                 return;
             }
 
-            if (mEvolutionBlockScreenshotDetectionUri.equals(uri)
-                    || mEvolutionBlockScreenrecordDetectionUri.equals(uri)
-                    || mEvolutionHideScreenCaptureStatusUri.equals(uri)) {
-                updateEvolutionBlockScreenCaptureDetection();
+            if (mExpressiveBlockScreenshotDetectionUri.equals(uri)
+                    || mExpressiveBlockScreenrecordDetectionUri.equals(uri)
+                    || mExpressiveHideScreenCaptureStatusUri.equals(uri)) {
+                updateExpressiveBlockScreenCaptureDetection();
                 return;
             }
 
@@ -1020,7 +1020,7 @@ public class WindowManagerService extends IWindowManager.Stub
             updateMaximumObscuringOpacityForTouch();
             updateDisableSecureWindows();
             updateMagnifyIme();
-            updateEvolutionBlockScreenCaptureDetection();
+            updateExpressiveBlockScreenCaptureDetection();
             updateWallpaperZoomEnabled();
         }
 
@@ -1159,15 +1159,15 @@ public class WindowManagerService extends IWindowManager.Stub
             }
         }
 
-        void updateEvolutionBlockScreenCaptureDetection() {
+        void updateExpressiveBlockScreenCaptureDetection() {
             final ContentResolver resolver = mContext.getContentResolver();
             final boolean wasRecordDetectionBlocked = isScreenRecordDetectionBlocked();
 
-            mEvolutionWindowBlockScreenshotDetection = Settings.Global.getInt(
-                    resolver, EVOLUTION_WINDOW_BLOCK_SCREENSHOT_DETECTION, 0) != 0;
-            mEvolutionWindowBlockScreenrecordDetection = Settings.Global.getInt(
-                    resolver, EVOLUTION_WINDOW_BLOCK_SCREENRECORD_DETECTION, 0) != 0;
-            mEvolutionHideScreenCaptureStatus = Settings.Global.getInt(
+            mExpressiveWindowBlockScreenshotDetection = Settings.Global.getInt(
+                    resolver, EXPRESSIVE_WINDOW_BLOCK_SCREENSHOT_DETECTION, 0) != 0;
+            mExpressiveWindowBlockScreenrecordDetection = Settings.Global.getInt(
+                    resolver, EXPRESSIVE_WINDOW_BLOCK_SCREENRECORD_DETECTION, 0) != 0;
+            mExpressiveHideScreenCaptureStatus = Settings.Global.getInt(
                     resolver, HIDE_SCREEN_CAPTURE_STATUS, 0) != 0;
 
             // Screen recording detection is state based, so apps that already registered a
@@ -11275,12 +11275,12 @@ public class WindowManagerService extends IWindowManager.Stub
 
     /** Whether apps must not be told about screenshots (hardware chord screenshot callbacks). */
     boolean isScreenshotDetectionBlocked() {
-        return mEvolutionHideScreenCaptureStatus || mEvolutionWindowBlockScreenshotDetection;
+        return mExpressiveHideScreenCaptureStatus || mExpressiveWindowBlockScreenshotDetection;
     }
 
     /** Whether apps must always be told that they are not part of a screen recording. */
     boolean isScreenRecordDetectionBlocked() {
-        return mEvolutionHideScreenCaptureStatus || mEvolutionWindowBlockScreenrecordDetection;
+        return mExpressiveHideScreenCaptureStatus || mExpressiveWindowBlockScreenrecordDetection;
     }
 
     /**

@@ -24,7 +24,7 @@ public final class CategoryKey {
     public static final String CATEGORY_HOMEPAGE = "com.android.settings.category.ia.homepage";
 
     // Top level category.
-    public static final String CATEGORY_EVOLVER = "com.android.settings.category.ia.evolver";
+    public static final String CATEGORY_EXPRESSIVE_STUDIO = "com.android.settings.category.ia.expressive_studio";
     public static final String CATEGORY_NETWORK = "com.android.settings.category.ia.wireless";
     public static final String CATEGORY_CONNECT = "com.android.settings.category.ia.connect";
     public static final String CATEGORY_DEVICE = "com.android.settings.category.ia.device";

@@ -20,14 +20,14 @@ import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.Slog;
 
-import com.android.internal.util.evolution.DisplayRefreshRateHelper;
+import com.android.internal.util.expressiveos.DisplayRefreshRateHelper;
 import com.android.server.ServiceThread;
 
 import java.util.ArrayList;
 
-import org.evolution.display.IRefreshRateListener;
-import org.evolution.display.IRefreshRateManagerService;
-import com.android.server.EvolutionSystemExService;
+import org.expressiveos.display.IRefreshRateListener;
+import org.expressiveos.display.IRefreshRateManagerService;
+import com.android.server.ExpressiveSystemExService;
 
 public final class DisplayRefreshRateController {
 
@@ -39,7 +39,7 @@ public final class DisplayRefreshRateController {
     private final Object mConfigLock = new Object();
     private final Object mListenerLock = new Object();
 
-    private EvolutionSystemExService mSystemExService;
+    private ExpressiveSystemExService mSystemExService;
 
     private static class InstanceHolder {
         private static DisplayRefreshRateController INSTANCE = new DisplayRefreshRateController();
@@ -242,7 +242,7 @@ public final class DisplayRefreshRateController {
         mHandler = new Handler(mServiceThread.getLooper());
     }
 
-    public void initSystemExService(EvolutionSystemExService service) {
+    public void initSystemExService(ExpressiveSystemExService service) {
         mSystemExService = service;
         mSystemExService.publishBinderService(REFRESH_RATE_MANAGER_SERVICE, new RefreshRateManagerService());
     }

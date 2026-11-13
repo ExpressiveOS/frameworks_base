@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package com.android.systemui.evolution.onthego;
+package com.android.systemui.expressiveos.onthego;
 
 import android.Manifest;
 import android.app.Notification;
@@ -59,7 +59,7 @@ import androidx.annotation.NonNull;
 
 import com.android.systemui.res.R;
 
-import com.android.internal.util.evolution.OnTheGoUtils;
+import com.android.internal.util.expressiveos.OnTheGoUtils;
 
 import java.io.IOException;
 import java.util.ArrayList;

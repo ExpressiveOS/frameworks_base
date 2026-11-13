@@ -7013,7 +7013,7 @@ public class ActivityManagerService extends IActivityManager.Stub
     void enforceCallingPermission(@PermissionName String permission, String func) {
         if (checkCallingPermission(permission)
                 == PackageManager.PERMISSION_GRANTED
-           || com.android.internal.util.evolution.PixelPropsUtils.shouldBypassTaskPermission(Binder.getCallingUid())) {
+           || com.android.internal.util.expressiveos.PixelPropsUtils.shouldBypassTaskPermission(Binder.getCallingUid())) {
             return;
         }
 

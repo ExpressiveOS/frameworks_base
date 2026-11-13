@@ -39,7 +39,7 @@ import android.security.trickystore.TrickyStoreService;
 import android.util.Base64;
 import android.util.Log;
 
-import com.android.internal.util.evolution.PixelDeviceRepository;
+import com.android.internal.util.expressiveos.PixelDeviceRepository;
 import com.android.server.NtServiceInjector;
 
 import java.net.HttpURLConnection;

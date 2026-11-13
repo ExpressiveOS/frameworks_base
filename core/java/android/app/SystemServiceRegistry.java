@@ -338,8 +338,8 @@ import com.android.internal.telecom.TelecomDependencies;
 import com.android.internal.util.Preconditions;
 import com.android.modules.utils.ravenwood.RavenwoodHelper;
 
-import org.evolution.display.IRefreshRateManagerService;
-import org.evolution.display.RefreshRateManager;
+import org.expressiveos.display.IRefreshRateManagerService;
+import org.expressiveos.display.RefreshRateManager;
 
 import java.util.Map;
 import java.util.Objects;
