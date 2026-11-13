@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package org.evolution.display;
+package org.expressiveos.display;
 
-import org.evolution.display.IRefreshRateListener;
+import org.expressiveos.display.IRefreshRateListener;
 
 /** @hide */
 interface IRefreshRateManagerService {

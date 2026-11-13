@@ -68,7 +68,7 @@ public class UdfpsAnimation extends ImageView {
     private final int mMaxBurnInOffsetX;
     private final int mMaxBurnInOffsetY;
 
-    private static final String UDFPS_ANIMATIONS_PACKAGE = "org.evolution.udfps.animations";
+    private static final String UDFPS_ANIMATIONS_PACKAGE = "org.expressiveos.udfps.animations";
 
     private final KeyguardStateController mKeyguardStateController;
     private final AuthController mAuthController;

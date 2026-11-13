@@ -34,7 +34,7 @@ import android.widget.ImageView
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieDrawable
-import com.android.internal.util.evolution.Utils
+import com.android.internal.util.expressiveos.Utils
 import com.android.systemui.Dependency
 import com.android.systemui.biometrics.UdfpsFpIconDrawable
 import com.android.systemui.biometrics.UdfpsIconDrawable
@@ -78,7 +78,7 @@ constructor(
     private val fingerprintDrawable: UdfpsIconDrawable = UdfpsFpIconDrawable(context)
 
     private val packageInstalled = Utils.isPackageInstalled(
-        context, "org.evolution.udfps.icons"
+        context, "org.expressiveos.udfps.icons"
     )
 
     init {

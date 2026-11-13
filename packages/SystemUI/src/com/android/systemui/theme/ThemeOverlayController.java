@@ -140,7 +140,7 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
     private static final int WALLPAPER_COLORS_SOURCE = WallpaperManager.FLAG_SYSTEM;
 
     private static final String ACTION_BOOTANIM_STYLE_CHANGED =
-            "org.evolution.intent.action.BOOTANIM_STYLE_CHANGED";
+            "org.expressiveos.intent.action.BOOTANIM_STYLE_CHANGED";
 
     private static final int[] BOOTANIM_COLOR_RES_IDS = {
             android.R.color.system_accent3_500,

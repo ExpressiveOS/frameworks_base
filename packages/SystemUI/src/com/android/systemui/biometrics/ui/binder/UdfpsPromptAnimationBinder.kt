@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 private const val TAG = "UdfpsPromptAnimationBinder"
-private const val UDFPS_ANIMATIONS_PACKAGE = "org.evolution.udfps.animations"
+private const val UDFPS_ANIMATIONS_PACKAGE = "org.expressiveos.udfps.animations"
 
 /** Lets the caller forward raw touch events to drive animation start/stop immediately. */
 interface UdfpsPromptAnimationController {

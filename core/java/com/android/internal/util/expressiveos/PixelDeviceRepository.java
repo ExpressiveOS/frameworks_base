@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package com.android.internal.util.evolution;
+package com.android.internal.util.expressiveos;
 
 import android.content.Context;
 import android.provider.Settings;

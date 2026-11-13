@@ -64,7 +64,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import android.provider.Settings
 import android.os.UserHandle
-import com.android.internal.util.evolution.Utils
+import com.android.internal.util.expressiveos.Utils
 
 object DeviceEntryIconViewBinder {
     private const val TAG = "DeviceEntryIconViewBinder"
@@ -97,7 +97,7 @@ object DeviceEntryIconViewBinder {
         val disposables = DisposableHandles()
 
         val packageInstalled = Utils.isPackageInstalled(
-            view.context, "org.evolution.udfps.icons"
+            view.context, "org.expressiveos.udfps.icons"
         )
 
         val tunerScope =

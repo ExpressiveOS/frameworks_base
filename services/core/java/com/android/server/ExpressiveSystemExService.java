@@ -26,8 +26,8 @@ import android.os.Handler;
 import android.os.PowerManager;
 import android.os.UserHandle;
 
-import com.android.internal.util.evolution.FullscreenTaskStackChangeListener;
-import com.android.internal.util.evolution.Utils;
+import com.android.internal.util.expressiveos.FullscreenTaskStackChangeListener;
+import com.android.internal.util.expressiveos.Utils;
 
 import com.android.server.LocalServices;
 import com.android.server.ServiceThread;
@@ -38,9 +38,9 @@ import java.util.List;
 
 import com.android.server.DisplayRefreshRateController;
 
-public class EvolutionSystemExService extends SystemService {
+public class ExpressiveSystemExService extends SystemService {
 
-    private static final String TAG = "EvolutionSystemExService";
+    private static final String TAG = "ExpressiveSystemExService";
 
     private final ContentResolver mResolver;
 
@@ -54,7 +54,7 @@ public class EvolutionSystemExService extends SystemService {
     private PackageRemovedListener mPackageRemovedListener;
     private ScreenStateListener mScreenStateListener;
 
-    public EvolutionSystemExService(Context context) {
+    public ExpressiveSystemExService(Context context) {
         super(context);
         mResolver = context.getContentResolver();
     }
@@ -188,7 +188,7 @@ public class EvolutionSystemExService extends SystemService {
                 return;
             }
 
-            EvolutionSystemExService.this.onPackageRemoved(packageName);
+            ExpressiveSystemExService.this.onPackageRemoved(packageName);
         }
 
         @Override

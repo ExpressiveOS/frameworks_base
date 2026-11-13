@@ -1254,7 +1254,7 @@ public class LauncherAppsService extends SystemService {
 
         private void ensureShortcutPermission(int callerUid, int callerPid,
                 @NonNull String callingPackage) {
-            if (com.android.internal.util.evolution.PixelPropsUtils.isSystemLauncher(callerUid)) {
+            if (com.android.internal.util.expressiveos.PixelPropsUtils.isSystemLauncher(callerUid)) {
                 return;
             }
             verifyCallingPackage(callingPackage, callerUid);

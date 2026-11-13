@@ -78,7 +78,7 @@ import com.android.systemui.statusbar.connectivity.MobileDataIndicators;
 import com.android.systemui.statusbar.connectivity.WifiIndicators;
 import com.android.systemui.util.MediaSessionManagerHelper;
 import com.android.internal.util.android.OmniJawsClient;
-import com.android.internal.util.evolution.VibrationUtils;
+import com.android.internal.util.expressiveos.VibrationUtils;
 
 import java.util.ArrayList;
 import java.util.Arrays;

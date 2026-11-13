@@ -122,7 +122,7 @@ import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.internal.util.EmergencyAffordanceManager;
 import com.android.internal.util.ScreenshotHelper;
 import com.android.internal.util.UserIcons;
-import com.android.internal.util.evolution.Utils;
+import com.android.internal.util.expressiveos.Utils;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.keyguard.KeyguardUpdateMonitor;
 import com.android.systemui.Flags;
@@ -1746,7 +1746,7 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
         @Override
         public void onPress() {
             ComponentName cn = new ComponentName("com.android.systemui",
-                    "com.android.systemui.evolution.onthego.OnTheGoService");
+                    "com.android.systemui.expressiveos.onthego.OnTheGoService");
             Intent onTheGoIntent = new Intent();
             onTheGoIntent.setComponent(cn);
             onTheGoIntent.setAction("start");

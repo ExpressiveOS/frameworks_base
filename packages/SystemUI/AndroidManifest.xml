@@ -638,7 +638,7 @@
                 android:foregroundServiceType="systemExempted"/>
 
         <service
-            android:name=".evolution.onthego.OnTheGoService"
+            android:name=".expressiveos.onthego.OnTheGoService"
             android:foregroundServiceType="camera"
             android:exported="false" />
 

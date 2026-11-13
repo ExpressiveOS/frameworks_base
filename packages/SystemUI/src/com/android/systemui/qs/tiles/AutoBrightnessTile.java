@@ -146,6 +146,6 @@ public class AutoBrightnessTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return MetricsEvent.EVOLVER;
+        return MetricsEvent.EXPRESSIVE_STUDIO;
     }
 }

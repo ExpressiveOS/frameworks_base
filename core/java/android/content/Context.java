@@ -7348,11 +7348,11 @@ public abstract class Context {
 
     /**
      * Use with {@link #getSystemService(String)} to retrieve a
-     * {@link org.evolution.display.RefreshRateManager} for managing display refresh rate.
+     * {@link org.expressiveos.display.RefreshRateManager} for managing display refresh rate.
      *
      * @hide
      * @see #getSystemService
-     * @see org.evolution.display.RefreshRateManager
+     * @see org.expressiveos.display.RefreshRateManager
      */
     public static final String REFRESH_RATE_MANAGER_SERVICE = "refresh_rate_ext";
 
