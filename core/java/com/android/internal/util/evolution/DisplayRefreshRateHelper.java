@@ -22,6 +22,8 @@ import java.util.Comparator;
 public class DisplayRefreshRateHelper {
 
     private static final float DEFAULT_REFRESH_RATE = 60f;
+    /** No minimum: the display may go as low as the panel allows. */
+    public static final int ADAPTIVE_REFRESH_RATE = 0;
 
     private static DisplayRefreshRateHelper sInstance = null;
 
@@ -56,12 +58,16 @@ public class DisplayRefreshRateHelper {
         return mRefreshRateList;
     }
 
+    /**
+     * The minimum refresh rate the user set, or {@link #ADAPTIVE_REFRESH_RATE} (0) when there is
+     * none: the display then picks any rate it supports, as DisplayModeDirector's default does.
+     */
     public int getMinimumRefreshRate() {
-        final int refreshRate = mContext.getResources().getInteger(
-                R.integer.config_defaultRefreshRate);
-        final float defaultRefreshRate = refreshRate != 0 ? (float) refreshRate : DEFAULT_REFRESH_RATE;
         final int ret = (int) Settings.System.getFloatForUser(mContext.getContentResolver(),
-                MIN_REFRESH_RATE, defaultRefreshRate, UserHandle.USER_SYSTEM);
+                MIN_REFRESH_RATE, ADAPTIVE_REFRESH_RATE, UserHandle.USER_SYSTEM);
+        if (ret <= ADAPTIVE_REFRESH_RATE) {
+            return ADAPTIVE_REFRESH_RATE;
+        }
         if (mRefreshRateList.size() != 0 && !mRefreshRateList.contains(ret)) {
             return mRefreshRateList.get(mRefreshRateList.size() - 1);
         }

@@ -155,7 +155,7 @@ class RefreshRateTile @Inject constructor(
     }
 
     private fun updateMode() {
-        val minRate = systemSettings.getFloat(MIN_REFRESH_RATE, DEFAULT_REFRESH_RATE)
+        val minRate = systemSettings.getFloat(MIN_REFRESH_RATE, ADAPTIVE_MIN_REFRESH_RATE)
         val maxRate = systemSettings.getFloat(PEAK_REFRESH_RATE, defaultPeakRefreshRate)
         logD("minRate = $minRate, maxRate = $maxRate")
 
@@ -185,7 +185,8 @@ class RefreshRateTile @Inject constructor(
         var minRate: Float; var maxRate: Float
         when (mode) {
             Mode.AUTO -> {
-                minRate = DEFAULT_REFRESH_RATE
+                // No floor, so the panel can idle below 60 Hz
+                minRate = ADAPTIVE_MIN_REFRESH_RATE
                 maxRate = peakRefreshRate
             }
             Mode.MAX -> {
@@ -243,6 +244,7 @@ class RefreshRateTile @Inject constructor(
         private const val DEBUG = false
 
         private const val DEFAULT_REFRESH_RATE = 60f
+        private const val ADAPTIVE_MIN_REFRESH_RATE = 0f
 
         private val icon: Icon = ResourceIcon.get(R.drawable.ic_refresh_rate)
         private val displaySettingsIntent = Intent().setComponent(ComponentName("com.android.settings",

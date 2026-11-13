@@ -1258,8 +1258,10 @@ public class DisplayModeDirector {
             }
             float highestRefreshRate = getMaxRefreshRateLocked(displayId);
 
+            // ExpressiveOS: no floor unless the user sets one (AOSP's default). A 60 Hz default
+            // kept variable-refresh panels (Pixel 11, 8 Pro, 7 Pro) from idling below 60 Hz.
             float minRefreshRate = Settings.System.getFloatForUser(cr,
-                    Settings.System.MIN_REFRESH_RATE, 60f, UserHandle.USER_CURRENT);
+                    Settings.System.MIN_REFRESH_RATE, 0f, UserHandle.USER_CURRENT);
             if (Float.isInfinite(minRefreshRate)) {
                 // Infinity means that we want the highest possible refresh rate
                 minRefreshRate = highestRefreshRate;
