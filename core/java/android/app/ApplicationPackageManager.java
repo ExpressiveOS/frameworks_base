@@ -950,9 +950,9 @@ public class ApplicationPackageManager extends PackageManager {
                 "com.google.android.apps.pixel.creativeassistant"
         );
 
-        // Integrity modules can delete ro.evolution.* at runtime; the vendor device prop stays.
-        final String device = SystemProperties.get("ro.evolution.device",
-                SystemProperties.get("ro.product.vendor.device"));
+        // App processes can't read the ROM's own device prop; the vendor device prop names
+        // the same phone and integrity modules leave it alone.
+        final String device = SystemProperties.get("ro.product.vendor.device");
         // Every Tensor Pixel reports Google as the SoC maker, so new Pixels need no list edit.
         IS_TENSOR_DEVICE = TENSOR_CODENAMES.contains(device)
                 || "Google".equalsIgnoreCase(SystemProperties.get("ro.soc.manufacturer"));
