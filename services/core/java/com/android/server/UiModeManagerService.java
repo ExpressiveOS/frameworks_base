@@ -1753,8 +1753,10 @@ final class UiModeManagerService extends SystemService {
         int callingUserId = UserHandle.getUserId(callingUid);
         final long ident = Binder.clearCallingIdentity();
         try {
-            return getContext().getPackageManager().getPackageUidAsUser(packageName,
-                    callingUserId) == callingUid;
+            // A Private Compute Core process (e.g. Magic Cue) calls with its own package
+            // name from its PCC uid; match it to the app uid as stock does.
+            return UserHandle.isSameAppIdWithPcc(getContext().getPackageManager()
+                    .getPackageUidAsUser(packageName, callingUserId), callingUid);
         } catch (PackageManager.NameNotFoundException e) {
             return false;
         } finally {
