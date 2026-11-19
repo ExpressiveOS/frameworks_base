@@ -396,10 +396,10 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     private static final int VERSION_ADDED_SUBSCRIPTION_PLANS_WITH_EXPIRATION = 15;
     private static final int VERSION_LATEST = VERSION_ADDED_SUBSCRIPTION_PLANS_WITH_EXPIRATION;
 
-    private static final int LINEAGE_VERSION_INIT = 1;
-    private static final int LINEAGE_VERSION_REINSTATED_POLICY_REJECT_ALL = 2;
-    private static final int LINEAGE_VERSION_HEALED_RESTORED_APPS = 3;
-    private static final int LINEAGE_VERSION_LATEST = LINEAGE_VERSION_HEALED_RESTORED_APPS;
+    private static final int EOS_NETPOLICY_VERSION_INIT = 1;
+    private static final int EOS_NETPOLICY_VERSION = 2;
+    private static final int EOS_NETPOLICY_VERSION_HEALED_RESTORED_APPS = 3;
+    private static final int EOS_NETPOLICY_VERSION_LATEST = EOS_NETPOLICY_VERSION_HEALED_RESTORED_APPS;
 
     @VisibleForTesting
     public static final int TYPE_WARNING = SystemMessage.NOTE_NET_WARNING;
@@ -421,7 +421,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     private static final String TAG_XML_UTILS_INT_ARRAY = "int-array";
 
     private static final String ATTR_VERSION = "version";
-    private static final String ATTR_LINEAGE_VERSION = "lineageVersion";
+    private static final String ATTR_EOS_NETPOLICY_VERSION = "eosVersion";
     private static final String ATTR_RESTRICT_BACKGROUND = "restrictBackground";
     private static final String ATTR_NETWORK_TEMPLATE = "networkTemplate";
     private static final String ATTR_SUBSCRIBER_ID = "subscriberId";
@@ -3056,7 +3056,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
 
         int type;
         int version = VERSION_INIT;
-        int lineageVersion = LINEAGE_VERSION_INIT;
+        int eosVersion = EOS_NETPOLICY_VERSION_INIT;
         boolean insideAllowlist = false;
         while ((type = in.next()) != END_DOCUMENT) {
             final String tag = in.getName();
@@ -3064,7 +3064,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
                 if (TAG_POLICY_LIST.equals(tag)) {
                     final boolean oldValue = mRestrictBackground;
                     version = readIntAttribute(in, ATTR_VERSION);
-                    lineageVersion = readIntAttribute(in, ATTR_LINEAGE_VERSION, lineageVersion);
+                    eosVersion = readIntAttribute(in, ATTR_EOS_NETPOLICY_VERSION, eosVersion);
                     mLoadedRestrictBackground = (version >= VERSION_ADDED_RESTRICT_BACKGROUND)
                             && readBooleanAttribute(in, ATTR_RESTRICT_BACKGROUND);
                 } else if (TAG_NETWORK_POLICY.equals(tag)) {
@@ -3346,11 +3346,11 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
 
         // There is nothing to migrate if coming from pre-12, from nothing, or from a restore.
         final boolean isMigratingFromAtLeastAndroid12 = version >= VERSION_SUPPORTED_CARRIER_USAGE;
-        if (!forRestore && lineageVersion < LINEAGE_VERSION_REINSTATED_POLICY_REJECT_ALL
+        if (!forRestore && eosVersion < EOS_NETPOLICY_VERSION
                 && isMigratingFromAtLeastAndroid12) {
             migrateToPolicyRejectAll();
         }
-        if (!forRestore && lineageVersion < LINEAGE_VERSION_HEALED_RESTORED_APPS) {
+        if (!forRestore && eosVersion < EOS_NETPOLICY_VERSION_HEALED_RESTORED_APPS) {
             healRestoredAppsBlockedWithoutInternet();
         }
     }
@@ -3502,7 +3502,7 @@ public class NetworkPolicyManagerService extends INetworkPolicyManager.Stub {
     private void writeUidIndependentAttributes(TypedXmlSerializer out) throws IOException {
         out.startTag(null, TAG_POLICY_LIST);
         writeIntAttribute(out, ATTR_VERSION, VERSION_LATEST);
-        writeIntAttribute(out, ATTR_LINEAGE_VERSION, LINEAGE_VERSION_LATEST);
+        writeIntAttribute(out, ATTR_EOS_NETPOLICY_VERSION, EOS_NETPOLICY_VERSION_LATEST);
         writeBooleanAttribute(out, ATTR_RESTRICT_BACKGROUND, mRestrictBackground);
 
         // write all known network policies
