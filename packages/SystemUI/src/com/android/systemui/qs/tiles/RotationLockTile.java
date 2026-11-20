@@ -64,9 +64,6 @@ public class RotationLockTile extends SecureQSTile<BooleanState> implements
 
     private static final String EMPTY_SECONDARY_STRING = "";
 
-    private static final String ROTATION_SETTINGS =
-            "org.lineageos.lineageparts.DISPLAY_ROTATION";
-
     private final Icon mIcon =
             maybeLoadResourceIcon(com.android.internal.R.drawable.ic_qs_auto_rotate);
     private final RotationLockController mController;
@@ -74,7 +71,6 @@ public class RotationLockTile extends SecureQSTile<BooleanState> implements
     private final BatteryController mBatteryController;
     private final UserSettingObserver mSetting;
     private final boolean mAllowRotationResolver;
-    private final boolean mAdvancedRotationSettingsEnabled;
 
     @Inject
     public RotationLockTile(
@@ -115,8 +111,6 @@ public class RotationLockTile extends SecureQSTile<BooleanState> implements
         mBatteryController.observe(getLifecycle(), this);
         mAllowRotationResolver = mContext.getResources().getBoolean(
                 com.android.internal.R.bool.config_allowRotationResolver);
-        mAdvancedRotationSettingsEnabled = mContext.getResources().getBoolean(
-                org.lineageos.platform.internal.R.bool.config_enableAdvancedRotationSettings);
     }
 
     @Override
@@ -136,11 +130,7 @@ public class RotationLockTile extends SecureQSTile<BooleanState> implements
 
     @Override
     public Intent getLongClickIntent() {
-        if (mAdvancedRotationSettingsEnabled) {
-            return new Intent(ROTATION_SETTINGS);
-        } else {
-            return new Intent(Settings.ACTION_AUTO_ROTATE_SETTINGS);
-        }
+        return new Intent(Settings.ACTION_AUTO_ROTATE_SETTINGS);
     }
 
     @Override

@@ -59,7 +59,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import lineageos.providers.LineageSettings
 
 /**
  * Interface to assist with binding the [CollapsedStatusBarFragment] to [HomeStatusBarViewModel].
@@ -197,13 +196,13 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
                     )
 
                 val clockAutoHideUri: Uri =
-                    LineageSettings.System.getUriFor(
-                        LineageSettings.System.STATUS_BAR_CLOCK_AUTO_HIDE
+                    Settings.System.getUriFor(
+                        Settings.System.STATUS_BAR_CLOCK_AUTO_HIDE
                     )
                 val iconHideListUri: Uri =
                     Settings.Secure.getUriFor(StatusBarIconController.ICON_HIDE_LIST)
                 val statusBarClockUri: Uri =
-                    LineageSettings.System.getUriFor(LineageSettings.System.STATUS_BAR_CLOCK)
+                    Settings.System.getUriFor(Settings.System.STATUS_BAR_CLOCK)
                 val statusBarClockChipUri: Uri =
                     Settings.System.getUriFor(Settings.System.STATUSBAR_CLOCK_CHIP)
                 val gradientStartColorUri: Uri =
@@ -594,9 +593,9 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
     }
 
     private fun ContentResolver.readClockAutoHide(): Int {
-        return LineageSettings.System.getIntForUser(
+        return Settings.System.getIntForUser(
             this,
-            LineageSettings.System.STATUS_BAR_CLOCK_AUTO_HIDE,
+            Settings.System.STATUS_BAR_CLOCK_AUTO_HIDE,
             0,
             UserHandle.USER_CURRENT,
         )
@@ -612,9 +611,9 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
     }
 
     private fun ContentResolver.readClockPosition(): Int {
-        return LineageSettings.System.getIntForUser(
+        return Settings.System.getIntForUser(
             this,
-            LineageSettings.System.STATUS_BAR_CLOCK,
+            Settings.System.STATUS_BAR_CLOCK,
             CLOCK_POSITION_LEFT,
             UserHandle.USER_CURRENT,
         )

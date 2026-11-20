@@ -36,7 +36,7 @@ import com.android.systemui.bouncer.domain.interactor.SimBouncerInteractor
 import com.android.systemui.bouncer.ui.helper.BouncerHapticPlayer
 import com.android.systemui.res.R
 import com.android.systemui.user.domain.interactor.SelectedUserInteractor
-import lineageos.providers.LineageSettings
+import android.provider.Settings
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
@@ -82,9 +82,9 @@ constructor(
             return digits
         }
         val isEnabled =
-            LineageSettings.System.getIntForUser(
+            Settings.System.getIntForUser(
                 applicationContext.contentResolver,
-                LineageSettings.System.LOCKSCREEN_PIN_SCRAMBLE_LAYOUT,
+                Settings.System.LOCKSCREEN_PIN_SCRAMBLE_LAYOUT,
                 0,
                 selectedUserInteractor.getSelectedUserId(),
             ) == 1

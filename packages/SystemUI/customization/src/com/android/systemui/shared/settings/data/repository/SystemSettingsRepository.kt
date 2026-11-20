@@ -18,6 +18,7 @@ package com.android.systemui.shared.settings.data.repository
 
 import android.provider.Settings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 /** Interface for classes that can provide access to data from [Settings.System]. */
 interface SystemSettingsRepository {
@@ -28,8 +29,13 @@ interface SystemSettingsRepository {
     /** Returns a [Flow] tracking the value of a setting as a [Boolean]. */
     fun boolSetting(name: String, defaultValue: Boolean = false): Flow<Boolean>
 
-    /** Returns a [Flow] tracking the value of a setting as a [String]. */
-    fun stringSetting(name: String): Flow<String?>
+    /**
+     * Returns a [Flow] tracking the value of a setting as a [String].
+     *
+     * The default emits the current value once; implementations that can observe the setting
+     * override it.
+     */
+    fun stringSetting(name: String): Flow<String?> = flow { emit(getString(name)) }
 
     /** Updates the value of the setting with the given name. */
     suspend fun setInt(name: String, value: Int)

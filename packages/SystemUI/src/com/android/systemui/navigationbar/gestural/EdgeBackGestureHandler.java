@@ -28,7 +28,7 @@ import static com.android.systemui.navigationbar.gestural.Utilities.isTrackpadTh
 import static com.android.systemui.shared.system.QuickStepContract.SYSUI_STATE_TOUCHPAD_GESTURES_DISABLED;
 import static com.android.wm.shell.windowdecor.DragResizeWindowGeometry.isEdgeResizePermitted;
 
-import static org.lineageos.internal.util.DeviceKeysConstants.Action;
+import static com.android.internal.util.expressiveos.DeviceKeysConstants.Action;
 
 import static java.util.stream.Collectors.joining;
 
@@ -112,8 +112,6 @@ import com.android.wm.shell.desktopmode.api.DesktopMode;
 import com.android.wm.shell.pip.Pip;
 import com.android.wm.shell.shared.desktopmode.DesktopState;
 
-import lineageos.providers.LineageSettings;
-
 import dagger.assisted.Assisted;
 import dagger.assisted.AssistedFactory;
 import dagger.assisted.AssistedInject;
@@ -147,7 +145,7 @@ public class EdgeBackGestureHandler implements TunerService.Tunable {
             "gestures.back_timeout", 250);
 
     private static final String KEY_EDGE_LONG_SWIPE_ACTION =
-            "lineagesystem:" + LineageSettings.System.KEY_EDGE_LONG_SWIPE_ACTION;
+            "system:" + Settings.System.KEY_EDGE_LONG_SWIPE_ACTION;
     private static final String BACK_GESTURE_HEIGHT =
             "system:" + Settings.System.BACK_GESTURE_HEIGHT;
     private static final String BACK_GESTURE_ARROW =
@@ -632,8 +630,8 @@ public class EdgeBackGestureHandler implements TunerService.Tunable {
         if (mMLEnableWidth > mEdgeWidthLeft) mMLEnableWidth = mEdgeWidthLeft;
 
         mIsLongSwipeEnabled = Action.fromIntSafe(
-                LineageSettings.System.getIntForUser(mContext.getContentResolver(),
-                        LineageSettings.System.KEY_EDGE_LONG_SWIPE_ACTION,
+                Settings.System.getIntForUser(mContext.getContentResolver(),
+                        Settings.System.KEY_EDGE_LONG_SWIPE_ACTION,
                         Action.NOTHING.ordinal(), UserHandle.USER_CURRENT)) != Action.NOTHING;
         updateLongSwipeWidth();
 

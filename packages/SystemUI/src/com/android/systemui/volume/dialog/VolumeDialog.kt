@@ -23,6 +23,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -40,7 +41,6 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.awaitCancellation
-import lineageos.providers.LineageSettings
 
 class VolumeDialog
 @AssistedInject
@@ -62,9 +62,9 @@ constructor(
         object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 val onLeft =
-                    LineageSettings.Secure.getIntForUser(
+                    Settings.Secure.getIntForUser(
                         context.contentResolver,
-                        LineageSettings.Secure.VOLUME_PANEL_ON_LEFT,
+                        Settings.Secure.VOLUME_PANEL_ON_LEFT,
                         0,
                         UserHandle.USER_CURRENT
                     ) != 0
@@ -145,13 +145,13 @@ constructor(
     override fun onStart() {
         super.onStart()
         context.contentResolver.registerContentObserver(
-            LineageSettings.Secure.getUriFor(LineageSettings.Secure.VOLUME_PANEL_ON_LEFT),
+            Settings.Secure.getUriFor(Settings.Secure.VOLUME_PANEL_ON_LEFT),
             false,
             volumePanelOnLeftObserver,
             UserHandle.USER_ALL
         )
-        volumePanelOnLeft = LineageSettings.Secure.getIntForUser(
-            context.contentResolver, LineageSettings.Secure.VOLUME_PANEL_ON_LEFT,
+        volumePanelOnLeft = Settings.Secure.getIntForUser(
+            context.contentResolver, Settings.Secure.VOLUME_PANEL_ON_LEFT,
             0, UserHandle.USER_CURRENT
         ) != 0
         applyLayoutAndGravity()

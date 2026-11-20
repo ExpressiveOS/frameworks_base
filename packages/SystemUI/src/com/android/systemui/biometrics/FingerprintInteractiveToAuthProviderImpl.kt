@@ -29,7 +29,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
-import org.lineageos.platform.internal.R.bool.config_fingerprintWakeAndUnlock
 
 class FingerprintInteractiveToAuthProviderImpl @Inject constructor(
     @Background private val backgroundDispatcher: CoroutineDispatcher,
@@ -37,7 +36,8 @@ class FingerprintInteractiveToAuthProviderImpl @Inject constructor(
     private val secureSettings: SecureSettings,
     private val selectedUserInteractor: SelectedUserInteractor,
 ) : FingerprintInteractiveToAuthProvider {
-    private val defaultValue = if (context.resources.getBoolean(config_fingerprintWakeAndUnlock)) {
+    private val defaultValue = if (context.resources.getBoolean(
+            com.android.internal.R.bool.config_fingerprintWakeAndUnlock)) {
         1
     } else {
         0

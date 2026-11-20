@@ -137,7 +137,6 @@ import com.android.systemui.qs.ui.compose.borderOnFocus
 import com.android.systemui.res.R
 import com.android.systemui.util.policy.PolicyRestriction
 import kotlin.math.roundToInt
-import lineageos.providers.LineageSettings
 import platform.test.motion.compose.values.MotionTestValueKey
 import platform.test.motion.compose.values.motionTestValues
 
@@ -272,7 +271,7 @@ fun BrightnessSlider(
         }
 
         cr.registerContentObserver(
-            LineageSettings.Secure.getUriFor(LineageSettings.Secure.QS_SHOW_AUTO_BRIGHTNESS),
+            Settings.Secure.getUriFor(Settings.Secure.QS_SHOW_AUTO_BRIGHTNESS),
             false, observer, UserHandle.USER_ALL
         )
 
@@ -1061,8 +1060,8 @@ private fun backgroundCornerFor(shapeMode: Int, default: Dp): Dp =
 
 private fun readShowAutoBrightness(cr: ContentResolver): Boolean =
     try {
-        LineageSettings.Secure.getIntForUser(
-            cr, LineageSettings.Secure.QS_SHOW_AUTO_BRIGHTNESS,
+        Settings.Secure.getIntForUser(
+            cr, Settings.Secure.QS_SHOW_AUTO_BRIGHTNESS,
             1, UserHandle.USER_CURRENT
         ) != 0
     } catch (_: Throwable) {

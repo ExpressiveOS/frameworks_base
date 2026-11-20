@@ -453,6 +453,11 @@
     <!-- Kill button in notification guts -->
     <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
 
+    <!-- Sync and tethering tiles -->
+    <uses-permission android:name="android.permission.MAINLINE_NETWORK_STACK" />
+    <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
+
     <protected-broadcast android:name="com.android.settingslib.action.REGISTER_SLICE_RECEIVER" />
     <protected-broadcast android:name="com.android.settingslib.action.UNREGISTER_SLICE_RECEIVER" />
     <protected-broadcast android:name="com.android.settings.flashlight.action.FLASHLIGHT_CHANGED" />
@@ -717,6 +722,20 @@
                   android:exported="true">
             <intent-filter>
                 <action android:name="com.android.settings.action.DEMO_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Status bar icons page, opened from Settings -->
+        <activity-alias android:name=".tuner.StatusBarTuner"
+                  android:targetActivity=".tuner.TunerActivity"
+                  android:icon="@drawable/tuner"
+                  android:theme="@style/Theme.SubSettingsBase.Expressive"
+                  android:label="@string/status_bar_icons_title"
+                  android:process=":tuner"
+                  android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.settings.action.STATUS_BAR_TUNER" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity-alias>

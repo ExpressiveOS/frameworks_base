@@ -23,6 +23,7 @@ import com.android.systemui.user.data.repository.UserRepository
 import com.android.systemui.util.settings.SystemSettings
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Repository for observing values of [Settings.System] for the currently active user. That means
@@ -37,4 +38,9 @@ class UserAwareSystemSettingsRepository(
     @Background bgContext: CoroutineContext,
 ) :
     UserAwareSettingsRepository(systemSettings, userRepository, backgroundDispatcher, bgContext),
-    SystemSettingsRepository
+    SystemSettingsRepository {
+
+    // Both supertypes implement this; the user-aware one observes the setting.
+    override fun stringSetting(name: String): Flow<String?> =
+        super<UserAwareSettingsRepository>.stringSetting(name)
+}

@@ -31,4 +31,8 @@
     <item type="id" name="translate_y_clock_design_animator_tag" />
     <item type="id" name="translate_y_clock_design_animator_start_tag" />
     <item type="id" name="translate_y_clock_design_animator_end_tag" />
+    <!-- Defined via @+id in res/layout/mobile_signal_group.xml; re-declared here so the
+         keyguard res root also carries them after the HD-calling layout rename. -->
+    <item type="id" name="mobile_roaming" />
+    <item type="id" name="mobile_roaming_space" />
 </resources>

@@ -57,9 +57,6 @@ import com.android.systemui.screenrecord.ScreenRecordUxController
 import com.android.systemui.statusbar.policy.SecurityController
 import com.android.systemui.statusbar.policy.ZenModeController
 import com.android.wifitrackerlib.WifiEntry
-import lineageos.app.ProfileManager
-import lineageos.hardware.LineageHardwareManager
-import lineageos.providers.LineageSettings
 import javax.inject.Inject
 
 @SysUISingleton
@@ -87,9 +84,6 @@ class AxPlatformFeatureController @Inject constructor(
 
     internal val wakeLock: PowerManager.WakeLock =
         powerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK, "AxPlatform:Caffeine")
-    private val profileManager: ProfileManager? = try {
-        ProfileManager.getInstance(context)
-    } catch (e: Exception) { null }
 
     private val nfcAdapter: NfcAdapter? = NfcAdapter.getDefaultAdapter(context)
     private val uiModeManager: UiModeManager = context.getSystemService(UiModeManager::class.java)
@@ -99,9 +93,6 @@ class AxPlatformFeatureController @Inject constructor(
         context.getSystemService(TetheringManager::class.java)
     internal val dreamManager: IDreamManager? = try {
         IDreamManager.Stub.asInterface(ServiceManager.getService("dreams"))
-    } catch (e: Exception) { null }
-    internal val lineageHardware: LineageHardwareManager? = try {
-        LineageHardwareManager.getInstance(context)
     } catch (e: Exception) { null }
 
     private val screenshotHelper = ScreenshotHelper(context)
@@ -123,16 +114,12 @@ class AxPlatformFeatureController @Inject constructor(
                 add(AxPlatformClient.FEATURE_USB_TETHER)
             if (dreamManager != null)
                 add(AxPlatformClient.FEATURE_DREAM)
-            if (lineageHardware?.isSupported(LineageHardwareManager.FEATURE_READING_ENHANCEMENT) == true)
-                add(AxPlatformClient.FEATURE_READING_MODE)
             if (batteryController.isReverseSupported)
                 add(AxPlatformClient.FEATURE_POWER_SHARE)
             add(AxPlatformClient.FEATURE_CAFFEINE)
             add(AxPlatformClient.FEATURE_VPN)
             add(AxPlatformClient.FEATURE_CAST)
             add(AxPlatformClient.FEATURE_SMART_PIXELS)
-            if (profileManager != null)
-                add(AxPlatformClient.FEATURE_PROFILES)
             add(AxPlatformClient.FEATURE_SCREEN_RECORD)
             add(AxPlatformClient.FEATURE_SCREENSHOT)
         }.toTypedArray()
@@ -234,11 +221,6 @@ class AxPlatformFeatureController @Inject constructor(
             } catch (e: RemoteException) {
                 Log.w(TAG, "Dream toggle failed", e)
             }
-            AxPlatformClient.FEATURE_READING_MODE -> lineageHardware?.let {
-                val current = it.get(LineageHardwareManager.FEATURE_READING_ENHANCEMENT)
-                it.set(LineageHardwareManager.FEATURE_READING_ENHANCEMENT, !current)
-                stateManager.broadcastBool(feature, !current)
-            }
             AxPlatformClient.FEATURE_POWER_SHARE ->
                 batteryController.setReverseState(!batteryController.isReverseOn)
             AxPlatformClient.FEATURE_CAFFEINE -> {
@@ -257,11 +239,6 @@ class AxPlatformFeatureController @Inject constructor(
             AxPlatformClient.FEATURE_CAST -> {
                 val active = castController.castDevices.firstOrNull { it.isCasting }
                 active?.let { castController.stopCasting(it, StopReason.STOP_QS_TILE) }
-            }
-            AxPlatformClient.FEATURE_PROFILES -> {
-                val current = profilesEnabled()
-                setProfilesEnabled(!current)
-                stateManager.broadcastBool(feature, !current)
             }
             AxPlatformClient.FEATURE_SMART_PIXELS ->
                 stateManager.toggleSecure(SETTING_SMART_PIXELS)
@@ -358,10 +335,6 @@ class AxPlatformFeatureController @Inject constructor(
             } catch (e: RemoteException) {
                 Log.w(TAG, "Dream setEnabled failed", e)
             }
-            AxPlatformClient.FEATURE_READING_MODE -> lineageHardware?.let {
-                it.set(LineageHardwareManager.FEATURE_READING_ENHANCEMENT, enabled)
-                stateManager.broadcastBool(feature, enabled)
-            }
             AxPlatformClient.FEATURE_POWER_SHARE ->
                 batteryController.setReverseState(enabled)
             AxPlatformClient.FEATURE_CAFFEINE -> {
@@ -382,10 +355,6 @@ class AxPlatformFeatureController @Inject constructor(
                     castController.castDevices.firstOrNull { it.isCasting }
                         ?.let { castController.stopCasting(it, StopReason.STOP_QS_TILE) }
                 }
-            }
-            AxPlatformClient.FEATURE_PROFILES -> {
-                setProfilesEnabled(enabled)
-                stateManager.broadcastBool(feature, enabled)
             }
             AxPlatformClient.FEATURE_SMART_PIXELS ->
                 stateManager.setSecureBool(SETTING_SMART_PIXELS, enabled)
@@ -428,21 +397,6 @@ class AxPlatformFeatureController @Inject constructor(
     fun getAllBluetoothDevices(): Collection<CachedBluetoothDevice> =
         localBluetoothManager?.cachedDeviceManager?.cachedDevicesCopy
             ?: bluetoothController.connectedDevices
-
-    private fun profilesEnabled(): Boolean =
-        LineageSettings.System.getIntForUser(
-            context.contentResolver,
-            LineageSettings.System.SYSTEM_PROFILES_ENABLED,
-            1, UserHandle.USER_CURRENT
-        ) == 1
-
-    private fun setProfilesEnabled(enabled: Boolean) {
-        LineageSettings.System.putIntForUser(
-            context.contentResolver,
-            LineageSettings.System.SYSTEM_PROFILES_ENABLED,
-            if (enabled) 1 else 0, UserHandle.USER_CURRENT
-        )
-    }
 
     companion object {
         private const val TAG = "AxPlatformFeatureCtrl"

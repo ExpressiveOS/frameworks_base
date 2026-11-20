@@ -48,7 +48,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.android.systemui.bouncer.ui.viewmodel.ActionButtonAppearance
 import kotlinx.coroutines.launch
-import lineageos.providers.LineageSettings
+import android.provider.Settings
 
 @Composable
 fun CredentialPinView(
@@ -199,9 +199,9 @@ private fun KeyEvent.isBackspace(): Boolean {
 private fun scrambledPinDigits(context: Context, userId: Int): List<Int> {
     val digits = mutableListOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 0)
     val isEnabled =
-        LineageSettings.System.getIntForUser(
+        Settings.System.getIntForUser(
             context.contentResolver,
-            LineageSettings.System.LOCKSCREEN_PIN_SCRAMBLE_LAYOUT,
+            Settings.System.LOCKSCREEN_PIN_SCRAMBLE_LAYOUT,
             0,
             userId,
         ) == 1

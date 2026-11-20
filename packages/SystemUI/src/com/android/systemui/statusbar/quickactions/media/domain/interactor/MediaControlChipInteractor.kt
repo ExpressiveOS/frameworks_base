@@ -290,7 +290,7 @@ constructor(
                 connection.readTimeout = 5000
                 connection.setRequestProperty(
                     "User-Agent",
-                    "SystemUI-DynamicIslandLyrics/1.0 (https://lineageos.org)",
+                    "SystemUI-DynamicIslandLyrics/1.0 (ExpressiveOS)",
                 )
 
                 if (connection.responseCode == 200) {

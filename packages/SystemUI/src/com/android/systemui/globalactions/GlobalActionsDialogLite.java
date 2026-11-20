@@ -35,6 +35,7 @@ import android.annotation.Nullable;
 import android.app.ActivityManager;
 import android.app.Dialog;
 import android.app.IActivityManager;
+import android.app.KeyguardManager;
 import android.app.UiModeManager;
 import android.app.WallpaperManager;
 import android.app.trust.TrustManager;
@@ -181,11 +182,6 @@ import dagger.assisted.Assisted;
 import dagger.assisted.AssistedFactory;
 import dagger.assisted.AssistedInject;
 
-import lineageos.app.LineageGlobalActions;
-import lineageos.providers.LineageSettings;
-
-import org.lineageos.internal.util.PowerMenuUtils;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -309,8 +305,6 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
     private final EmergencyAffordanceManager mEmergencyAffordanceManager;
     @NonNull
     private final ScreenshotHelper mScreenshotHelper;
-    @NonNull
-    private final LineageGlobalActions mLineageGlobalActions;
 
     // Used for RingerModeTracker
     private final LifecycleRegistry mLifecycle = new LifecycleRegistry(this);
@@ -590,10 +584,9 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
         mEmergencyAffordanceManager = emergencyAffordanceManager;
         mScreenshotHelper = screenshotHelper;
         mBlurUtils = blurUtils;
-        mLineageGlobalActions = LineageGlobalActions.getInstance(mContext);
         mActions = loadPowerMenuActions();
         mContext.getContentResolver().registerContentObserver(
-                LineageSettings.Secure.getUriFor(LineageSettings.Secure.POWER_MENU_ACTIONS),
+                Settings.Secure.getUriFor(Settings.Secure.POWER_MENU_ACTIONS),
                 false, mPowerMenuActionsObserver);
 
         mConfigurationController.addCallback(this);
@@ -615,21 +608,15 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
     }
 
     private String[] loadPowerMenuActions() {
-        try {
-            String[] actions = mLineageGlobalActions.getUserActionsArray();
-            if (actions != null) {
-                return actions;
-            }
-        } catch (RuntimeException e) {
-            Log.w(TAG, "Unable to load Lineage power menu actions", e);
+        final String savedActions = Settings.Secure.getStringForUser(
+                mContext.getContentResolver(),
+                Settings.Secure.POWER_MENU_ACTIONS,
+                UserHandle.USER_CURRENT);
+        if (savedActions != null) {
+            return savedActions.split("\\|");
         }
-
-        List<GlobalActionType> defaultActions = mInteractor.getPossibleGlobalActions();
-        String[] actions = new String[defaultActions.size()];
-        for (int i = 0; i < defaultActions.size(); i++) {
-            actions[i] = defaultActions.get(i).getConfigKey();
-        }
-        return actions;
+        // Nothing saved yet: the stock list.
+        return getDefaultActions();
     }
 
     /**
@@ -798,13 +785,23 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
     }
 
     private boolean shouldShowRestartSubmenu() {
-        return PowerMenuUtils.isAdvancedRestartPossible(mContext);
+        // The submenu shows for the primary user, and behind a secure lock screen only if
+        // allowed there.
+        final KeyguardManager km = mContext.getSystemService(KeyguardManager.class);
+        final boolean keyguardLocked = km != null
+                && km.inKeyguardRestrictedInputMode() && km.isKeyguardSecure();
+        final boolean advancedRestartEnabled = Settings.Secure.getInt(
+                mContext.getContentResolver(), Settings.Secure.ADVANCED_REBOOT, 1) == 1;
+        final boolean advancedRestartSecuredEnabled = Settings.Secure.getInt(
+                mContext.getContentResolver(), Settings.Secure.ADVANCED_REBOOT_SECURED, 1) == 1;
+        final boolean isPrimaryUser = UserHandle.getCallingUserId() == UserHandle.USER_SYSTEM;
+        return advancedRestartEnabled && (!keyguardLocked || advancedRestartSecuredEnabled)
+                && isPrimaryUser;
     }
 
     @VisibleForTesting
     String[] getRestartActions() {
-        return mResources.getStringArray(
-                org.lineageos.platform.internal.R.array.config_restartActionsList);
+        return mResources.getStringArray(R.array.config_restartActionsList);
     }
 
     @VisibleForTesting

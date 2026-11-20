@@ -88,8 +88,6 @@ import com.android.systemui.Flags;
 
 import dagger.Lazy;
 
-import lineageos.providers.LineageSettings;
-
 import java.io.PrintWriter;
 import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
@@ -313,9 +311,9 @@ public class NotificationShadeWindowControllerImpl
                 Settings.System.getInt(mContext.getContentResolver(),
                 Settings.System.ACCELEROMETER_ROTATION, 0) != 0;
         boolean enableLockScreenRotation =
-                LineageSettings.System.getInt(mContext.getContentResolver(),
-                LineageSettings.System.LOCKSCREEN_ROTATION,
-                mContext.getResources().getBoolean(org.lineageos.platform.internal.R.bool.
+                Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.LOCKSCREEN_ROTATION,
+                mContext.getResources().getBoolean(com.android.internal.R.bool.
                         config_lockScreenRotationEnabledByDefault) ? 1 : 0) != 0;
         return mKeyguardStateController.isKeyguardScreenRotationAllowed()
                 && (enableLockScreenRotation && enableAccelerometerRotation);
@@ -1241,7 +1239,7 @@ public class NotificationShadeWindowControllerImpl
                     Settings.System.getUriFor(Settings.System.ACCELEROMETER_ROTATION),
                     false, this);
             context.getContentResolver().registerContentObserver(
-                    LineageSettings.System.getUriFor(LineageSettings.System.LOCKSCREEN_ROTATION),
+                    Settings.System.getUriFor(Settings.System.LOCKSCREEN_ROTATION),
                     false, this);
         }
 

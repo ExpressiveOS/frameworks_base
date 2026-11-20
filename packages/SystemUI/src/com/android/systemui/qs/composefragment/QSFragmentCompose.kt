@@ -27,6 +27,7 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.os.Trace
 import android.os.UserHandle
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -175,7 +176,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import lineageos.providers.LineageSettings
 
 @SuppressLint("ValidFragment")
 class QSFragmentCompose
@@ -1567,15 +1567,15 @@ private fun rememberQsBrightnessSettings(): QsBrightnessSettings {
 
     fun readCurrent(): QsBrightnessSettings {
         val position = runCatching {
-            LineageSettings.Secure.getIntForUser(
-                cr, LineageSettings.Secure.QS_BRIGHTNESS_SLIDER_POSITION,
+            Settings.Secure.getIntForUser(
+                cr, Settings.Secure.QS_BRIGHTNESS_SLIDER_POSITION,
                 0, UserHandle.USER_CURRENT
             )
         }.getOrElse { 0 }
 
         val showSliderValue = runCatching {
-            LineageSettings.Secure.getIntForUser(
-                cr, LineageSettings.Secure.QS_SHOW_BRIGHTNESS_SLIDER,
+            Settings.Secure.getIntForUser(
+                cr, Settings.Secure.QS_SHOW_BRIGHTNESS_SLIDER,
                 1, UserHandle.USER_CURRENT
             )
         }.getOrElse { 1 }
@@ -1600,11 +1600,11 @@ private fun rememberQsBrightnessSettings(): QsBrightnessSettings {
         }
 
         cr.registerContentObserver(
-            LineageSettings.Secure.getUriFor(LineageSettings.Secure.QS_BRIGHTNESS_SLIDER_POSITION),
+            Settings.Secure.getUriFor(Settings.Secure.QS_BRIGHTNESS_SLIDER_POSITION),
             false, observer, UserHandle.USER_ALL
         )
         cr.registerContentObserver(
-            LineageSettings.Secure.getUriFor(LineageSettings.Secure.QS_SHOW_BRIGHTNESS_SLIDER),
+            Settings.Secure.getUriFor(Settings.Secure.QS_SHOW_BRIGHTNESS_SLIDER),
             false, observer, UserHandle.USER_ALL
         )
 

@@ -124,8 +124,6 @@ import com.android.systemui.statusbar.notification.collection.NotificationEntry;
 import android.service.notification.StatusBarNotification;
 import android.view.View;
 
-import lineageos.providers.LineageSettings;
-
 import dalvik.annotation.optimization.NeverCompile;
 
 import dagger.Lazy;
@@ -145,7 +143,7 @@ public class QuickSettingsControllerImpl implements QuickSettingsController, Dum
     public static final int SHADE_BACK_ANIM_SCALE_MULTIPLIER = 100;
 
     private static final String STATUS_BAR_QUICK_QS_PULLDOWN =
-            "lineagesystem:" + LineageSettings.System.STATUS_BAR_QUICK_QS_PULLDOWN;
+            "system:" + Settings.System.STATUS_BAR_QUICK_QS_PULLDOWN;
     private static final String NOTIFICATION_ROW_TRANSPARENCY =
             Settings.Secure.NOTIFICATION_ROW_TRANSPARENCY;
     private static final String NOTIFICATION_ROW_TRANSPARENCY_LOCKSCREEN =

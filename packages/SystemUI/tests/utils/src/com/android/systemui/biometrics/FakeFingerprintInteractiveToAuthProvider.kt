@@ -20,7 +20,6 @@ import android.content.Context
 import android.hardware.biometrics.common.AuthenticateReason
 import android.provider.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
-import org.lineageos.platform.internal.R
 import org.mockito.Mockito
 
 class FakeFingerprintInteractiveToAuthProvider : FingerprintInteractiveToAuthProvider {
@@ -28,12 +27,7 @@ class FakeFingerprintInteractiveToAuthProvider : FingerprintInteractiveToAuthPro
 
     private val mockContext = Mockito.mock(Context::class.java)
 
-    private val defaultValue = if (mockContext.resources.getBoolean(
-                    R.bool.config_fingerprintWakeAndUnlock)) {
-        1
-    } else {
-        0
-    }
+    private val defaultValue = 1
 
     private val userIdToExtension = mutableMapOf<Int, AuthenticateReason.Vendor>()
 
