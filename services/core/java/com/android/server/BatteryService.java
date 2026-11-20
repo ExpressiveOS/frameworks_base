@@ -90,8 +90,6 @@ import com.android.server.health.HealthServiceWrapper;
 import com.android.server.lights.LightsManager;
 import com.android.server.lights.LogicalLight;
 
-import org.lineageos.internal.notification.LedValues;
-import org.lineageos.internal.notification.LineageBatteryLights;
 import com.android.server.power.ExtremeChargingController;
 
 import java.io.BufferedReader;
@@ -388,7 +386,6 @@ public final class BatteryService extends SystemService {
 
     private MetricsLogger mMetricsLogger;
 
-    private LineageBatteryLights mLineageBatteryLights;
     private ExtremeChargingController mExtremeChargingController;
 
     private static final int MSG_BROADCAST_BATTERY_CHANGED = 1;
@@ -576,15 +573,6 @@ public final class BatteryService extends SystemService {
                 }
             }
 
-            mLineageBatteryLights = new LineageBatteryLights(mContext,
-                    new LineageBatteryLights.LedUpdater() {
-                public void update() {
-                    updateLedPulse();
-                }
-            });
-
-            // Update light state now that mLineageBatteryLights has been initialized.
-            updateLedPulse();
         }
     }
 
@@ -1844,10 +1832,6 @@ public final class BatteryService extends SystemService {
         context.sendBroadcastAsUser(intent, UserHandle.ALL, null, options);
     }
 
-    private synchronized void updateLedPulse() {
-        mLed.updateLightsLocked();
-    }
-
     private final class Led {
         // must match: config_notificationsBatteryLowBehavior in config.xml
         static final int LOW_BATTERY_BEHAVIOR_DEFAULT = 0;
@@ -1889,37 +1873,43 @@ public final class BatteryService extends SystemService {
             if (mBatteryLight == null) {
                 return;
             }
-            // mHealthInfo could be null on startup (called by SettingsObserver)
-            if (mHealthInfo == null) {
-                Slog.w(TAG, "updateLightsLocked: mHealthInfo is null; skipping");
-                return;
-            }
-            // mLineageBatteryLights is initialized during PHASE_BOOT_COMPLETED
-            // This means we don't have Lineage battery settings yet so skip.
-            if (mLineageBatteryLights == null) {
-                if (DEBUG) {
-                    Slog.w(TAG, "updateLightsLocked: mLineageBatteryLights is not yet ready; "
-                            + "skipping");
+            final int level = mHealthInfo.batteryLevel;
+            final int status = mHealthInfo.batteryStatus;
+            if (level < mLowBatteryWarningLevel) {
+                switch (mBatteryLowBehavior) {
+                    case LOW_BATTERY_BEHAVIOR_SOLID:
+                        // Solid red when low battery
+                        mBatteryLight.setColor(mBatteryLowARGB);
+                        break;
+                    case LOW_BATTERY_BEHAVIOR_FLASHING:
+                        // Flash red when battery is low and not charging
+                        mBatteryLight.setFlashing(mBatteryLowARGB, LogicalLight.LIGHT_FLASH_TIMED,
+                                mBatteryLedOn, mBatteryLedOff);
+                        break;
+                    default:
+                        if (status == BatteryManager.BATTERY_STATUS_CHARGING) {
+                            // Solid red when battery is charging
+                            mBatteryLight.setColor(mBatteryLowARGB);
+                        } else {
+                            // Flash red when battery is low and not charging
+                            mBatteryLight.setFlashing(mBatteryLowARGB,
+                                    LogicalLight.LIGHT_FLASH_TIMED, mBatteryLedOn, mBatteryLedOff);
+                        }
+                        break;
                 }
-                return;
-            }
-            if (!mLineageBatteryLights.isSupported()) {
-                return;
-            }
-
-            LedValues ledValues = new LedValues(0 /* color */, mBatteryLedOn, mBatteryLedOff);
-            mLineageBatteryLights.calcLights(ledValues, mHealthInfo.batteryLevel,
-                    mHealthInfo.batteryStatus, mHealthInfo.batteryLevel <= mLowBatteryWarningLevel);
-
-            if (!ledValues.isEnabled()) {
-                mBatteryLight.turnOff();
-            } else if (ledValues.isPulsed()) {
-                mBatteryLight.setModes(ledValues.getBrightness());
-                mBatteryLight.setFlashing(ledValues.getColor(), LogicalLight.LIGHT_FLASH_TIMED,
-                        ledValues.getOnMs(), ledValues.getOffMs());
+            } else if (status == BatteryManager.BATTERY_STATUS_CHARGING
+                    || status == BatteryManager.BATTERY_STATUS_FULL) {
+                if (status == BatteryManager.BATTERY_STATUS_FULL
+                        || level >= mBatteryNearlyFullLevel) {
+                    // Solid green when full or charging and nearly full
+                    mBatteryLight.setColor(mBatteryFullARGB);
+                } else {
+                    // Solid orange when charging and halfway full
+                    mBatteryLight.setColor(mBatteryMediumARGB);
+                }
             } else {
-                mBatteryLight.setModes(ledValues.getBrightness());
-                mBatteryLight.setColor(ledValues.getColor());
+                // No lights if not charging and not low
+                mBatteryLight.turnOff();
             }
         }
     }

@@ -252,8 +252,7 @@ public class PersistentDataBlockService extends SystemService {
                 allowedUid = mContext.getPackageManager().getPackageUidAsUser(
                         allowedPackage, PackageManager.MATCH_SYSTEM_ONLY, mainUserId);
             } catch (PackageManager.NameNotFoundException e) {
-                // not expected
-                Slog.e(TAG, "not able to find package " + allowedPackage, e);
+                // expected
             }
         }
         return allowedUid;
@@ -585,6 +584,15 @@ public class PersistentDataBlockService extends SystemService {
     @VisibleForTesting
     boolean automaticallyDeactivateFrpIfPossible() {
         synchronized (mLock) {
+            if (hasFrpSecretMagic()
+                    // default secret is all zeros
+                    && !Arrays.equals(getFrpSecret(), new byte[FRP_SECRET_SIZE])) {
+                Slog.d(TAG, "deactivating FRP");
+                writeFrpMagicAndDefaultSecret();
+                Slog.d(TAG, "deactivated FRP");
+                return true;
+            }
+
             if (deactivateFrpWithFileSecret(mFrpSecretFile)) {
                 return true;
             }

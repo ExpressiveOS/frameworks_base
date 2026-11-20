@@ -380,13 +380,10 @@ public abstract class AppsFilterBase implements AppsFilterSnapshot {
                         || isRomPackage(packageName));
     }
 
-    private static final Set<String> ROM_PACKAGES_EXACT = Set.of(
-            "lineageos.platform"
-    );
+    private static final Set<String> ROM_PACKAGES_EXACT = Set.of();
 
     private static boolean isRomPackage(@NonNull String packageName) {
-        return packageName.startsWith("org.lineageos.")
-                || packageName.startsWith("com.libremobileos.")
+        return packageName.startsWith("com.libremobileos.")
                 || packageName.startsWith("com.crdroid.")
                 || packageName.startsWith("com.android.axion.")
                 || packageName.startsWith("co.aospa.")

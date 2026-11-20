@@ -27,8 +27,7 @@
 namespace android {
 
 extern void android_server_PowerManagerService_userActivity(nsecs_t eventTime, int32_t eventType,
-                                                            ui::LogicalDisplayId displayId,
-                                                            int32_t keyCode);
+                                                            ui::LogicalDisplayId displayId);
 
 } // namespace android
 

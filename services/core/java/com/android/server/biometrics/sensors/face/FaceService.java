@@ -74,8 +74,6 @@ import com.android.server.biometrics.sensors.ClientMonitorCallbackConverter;
 import com.android.server.biometrics.sensors.LockoutResetDispatcher;
 import com.android.server.biometrics.sensors.LockoutTracker;
 import com.android.server.biometrics.sensors.face.aidl.FaceProvider;
-import com.android.server.biometrics.sensors.face.sense.SenseProvider;
-import com.android.server.biometrics.sensors.face.sense.SenseUtils;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -662,28 +660,12 @@ public class FaceService extends SystemService {
                     new ClientMonitorCallbackConverter(receiver), opPackageName);
         }
 
-        private List<ServiceProvider> getSenseProviders() {
-            final List<ServiceProvider> providers = new ArrayList<>();
-            FaceSensorPropertiesInternal props = new FaceSensorPropertiesInternal(
-                    SenseProvider.DEVICE_ID,
-                    SensorProperties.STRENGTH_WEAK,
-                    1, /** maxEnrollmentsPerUser **/
-                    new ArrayList(),
-                    FaceSensorProperties.TYPE_RGB,
-                    false, /** supportsFaceDetection **/
-                    false, /** supportsSelfIllumination **/
-                    false); /** resetLockoutRequiresChallenge **/
-            SenseProvider provider = new SenseProvider(getContext(), mBiometricStateCallback, props, mLockoutResetDispatcher);
-            providers.add(provider);
-            return providers;
-        }
-
         @android.annotation.EnforcePermission(android.Manifest.permission.USE_BIOMETRIC_INTERNAL)
         public void registerAuthenticators(
                 FaceSensorConfigurations faceSensorConfigurations) {
             super.registerAuthenticators_enforcePermission();
 
-            if (!faceSensorConfigurations.hasSensorConfigurations() && !SenseUtils.canUseProvider()) {
+            if (!faceSensorConfigurations.hasSensorConfigurations()) {
                 Slog.d(TAG, "No face sensors to register.");
                 return;
             }
@@ -693,10 +675,6 @@ public class FaceService extends SystemService {
         private List<ServiceProvider> getProviders(
                 FaceSensorConfigurations faceSensorConfigurations) {
             final List<ServiceProvider> providers = new ArrayList<>();
-            if (SenseUtils.canUseProvider()) {
-                providers.addAll(getSenseProviders());
-                return providers;
-            }
             final Pair<String, SensorProps[]> filteredSensorProps = filterAvailableHalInstances(
                             faceSensorConfigurations);
             providers.add(mFaceProviderFunction.getFaceProvider(filteredSensorProps,

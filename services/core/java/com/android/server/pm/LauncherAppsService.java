@@ -132,6 +132,7 @@ import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.ArchiveState;
 import com.android.server.pm.pkg.PackageStateInternal;
 import com.android.server.wm.ActivityTaskManagerInternal;
+import com.android.server.wm.AxSandboxService;
 
 import java.io.DataInputStream;
 import java.io.FileDescriptor;
@@ -1045,6 +1046,22 @@ public class LauncherAppsService extends SystemService {
                     callingUid, user.getIdentifier());
             final int numResolveInfos = apps.size();
             List<LauncherActivityInfoInternal> results = new ArrayList<>();
+
+            String callingPackage = mActivityManagerInternal.getPackageNameByPid(Binder.getCallingPid());
+            boolean isCallerSandboxApp = callingPackage != null
+                && callingPackage.contains(AxSandboxService.SANDBOX_PACKAGE);
+
+            List<String> hiddenPkgs = Collections.emptyList();
+            List<String> launcherHiddenPkgs = Collections.emptyList();
+            if (!isCallerSandboxApp) {
+                try {
+                    hiddenPkgs = AxSandboxService.get().getHiddenPackages(user.getIdentifier());
+                    launcherHiddenPkgs = AxSandboxService.get().getHiddenFromLauncherPackages(user.getIdentifier());
+                } catch (Exception e) {
+                    Slog.e(TAG, "Failed to retrieve hidden package lists from AxSandboxService", e);
+                }
+            }
+
             for (int i = 0; i < numResolveInfos; i++) {
                 final ResolveInfo ri = apps.get(i);
                 final String packageName = ri.activityInfo.packageName;
@@ -1052,6 +1069,12 @@ public class LauncherAppsService extends SystemService {
                     // should not happen
                     continue;
                 }
+
+                if (!isCallerSandboxApp && (hiddenPkgs.contains(packageName)
+                        || launcherHiddenPkgs.contains(packageName))) {
+                    continue;
+                }
+
                 final IncrementalStatesInfo incrementalStatesInfo =
                         mPackageManagerInternal.getIncrementalStatesInfo(packageName, callingUid,
                                 user.getIdentifier());
@@ -1231,6 +1254,9 @@ public class LauncherAppsService extends SystemService {
 
         private void ensureShortcutPermission(int callerUid, int callerPid,
                 @NonNull String callingPackage) {
+            if (com.android.internal.util.expressiveos.PixelPropsUtils.isSystemLauncher(callerUid)) {
+                return;
+            }
             verifyCallingPackage(callingPackage, callerUid);
             if (!mShortcutServiceInternal.hasShortcutHostPermission(UserHandle.getUserId(callerUid),
                     callingPackage, callerPid, callerUid)) {

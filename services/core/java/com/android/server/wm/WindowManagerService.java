@@ -61,6 +61,9 @@ import static android.provider.Settings.Global.DEVELOPMENT_ENABLE_NON_RESIZABLE_
 import static android.provider.Settings.Global.DEVELOPMENT_FORCE_DESKTOP_MODE_ON_EXTERNAL_DISPLAYS;
 import static android.provider.Settings.Global.DEVELOPMENT_FORCE_RESIZABLE_ACTIVITIES;
 import static android.provider.Settings.Global.DEVELOPMENT_WM_DISPLAY_SETTINGS_PATH;
+import static android.provider.Settings.Global.EXPRESSIVE_WINDOW_BLOCK_SCREENRECORD_DETECTION;
+import static android.provider.Settings.Global.EXPRESSIVE_WINDOW_BLOCK_SCREENSHOT_DETECTION;
+import static android.provider.Settings.Global.HIDE_SCREEN_CAPTURE_STATUS;
 import static android.service.dreams.Flags.dreamHandlesConfirmKeys;
 import static android.view.ContentRecordingSession.RECORD_CONTENT_TASK;
 import static android.view.Display.DEFAULT_DISPLAY;
@@ -793,6 +796,12 @@ public class WindowManagerService extends IWindowManager.Stub
     boolean mIsTouchDevice;
     boolean mIsFakeTouchDevice;
 
+    // Cached screen capture detection preferences. Volatile since they are written from the
+    // settings observer and read from binder threads / under mGlobalLock.
+    private volatile boolean mExpressiveWindowBlockScreenshotDetection = false;
+    private volatile boolean mExpressiveWindowBlockScreenrecordDetection = false;
+    private volatile boolean mExpressiveHideScreenCaptureStatus = false;
+
     final H mH = new H();
 
     /**
@@ -806,7 +815,14 @@ public class WindowManagerService extends IWindowManager.Stub
     WindowManagerInternal.OnHardKeyboardStatusChangeListener mHardKeyboardStatusChangeListener;
     WindowManagerInternal.OnImeRequestedChangedListener mOnImeRequestedChangedListener;
 
+    private ArraySet<WindowManagerInternal.DisplaySecureContentListener>
+            mDisplaySecureContentListeners = new ArraySet<>();
+
     SettingsObserver mSettingsObserver;
+
+    @GuardedBy("mGlobalLock")
+    boolean mWallpaperZoomEnabled = true;
+
     final EmbeddedWindowController mEmbeddedWindowController;
     final AnrController mAnrController;
 
@@ -840,6 +856,8 @@ public class WindowManagerService extends IWindowManager.Stub
                 Settings.Global.getUriFor(Settings.Global.TRANSITION_ANIMATION_SCALE);
         private final Uri mAnimationDurationScaleUri =
                 Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE);
+        private final Uri mWallpaperZoomEnabledUri =
+                Settings.System.getUriFor(Settings.System.WALLPAPER_ZOOM_ENABLED);
         private final Uri mImmersiveModeConfirmationsUri =
                 Settings.Secure.getUriFor(Settings.Secure.IMMERSIVE_MODE_CONFIRMATIONS);
         private final Uri mDisableSecureWindowsUri =
@@ -862,17 +880,31 @@ public class WindowManagerService extends IWindowManager.Stub
                 Settings.Global.MAXIMUM_OBSCURING_OPACITY_FOR_TOUCH);
         private final Uri mDevelopmentOverrideDesktopExperienceUri = Settings.Global.getUriFor(
                 Settings.Global.DEVELOPMENT_OVERRIDE_DESKTOP_EXPERIENCE_FEATURES);
+        private final Uri mExpressiveBlockScreenshotDetectionUri = Settings.Global.getUriFor(
+                EXPRESSIVE_WINDOW_BLOCK_SCREENSHOT_DETECTION);
+        private final Uri mExpressiveBlockScreenrecordDetectionUri = Settings.Global.getUriFor(
+                EXPRESSIVE_WINDOW_BLOCK_SCREENRECORD_DETECTION);
+        private final Uri mExpressiveHideScreenCaptureStatusUri = Settings.Global.getUriFor(
+                HIDE_SCREEN_CAPTURE_STATUS);
 
         public SettingsObserver() {
             super(new Handler());
             ContentResolver resolver = mContext.getContentResolver();
-            resolver.registerContentObserver(mDisplayInversionEnabledUri, false, this,
-                    UserHandle.USER_ALL);
+
+            final boolean displayInversionAvailable = mContext.getResources().getBoolean(
+                    com.android.internal.R.bool.config_displayInversionAvailable);
+            if (displayInversionAvailable) {
+                resolver.registerContentObserver(mDisplayInversionEnabledUri, false, this,
+                        UserHandle.USER_ALL);
+            }
+
             resolver.registerContentObserver(mWindowAnimationScaleUri, false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(mTransitionAnimationScaleUri, false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(mAnimationDurationScaleUri, false, this,
+                    UserHandle.USER_ALL);
+            resolver.registerContentObserver(mWallpaperZoomEnabledUri, false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(mImmersiveModeConfirmationsUri, false, this,
                     UserHandle.USER_ALL);
@@ -897,6 +929,12 @@ public class WindowManagerService extends IWindowManager.Stub
             resolver.registerContentObserver(mMaximumObscuringOpacityForTouchUri, false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(mDevelopmentOverrideDesktopExperienceUri, false, this,
+                    UserHandle.USER_ALL);
+            resolver.registerContentObserver(mExpressiveBlockScreenshotDetectionUri, false, this,
+                    UserHandle.USER_ALL);
+            resolver.registerContentObserver(mExpressiveBlockScreenrecordDetectionUri, false, this,
+                    UserHandle.USER_ALL);
+            resolver.registerContentObserver(mExpressiveHideScreenCaptureStatusUri, false, this,
                     UserHandle.USER_ALL);
         }
 
@@ -941,12 +979,24 @@ public class WindowManagerService extends IWindowManager.Stub
                 return;
             }
 
+            if (mWallpaperZoomEnabledUri.equals(uri)) {
+                updateWallpaperZoomEnabled();
+                return;
+            }
+
             if (mMagnifyImeEnabledUri.equals(uri)) {
                 updateMagnifyIme();
             }
 
             if (mDevelopmentOverrideDesktopExperienceUri.equals(uri)) {
                 updateDevelopmentOverrideDesktopExperience();
+                return;
+            }
+
+            if (mExpressiveBlockScreenshotDetectionUri.equals(uri)
+                    || mExpressiveBlockScreenrecordDetectionUri.equals(uri)
+                    || mExpressiveHideScreenCaptureStatusUri.equals(uri)) {
+                updateExpressiveBlockScreenCaptureDetection();
                 return;
             }
 
@@ -970,6 +1020,21 @@ public class WindowManagerService extends IWindowManager.Stub
             updateMaximumObscuringOpacityForTouch();
             updateDisableSecureWindows();
             updateMagnifyIme();
+            updateExpressiveBlockScreenCaptureDetection();
+            updateWallpaperZoomEnabled();
+        }
+
+        void updateWallpaperZoomEnabled() {
+            synchronized (mGlobalLock) {
+                final boolean enabled = Settings.System.getIntForUser(
+                        mContext.getContentResolver(), Settings.System.WALLPAPER_ZOOM_ENABLED,
+                        1, mCurrentUserId) != 0;
+                if (mWallpaperZoomEnabled == enabled) {
+                    return;
+                }
+                mWallpaperZoomEnabled = enabled;
+                mRoot.forAllDisplays(display -> display.mWallpaperController.updateWallpaperZoom());
+            }
         }
 
         void updateMaximumObscuringOpacityForTouch() {
@@ -1091,6 +1156,28 @@ public class WindowManagerService extends IWindowManager.Stub
 
             synchronized (mGlobalLock) {
                 mMagnifyIme = enabledMagnifyIme;
+            }
+        }
+
+        void updateExpressiveBlockScreenCaptureDetection() {
+            final ContentResolver resolver = mContext.getContentResolver();
+            final boolean wasRecordDetectionBlocked = isScreenRecordDetectionBlocked();
+
+            mExpressiveWindowBlockScreenshotDetection = Settings.Global.getInt(
+                    resolver, EXPRESSIVE_WINDOW_BLOCK_SCREENSHOT_DETECTION, 0) != 0;
+            mExpressiveWindowBlockScreenrecordDetection = Settings.Global.getInt(
+                    resolver, EXPRESSIVE_WINDOW_BLOCK_SCREENRECORD_DETECTION, 0) != 0;
+            mExpressiveHideScreenCaptureStatus = Settings.Global.getInt(
+                    resolver, HIDE_SCREEN_CAPTURE_STATUS, 0) != 0;
+
+            // Screen recording detection is state based, so apps that already registered a
+            // callback need to be told about the new state right away instead of only
+            // after their next visibility change.
+            if (wasRecordDetectionBlocked != isScreenRecordDetectionBlocked()
+                    && mScreenRecordingCallbackController != null) {
+                synchronized (mGlobalLock) {
+                    mScreenRecordingCallbackController.onDetectionBlockedChanged();
+                }
             }
         }
     }
@@ -4162,6 +4249,14 @@ public class WindowManagerService extends IWindowManager.Stub
 
     // Called by window manager policy.  Not exposed externally.
     @Override
+    public void reboot(boolean confirm, String reason) {
+        // Pass in the UI context, since ShutdownThread requires it (to show UI).
+        ShutdownThread.rebootCustom(ActivityThread.currentActivityThread().getSystemUiContext(),
+                reason, confirm);
+    }
+
+    // Called by window manager policy.  Not exposed externally.
+    @Override
     public void rebootSafeMode(boolean confirm) {
         // Pass in the UI context, since ShutdownThread requires it (to show UI).
         ShutdownThread.rebootSafeMode(ActivityThread.currentActivityThread().getSystemUiContext(),
@@ -4180,6 +4275,7 @@ public class WindowManagerService extends IWindowManager.Stub
             // This call is crucial on user switch to ensure the Magnify IME state
             // is correctly re-evaluated and applied for the new user.
             mSettingsObserver.updateMagnifyIme();
+            mSettingsObserver.updateWallpaperZoomEnabled();
         }
     }
 
@@ -5965,6 +6061,15 @@ public class WindowManagerService extends IWindowManager.Stub
         }
         if (listener != null) {
             listener.onHardKeyboardStatusChange(available);
+        }
+    }
+
+    void notifyDisplaySecureContentChange(int displayId, boolean hasSecureWindowOnScreen) {
+        synchronized (mGlobalLock) {
+            mDisplaySecureContentListeners.forEach((listener) -> {
+                listener.onDisplayHasSecureWindowOnScreenChanged(
+                        displayId, hasSecureWindowOnScreen);
+            });
         }
     }
 
@@ -9616,6 +9721,20 @@ public class WindowManagerService extends IWindowManager.Stub
             }
             WindowManagerService.this.requestAssistScreenshotInternal(receiver, displayId);
         }
+
+        @Override
+        public void registerDisplaySecureContentListener(DisplaySecureContentListener listener) {
+            synchronized (mGlobalLock) {
+                mDisplaySecureContentListeners.add(listener);
+            }
+        }
+
+        @Override
+        public void unregisterDisplaySecureContentListener(DisplaySecureContentListener listener) {
+            synchronized (mGlobalLock) {
+                mDisplaySecureContentListeners.remove(listener);
+            }
+        }
     }
 
     /** Called to inform window manager if non-Vr UI shoul be disabled or not. */
@@ -11154,6 +11273,15 @@ public class WindowManagerService extends IWindowManager.Stub
         mSurfaceSyncGroupController.markSyncGroupReady(syncGroupToken);
     }
 
+    /** Whether apps must not be told about screenshots (hardware chord screenshot callbacks). */
+    boolean isScreenshotDetectionBlocked() {
+        return mExpressiveHideScreenCaptureStatus || mExpressiveWindowBlockScreenshotDetection;
+    }
+
+    /** Whether apps must always be told that they are not part of a screen recording. */
+    boolean isScreenRecordDetectionBlocked() {
+        return mExpressiveHideScreenCaptureStatus || mExpressiveWindowBlockScreenrecordDetection;
+    }
 
     /**
      * Must be called when a screenshot is taken via hardware chord.
@@ -11168,6 +11296,11 @@ public class WindowManagerService extends IWindowManager.Stub
                 "notifyScreenshotListeners()")) {
             throw new SecurityException("Requires STATUS_BAR_SERVICE permission");
         }
+
+        if (isScreenshotDetectionBlocked()) {
+            return new ArrayList<>();
+        }
+
         synchronized (mGlobalLock) {
             final DisplayContent displayContent = mRoot.getDisplayContent(displayId);
             if (displayContent == null) {
@@ -11478,7 +11611,8 @@ public class WindowManagerService extends IWindowManager.Stub
     }
 
     boolean getDisableSecureWindows() {
-        return mDisableSecureWindows;
+        return Settings.Global.getInt(mContext.getContentResolver(),
+                Settings.Global.WINDOW_IGNORE_SECURE, 0) == 1 || mDisableSecureWindows;
     }
 
     /**

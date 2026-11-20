@@ -166,8 +166,6 @@ import com.android.server.wm.WindowManagerInternal;
 
 import dalvik.annotation.optimization.NeverCompile;
 
-import lineageos.providers.LineageSettings;
-
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.lang.annotation.Retention;
@@ -1356,12 +1354,8 @@ public final class PowerManagerService extends SystemService
         mUseAutoSuspend = mContext.getResources().getBoolean(com.android.internal.R.bool
                 .config_useAutoSuspend);
 
-        mButtonBrightnessDefault = mContext.getResources().getFloat(
-                org.lineageos.platform.internal.R.dimen
-                        .config_buttonBrightnessSettingDefaultFloat);
-        mKeyboardBrightnessDefault = mContext.getResources().getFloat(
-                org.lineageos.platform.internal.R.dimen
-                        .config_keyboardBrightnessSettingDefaultFloat);
+        mButtonBrightnessDefault = 0.0f;
+        mKeyboardBrightnessDefault = 0.0f;
 
         // Save brightness values:
         // Get float values from config.
@@ -1664,24 +1658,8 @@ public final class PowerManagerService extends SystemService
                 Settings.Global.DEVICE_DEMO_MODE),
                 false, mSettingsObserver, UserHandle.USER_SYSTEM);
 
-        // Register for Lineage settings changes.
-        resolver.registerContentObserver(LineageSettings.System.getUriFor(
-                LineageSettings.System.PROXIMITY_ON_WAKE),
-                false, mSettingsObserver, UserHandle.USER_ALL);
-        resolver.registerContentObserver(LineageSettings.Global.getUriFor(
-                LineageSettings.Global.WAKE_WHEN_PLUGGED_OR_UNPLUGGED),
-                false, mSettingsObserver, UserHandle.USER_ALL);
-        resolver.registerContentObserver(LineageSettings.Secure.getUriFor(
-                LineageSettings.Secure.BUTTON_BRIGHTNESS),
-                false, mSettingsObserver, UserHandle.USER_ALL);
-        resolver.registerContentObserver(LineageSettings.Secure.getUriFor(
-                LineageSettings.Secure.BUTTON_BACKLIGHT_TIMEOUT),
-                false, mSettingsObserver, UserHandle.USER_ALL);
-        resolver.registerContentObserver(LineageSettings.System.getUriFor(
-                LineageSettings.System.BUTTON_BACKLIGHT_ONLY_WHEN_PRESSED),
-                false, mSettingsObserver, UserHandle.USER_ALL);
-        resolver.registerContentObserver(LineageSettings.Secure.getUriFor(
-                LineageSettings.Secure.KEYBOARD_BRIGHTNESS),
+        resolver.registerContentObserver(Settings.Global.getUriFor(
+                Settings.Global.WAKE_WHEN_PLUGGED_OR_UNPLUGGED),
                 false, mSettingsObserver, UserHandle.USER_ALL);
 
         // Register for broadcasts from other components of the system.
@@ -1762,12 +1740,9 @@ public final class PowerManagerService extends SystemService
         mSupportsDoubleTapWakeConfig = resources.getBoolean(
                 com.android.internal.R.bool.config_supportDoubleTapWake);
 
-        mProximityWakeSupported = resources.getBoolean(
-                org.lineageos.platform.internal.R.bool.config_proximityCheckOnWake);
-        mProximityWakeEnabledByDefaultConfig = resources.getBoolean(
-                org.lineageos.platform.internal.R.bool.config_proximityCheckOnWakeEnabledByDefault);
-        mProximityTimeOut = resources.getInteger(
-                org.lineageos.platform.internal.R.integer.config_proximityCheckTimeout);
+        mProximityWakeSupported = false;
+        mProximityWakeEnabledByDefaultConfig = false;
+        mProximityTimeOut = 0;
         if (mProximityWakeSupported) {
             mProximityWakeLock = mContext.getSystemService(PowerManager.class)
                     .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ProximityWakeLock");
@@ -1803,8 +1778,8 @@ public final class PowerManagerService extends SystemService
                 Settings.Global.STAY_ON_WHILE_PLUGGED_IN, BatteryManager.BATTERY_PLUGGED_AC);
         mTheaterModeEnabled = Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.THEATER_MODE_ON, 0) == 1;
-        mWakeUpWhenPluggedOrUnpluggedSetting = LineageSettings.Global.getInt(resolver,
-                LineageSettings.Global.WAKE_WHEN_PLUGGED_OR_UNPLUGGED,
+        mWakeUpWhenPluggedOrUnpluggedSetting = Settings.Global.getInt(resolver,
+                Settings.Global.WAKE_WHEN_PLUGGED_OR_UNPLUGGED,
                 (mWakeUpWhenPluggedOrUnpluggedConfig ? 1 : 0)) == 1;
         mAlwaysOnEnabled = mAmbientDisplayConfiguration.alwaysOnEnabledSetting(UserHandle.USER_CURRENT);
         mAlwaysOnChargingEnabled = mAmbientDisplayConfiguration.alwaysOnChargingEnabledSetting(
@@ -1831,22 +1806,11 @@ public final class PowerManagerService extends SystemService
             mSystemProperties.set(SYSTEM_PROPERTY_RETAIL_DEMO_ENABLED, retailDemoValue);
         }
 
-        mProximityWakeEnabled = LineageSettings.System.getIntForUser(resolver,
-                LineageSettings.System.PROXIMITY_ON_WAKE,
-                mProximityWakeEnabledByDefaultConfig ? 1 : 0, UserHandle.USER_CURRENT) == 1;
-
-        mButtonTimeout = LineageSettings.Secure.getIntForUser(resolver,
-                LineageSettings.Secure.BUTTON_BACKLIGHT_TIMEOUT,
-                DEFAULT_BUTTON_ON_DURATION, UserHandle.USER_CURRENT);
-        mButtonBrightness = LineageSettings.Secure.getFloatForUser(resolver,
-                LineageSettings.Secure.BUTTON_BRIGHTNESS, mButtonBrightnessDefault,
-                UserHandle.USER_CURRENT);
-        mButtonLightOnKeypressOnly = LineageSettings.System.getIntForUser(resolver,
-                LineageSettings.System.BUTTON_BACKLIGHT_ONLY_WHEN_PRESSED,
-                0, UserHandle.USER_CURRENT) == 1;
-        mKeyboardBrightness = LineageSettings.Secure.getFloatForUser(resolver,
-                LineageSettings.Secure.KEYBOARD_BRIGHTNESS, mKeyboardBrightnessDefault,
-                UserHandle.USER_CURRENT);
+        mProximityWakeEnabled = false;
+        mButtonTimeout = DEFAULT_BUTTON_ON_DURATION;
+        mButtonBrightness = mButtonBrightnessDefault;
+        mButtonLightOnKeypressOnly = false;
+        mKeyboardBrightness = mKeyboardBrightnessDefault;
 
         mDirty |= DIRTY_SETTINGS;
     }

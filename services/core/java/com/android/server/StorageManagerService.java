@@ -1723,6 +1723,8 @@ class StorageManagerService extends IStorageManager.Stub
             // public API requirement of being in a stable location.
             if (vol.getDisk().isAdoptable()) {
                 vol.setMountFlags(vol.getMountFlags() | VolumeInfo.MOUNT_FLAG_VISIBLE_FOR_WRITE);
+            } else if (vol.getDisk().isSd()) {
+                vol.setMountFlags(vol.getMountFlags() | VolumeInfo.MOUNT_FLAG_VISIBLE_FOR_WRITE);
             }
 
             vol.setMountUserId(mCurrentUserId);
@@ -2575,8 +2577,10 @@ class StorageManagerService extends IStorageManager.Stub
                     final long destroy = extras.getLong("destroy");
 
                     final DropBoxManager dropBox = mContext.getSystemService(DropBoxManager.class);
-                    dropBox.addText(TAG_STORAGE_BENCHMARK, scrubPath(path)
-                            + " " + ident + " " + create + " " + run + " " + destroy);
+                    if (dropBox != null) {
+                        dropBox.addText(TAG_STORAGE_BENCHMARK, scrubPath(path)
+                                + " " + ident + " " + create + " " + run + " " + destroy);
+                    }
 
                     synchronized (mLock) {
                         final VolumeRecord rec = findRecordForPath(path);
@@ -2759,7 +2763,9 @@ class StorageManagerService extends IStorageManager.Stub
                         final long time = extras.getLong("time");
 
                         final DropBoxManager dropBox = mContext.getSystemService(DropBoxManager.class);
-                        dropBox.addText(TAG_STORAGE_TRIM, scrubPath(path) + " " + bytes + " " + time);
+                        if (dropBox != null) {
+                            dropBox.addText(TAG_STORAGE_TRIM, scrubPath(path) + " " + bytes + " " + time);
+                        }
 
                         synchronized (mLock) {
                             final VolumeRecord rec = findRecordForPath(path);
@@ -2846,6 +2852,11 @@ class StorageManagerService extends IStorageManager.Stub
     }
 
     private boolean prepareSmartIdleMaint() {
+        if (!mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_supportsSmartIdleMaintenance)) {
+            return false;
+        }
+
         /**
          * We can choose whether going with a new storage smart idle maintenance job
          * or falling back to the traditional way using DeviceConfig
@@ -3935,18 +3946,22 @@ class StorageManagerService extends IStorageManager.Stub
             }
         }
 
-        // Report all volumes as unmounted until we've recorded that user 0 has unlocked. There
+        // Report all volumes as unmounted until we've recorded that the parent has unlocked. There
         // are no guarantees that callers will see a consistent view of the volume before that
         // point
-        final boolean systemUserUnlocked = isSystemUnlocked(UserHandle.USER_SYSTEM);
+        final boolean systemUserUnlocked;
 
         final boolean userIsDemo;
         final boolean storagePermission;
         final boolean ceStorageUnlocked;
         final long token = Binder.clearCallingIdentity();
         try {
-            userIsDemo = LocalServices.getService(UserManagerInternal.class)
-                    .getUserInfo(userId).isDemo();
+            final UserInfo userInfo = LocalServices.getService(UserManagerInternal.class)
+                    .getUserInfo(userId);
+            final int parentUserId = userInfo.profileGroupId != UserInfo.NO_PROFILE_GROUP_ID
+                    ? userInfo.profileGroupId : userId;
+            systemUserUnlocked = isSystemUnlocked(parentUserId);
+            userIsDemo = userInfo.isDemo();
             storagePermission = mStorageManagerInternal.hasExternalStorage(callingUid,
                     callingPackage);
             ceStorageUnlocked = isCeStorageUnlocked(userId);
@@ -4910,13 +4925,22 @@ class StorageManagerService extends IStorageManager.Stub
                     final String packageDataDir =
                             String.format(Locale.US, "/storage/emulated/%d/Android/data/%s/",
                                     userId, pkg);
+                    final String packageMediaDir =
+                            String.format(Locale.US, "/storage/emulated/%d/Android/media/%s/",
+                                    userId, pkg);
 
-                    // Create package obb and data dir if it doesn't exist.
+                    // Create package obb, data and media dir if it doesn't exist.
                     int appUid = UserHandle.getUid(userId, mPmInternal.getPackage(pkg).getUid());
-                    vold.ensureAppDirsCreated(new String[] {packageObbDir, packageDataDir}, appUid);
+                    vold.ensureAppDirsCreated(
+                            new String[] {
+                                    packageObbDir,
+                                    packageDataDir,
+                                    packageMediaDir
+                            },
+                            appUid);
                 }
             } catch (ServiceManager.ServiceNotFoundException | RemoteException e) {
-                Slog.e(TAG, "Unable to create obb and data directories for " + processName,e);
+                Slog.e(TAG, "Unable to create app external storage directories for " + processName, e);
                 return false;
             }
             return true;

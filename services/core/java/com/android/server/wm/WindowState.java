@@ -1054,8 +1054,8 @@ class WindowState extends WindowContainer<WindowState> implements WindowManagerP
      */
     void setOnBackInvokedCallbackInfo(
             @Nullable OnBackInvokedCallbackInfo callbackInfo) {
-        ProtoLog.d(WM_DEBUG_BACK_PREVIEW, "%s: Setting back callback %s",
-                this, callbackInfo);
+        //ProtoLog.d(WM_DEBUG_BACK_PREVIEW, "%s: Setting back callback %s",
+        //        this, callbackInfo);
         mOnBackInvokedCallbackInfo = callbackInfo;
     }
 
@@ -1154,7 +1154,7 @@ class WindowState extends WindowContainer<WindowState> implements WindowManagerP
         // Make sure we initial all fields before adding to parentWindow, to prevent exception
         // during onDisplayChanged.
         if (mIsChildWindow) {
-            ProtoLog.v(WM_DEBUG_ADD_REMOVE, "Adding %s to %s", this, parentWindow);
+            //ProtoLog.v(WM_DEBUG_ADD_REMOVE, "Adding %s to %s", this, parentWindow);
             parentWindow.addChild(this, sWindowSubLayerComparator);
         }
 
@@ -6074,7 +6074,10 @@ class WindowState extends WindowContainer<WindowState> implements WindowManagerP
         if (mOrientationChangeRedrawRequestTime > 0) {
             final long duration =
                     SystemClock.elapsedRealtime() - mOrientationChangeRedrawRequestTime;
-            Slog.i(TAG, "finishDrawing of orientation change: " + this + " " + duration + "ms");
+            if (DEBUG) {
+                Slog.i(TAG, "finishDrawing of orientation change: " + this + " " + duration
+                        + "ms");
+            }
             mOrientationChangeRedrawRequestTime = 0;
         } else if (mActivityRecord != null && mActivityRecord.mRelaunchStartTime != 0
                 && (!Flags.improveFluidResizingPerformance()
@@ -6082,7 +6085,9 @@ class WindowState extends WindowContainer<WindowState> implements WindowManagerP
                 && mActivityRecord.findMainWindow(false /* includeStartingApp */) == this) {
             final long duration =
                     SystemClock.elapsedRealtime() - mActivityRecord.mRelaunchStartTime;
-            Slog.i(TAG, "finishDrawing of relaunch: " + this + " " + duration + "ms");
+            if (DEBUG) {
+                Slog.i(TAG, "finishDrawing of relaunch: " + this + " " + duration + "ms");
+            }
             mActivityRecord.finishOrAbortReplacingWindow();
         }
         if (mActivityRecord != null && mAttrs.type == TYPE_APPLICATION_STARTING) {

@@ -1788,7 +1788,7 @@ final class InstallPackageHelper {
                     replace = true;
                     if (DEBUG_INSTALL) Slog.d(TAG, "Replace existing package: " + pkgName);
                 }
-                if (replace) {
+                if (ps != null && replace) {
                     // Prevent apps opting out from runtime permissions
                     final int oldTargetSdk = ps.getTargetSdkVersion();
                     final int newTargetSdk = parsedPackage.getTargetSdkVersion();
@@ -3054,8 +3054,9 @@ final class InstallPackageHelper {
                 // system apps case like below.
             } else if (dataOwnerPkg != null && !dataOwnerPkg.isSdkLibrary()) {
                 if (!PackageManagerServiceUtils.isDowngradePermitted(installFlags,
-                        dataOwnerPkg.isDebuggable())) {
-                    // Downgrade is not permitted; a lower version of the app will not be allowed
+                        dataOwnerPkg.isDebuggable())
+                        && android.provider.Settings.Global.getInt(mContext.getContentResolver(),
+                        android.provider.Settings.Global.PM_DOWNGRADE_ALLOWED, 0) == 0) {
                     try {
                         PackageManagerServiceUtils.checkDowngrade(dataOwnerPkg, pkgLite);
                     } catch (PackageManagerException e) {
@@ -5185,7 +5186,8 @@ final class InstallPackageHelper {
             // If the target is already installed or 'overlay-config-signature' tag in
             // SystemConfig is set, check this here to augment the last line of defense
             // which is OMS.
-            if (pkg.getOverlayTargetOverlayableName() == null) {
+            if (pkg.getOverlayTargetOverlayableName() == null
+                    && !isThemeOverlay(pkg.getOverlayCategory())) {
                 final PackageSetting targetPkgSetting;
                 synchronized (mPm.mLock) {
                     targetPkgSetting = mPm.mSettings.getPackageLPr(pkg.getOverlayTarget());
@@ -5248,6 +5250,11 @@ final class InstallPackageHelper {
                 }
             }
         }
+    }
+
+    private static boolean isThemeOverlay(@Nullable String category) {
+        if (category == null) return false;
+        return category.startsWith("android.theme.customization.");
     }
 
     private @PackageManagerService.ScanFlags int adjustScanFlags(

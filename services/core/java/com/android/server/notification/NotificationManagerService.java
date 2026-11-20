@@ -230,6 +230,7 @@ import android.app.AlarmManager;
 import android.app.AppGlobals;
 import android.app.AppLockInternal;
 import android.app.AppOpsManager;
+import android.app.AxSandboxManager;
 import android.app.AutomaticZenRule;
 import android.app.IActivityManager;
 import android.app.IBinderSession;
@@ -256,6 +257,7 @@ import android.app.RemoteServiceException.BadUserInitiatedJobNotificationExcepti
 import android.app.StatsManager;
 import android.app.UriGrantsManager;
 import android.app.ZenBypassingApp;
+import com.android.internal.app.HiddenNotificationInfo;
 import android.app.admin.DevicePolicyManagerInternal;
 import android.app.backup.BackupManager;
 import android.app.backup.BackupRestoreEventLogger;
@@ -437,6 +439,7 @@ import com.android.server.uri.UriGrantsManagerInternal;
 import com.android.server.utils.Slogf;
 import com.android.server.utils.quota.MultiRateLimiter;
 import com.android.server.wm.ActivityTaskManagerInternal;
+import com.android.server.wm.AxSandboxService;
 import com.android.server.wm.BackgroundActivityStartCallback;
 import com.android.server.wm.WindowManagerInternal;
 
@@ -8438,7 +8441,8 @@ public class NotificationManagerService extends SystemService {
     NotificationRecord createAutoGroupSummary(int userId, String pkg, String triggeringKey,
             String groupKey, int summaryId, NotificationAttributes summaryAttr) {
         NotificationRecord summaryRecord = null;
-        boolean isPermissionFixed = mPermissionHelper.isPermissionFixed(pkg, userId);
+        final int permissionUserId = userId == USER_ALL ? USER_SYSTEM : userId;
+        boolean isPermissionFixed = mPermissionHelper.isPermissionFixed(pkg, permissionUserId);
         synchronized (mNotificationLock) {
             NotificationRecord notificationRecord = mNotificationsByKey.get(triggeringKey);
             if (notificationRecord == null) {
@@ -9273,6 +9277,19 @@ public class NotificationManagerService extends SystemService {
                     SmallHash.hash(Objects.hashCode(tag) ^ id));
         }
 
+        if (AxSandboxService.get().isPackageHidden(pkg, userId)) {
+            try {
+                String key = pkg + "|" + (tag != null ? tag : "") + "|" + id;
+                AxSandboxService.get().onHiddenNotificationRemoved(key);
+                if (DBG) {
+                    Slog.d(TAG, "Removed hidden app notification: " + key);
+                }
+                return;
+            } catch (Exception e) {
+                Slog.w(TAG, "Failed to remove hidden app notification: " + pkg, e);
+            }
+        }
+
         cancelNotification(uid, callingPid, pkg, tag, id, 0,
                 FlagChecker.mustNotHave(mustNotHaveFlags),
                 false, userId, REASON_APP_CANCEL, null);
@@ -9361,6 +9378,27 @@ public class NotificationManagerService extends SystemService {
         final int userId = ActivityManager.handleIncomingUser(callingPid,
                 callingUid, incomingUserId, true, false, "enqueueNotification", pkg);
         final UserHandle user = UserHandle.of(userId);
+
+        final boolean isHiddenApp = AxSandboxService.get().isPackageHidden(pkg, userId);
+        if (isHiddenApp) {
+            try {
+                String key = pkg + "|" + (tag != null ? tag : "") + "|" + id;
+                Icon appIcon = notification.getSmallIcon();
+                CharSequence title = notification.extras.getCharSequence(Notification.EXTRA_TITLE);
+                CharSequence text = notification.extras.getCharSequence(Notification.EXTRA_TEXT);
+                PendingIntent contentIntent = notification.contentIntent;
+                long postTime = System.currentTimeMillis();
+
+                HiddenNotificationInfo info = new HiddenNotificationInfo(
+                        key, pkg, appIcon, title, text, contentIntent, postTime, userId);
+
+                AxSandboxService.get().onHiddenNotificationPosted(info);
+                Slog.d(TAG, "Redirected notification from hidden app: " + pkg);
+                return true;
+            } catch (Exception e) {
+                Slog.w(TAG, "Failed to redirect hidden app notification: " + pkg, e);
+            }
+        }
 
         // Can throw a SecurityException if the calling uid doesn't have permission to post
         // as "pkg"
@@ -9474,11 +9512,18 @@ public class NotificationManagerService extends SystemService {
         fixNotificationWithChannel(notification, channel, notificationUid, pkg);
 
         final NotificationRecord r = new NotificationRecord(getContext(), n, channel);
-        r.setIsAppImportanceLocked(mPermissionHelper.isPermissionUserSet(pkg, userId));
+        if (AxSandboxService.get().hasAppLock(pkg, userId)) {
+            notification.extras.putBoolean(AxSandboxManager.EXTRA_NOTIFICATION_APP_LOCKED, true);
+        } else {
+            notification.extras.remove(AxSandboxManager.EXTRA_NOTIFICATION_APP_LOCKED);
+        }
+        r.setIsAppImportanceLocked(
+                mPermissionHelper.isPermissionUserSet(pkg, n.getNormalizedUserId()));
         r.setPostSilently(postSilently);
         r.setFlagBubbleRemoved(false);
         r.setPkgAllowedAsConvo(mMsgPkgsAllowedAsConvos.contains(pkg));
-        boolean isImportanceFixed = mPermissionHelper.isPermissionFixed(pkg, userId);
+        boolean isImportanceFixed =
+                mPermissionHelper.isPermissionFixed(pkg, n.getNormalizedUserId());
         r.setImportanceFixed(isImportanceFixed);
         if (notification.isFgsOrUij()) {
             if (((channel.getUserLockedFields() & NotificationChannel.USER_LOCKED_IMPORTANCE) == 0
@@ -15385,6 +15430,19 @@ public class NotificationManagerService extends SystemService {
                         redactedText, /* isAppLocked= */ true);
 
                 Notification redacted = redactedNotifBuilder.build();
+                redacted.tickerText = null;
+                if (redacted.extras != null) {
+                    redacted.extras.remove(Notification.EXTRA_BIG_TEXT);
+                    redacted.extras.remove(Notification.EXTRA_TEXT_LINES);
+                    redacted.extras.remove(Notification.EXTRA_SUB_TEXT);
+                    redacted.extras.remove(Notification.EXTRA_INFO_TEXT);
+                    redacted.extras.remove(Notification.EXTRA_SUMMARY_TEXT);
+                    redacted.extras.remove(Notification.EXTRA_TITLE_BIG);
+                    redacted.extras.remove(Notification.EXTRA_MESSAGES);
+                    redacted.extras.remove(Notification.EXTRA_HISTORIC_MESSAGES);
+                    redacted.extras.remove(Notification.EXTRA_CONVERSATION_TITLE);
+                    redacted.extras.remove(Notification.EXTRA_LARGE_ICON_BIG);
+                }
                 return sbn.cloneShallow(redacted);
             } finally {
                 Trace.endSection();

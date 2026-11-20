@@ -143,3 +143,6 @@
 -keep class com.google.android.submerge.** {
     *;
 }
+
+# ExpressiveOS
+-keep,allowoptimization,allowaccessmodification class com.android.server.ExpressiveSystemExService { *; }

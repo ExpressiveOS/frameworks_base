@@ -24,7 +24,6 @@
 #include <aidl/android/hardware/power/Mode.h>
 #include <aidl/android/system/suspend/ISystemSuspend.h>
 #include <aidl/android/system/suspend/IWakeLock.h>
-#include <android/keycodes.h>
 #include <android-base/chrono_utils.h>
 #include <android/binder_manager.h>
 #include <android/system/suspend/ISuspendControlService.h>
@@ -95,8 +94,7 @@ static bool setPowerMode(Mode mode, bool enabled) {
 }
 
 void android_server_PowerManagerService_userActivity(nsecs_t eventTime, int32_t eventType,
-                                                     ui::LogicalDisplayId displayId,
-                                                     int32_t keyCode) {
+                                                     ui::LogicalDisplayId displayId) {
     if (gPowerManagerServiceObj) {
         // Throttle calls into user activity by event type.
         // We're a little conservative about argument checking here in case the caller
@@ -112,15 +110,9 @@ void android_server_PowerManagerService_userActivity(nsecs_t eventTime, int32_t 
 
         JNIEnv* env = AndroidRuntime::getJNIEnv();
 
-        int flags = 0;
-        if (keyCode == AKEYCODE_VOLUME_UP || keyCode == AKEYCODE_VOLUME_DOWN) {
-            flags |= USER_ACTIVITY_FLAG_NO_BUTTON_LIGHTS;
-        }
-
         env->CallVoidMethod(gPowerManagerServiceObj,
                             gPowerManagerServiceClassInfo.userActivityFromNative,
-                            nanoseconds_to_milliseconds(eventTime), eventType, displayId.val(),
-                            flags);
+                            nanoseconds_to_milliseconds(eventTime), eventType, displayId.val(), 0);
         checkAndClearExceptionFromCallback(env, "userActivityFromNative");
     }
 }

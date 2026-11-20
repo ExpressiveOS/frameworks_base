@@ -8,7 +8,7 @@ filegroup {
     name: "services.freeform-sources",
     srcs: [
         "java/**/*.java",
-        "java/**/*.kt"
+        "java/**/*.kt",
     ],
     path: "java",
     visibility: ["//frameworks/base/services"],

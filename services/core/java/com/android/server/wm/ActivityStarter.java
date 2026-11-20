@@ -111,6 +111,7 @@ import android.app.WindowConfiguration.WindowingMode;
 import android.app.compat.CompatChanges;
 import android.compat.annotation.ChangeId;
 import android.compat.annotation.Overridable;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.IIntentSender;
 import android.content.Intent;
@@ -128,6 +129,7 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.os.OperationCanceledException;
 import android.os.RemoteException;
+import android.os.SystemProperties;
 import android.os.Trace;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -153,6 +155,7 @@ import com.android.server.power.ShutdownCheckPoints;
 import com.android.server.statusbar.StatusBarManagerInternal;
 import com.android.server.uri.NeededUriGrants;
 import com.android.server.wm.ActivityMetricsLogger.LaunchingState;
+import com.android.server.wm.AxSandboxService;
 import com.android.server.wm.BackgroundActivityStartController.BalVerdict;
 import com.android.server.wm.LaunchParamsController.LaunchParams;
 import com.android.server.wm.TaskFragment.EmbeddingCheckResult;
@@ -294,6 +297,11 @@ class ActivityStarter {
     private long mLastStartActivityTimeMs;
     // The reason we were trying to start the last activity
     private String mLastStartReason;
+
+
+    private static final String PAIRIP_LICENSE_ACTIVITY = 
+    "com.pairip.licensecheck.LicenseActivity";
+    private static final String BLOCK_PAIRIP_PROP = "persist.sys.pairip.activity.block";
 
     /*
      * Request details provided through setter methods. Should be reset after {@link #execute()}
@@ -918,6 +926,22 @@ class ActivityStarter {
 
                 final long origId = Binder.clearCallingIdentity();
                 try {
+                    if (mRequest.intent != null && mRequest.intent.getComponent() != null) {
+                        String targetPkg = mRequest.intent.getComponent().getPackageName();
+                        String callerPkg = mRequest.callingPackage;
+                        int targetUserId = mRequest.userId;
+                        if (targetPkg != null
+                                && AxSandboxService.get().isPackageHidden(targetPkg, targetUserId)
+                                && !AxSandboxService.BLACKLISTED_PACKAGES.contains(callerPkg)
+                                && !targetPkg.equals(callerPkg)) {
+                            int callerUid = mRequest.callingUid;
+                            if (callerUid != android.os.Process.SYSTEM_UID
+                                    && callerUid != android.os.Process.ROOT_UID) {
+                                return ActivityManager.START_CLASS_NOT_FOUND;
+                            }
+                        }
+                    }
+
                     res = resolveToHeavyWeightSwitcherIfNeeded();
                     if (res != START_SUCCESS) {
                         return res;
@@ -992,7 +1016,9 @@ class ActivityStarter {
     private void logResult(int res) {
         mSupervisor.getLaunchParamsController().flushLog();
         mRequest.logMessage.append(" result code=").append(res);
-        Slog.i(TAG, mRequest.logMessage.toString());
+        if (DEBUG_RESULTS) {
+            Slog.i(TAG, mRequest.logMessage.toString());
+        }
         mRequest.logMessage.setLength(0);
     }
 
@@ -1097,6 +1123,13 @@ class ActivityStarter {
             return START_TASK_TO_FRONT;
         }
         return res;
+    }
+
+    private boolean shouldBlockActivity(Intent intent) {
+        boolean enabled = SystemProperties.getBoolean(BLOCK_PAIRIP_PROP, false);
+        ComponentName component = intent.getComponent();
+        if (!enabled || component == null) return false;
+        return PAIRIP_LICENSE_ACTIVITY.equals(component.getClassName());
     }
 
     /**
@@ -1301,6 +1334,10 @@ class ActivityStarter {
         // TODO(b/412177078): remove null check once hsuAllowlistActivities() is gone
         if (err == START_SUCCESS && mUserHelper != null) {
             err = mUserHelper.checkRequest(request);
+        }
+
+        if (shouldBlockActivity(intent)) {
+            err = ActivityManager.START_CANCELED;
         }
 
         final Task resultRootTask = resultRecord == null
@@ -1903,21 +1940,24 @@ class ActivityStarter {
 
         if (com.android.wm.shell.Flags.enableCreateAnyBubble()) {
             final Task activityTask = mLastStartActivityRecord.getTask();
-            // Sets the launch-next-to-bubble policy if requested
-            if (options != null && options.getLaunchNextToBubble()) {
-                activityTask.mLaunchNextToBubble = true;
-            }
+            if (activityTask != null) {
+                // Sets the launch-next-to-bubble policy if requested
+                if (options != null && options.getLaunchNextToBubble()
+                        && !mStartActivity.isActivityTypeHomeOrRecents()) {
+                    activityTask.mLaunchNextToBubble = true;
+                }
 
-            // Propagate the launch-next-to-bubble policy from the source Task if any
-            if (mSourceRecord != null && mSourceRecord.getTask().mLaunchNextToBubble) {
-                activityTask.mLaunchNextToBubble = true;
+                // Propagate the launch-next-to-bubble policy from the source Task if any
+                final Task sourceTask = mSourceRecord != null ? mSourceRecord.getTask() : null;
+                if (sourceTask != null && sourceTask.mLaunchNextToBubble
+                        && !mStartActivity.isActivityTypeHomeOrRecents()) {
 
-                // Also propagate the windowingMode and bounds if not set.
-                if (options == null || (options.getLaunchWindowingMode() == WINDOWING_MODE_UNDEFINED
-                        && options.getLaunchBounds() == null)) {
-                    final Task sourceTask = mSourceRecord.getTask();
-                    activityTask.setWindowingMode(sourceTask.getWindowingMode());
-                    activityTask.setBounds(sourceTask.getBounds());
+                    // Also propagate the windowingMode and bounds if not set.
+                    if (options == null || (options.getLaunchWindowingMode() == WINDOWING_MODE_UNDEFINED
+                            && options.getLaunchBounds() == null)) {
+                        activityTask.setWindowingMode(sourceTask.getWindowingMode());
+                        activityTask.setBounds(sourceTask.getBounds());
+                    }
                 }
             }
         }
@@ -3105,8 +3145,10 @@ class ActivityStarter {
                 // This activity is not being started from another...  in this
                 // case we -always- start a new task.
                 if ((mLaunchFlags & FLAG_ACTIVITY_NEW_TASK) == 0 && mInTask == null) {
-                    Slog.w(TAG, "startActivity called from non-Activity context; forcing " +
-                            "Intent.FLAG_ACTIVITY_NEW_TASK for: " + mIntent);
+                    if (DEBUG_RESULTS) {
+                        Slog.w(TAG, "startActivity called from non-Activity context; forcing "
+                                + "Intent.FLAG_ACTIVITY_NEW_TASK for: " + mIntent);
+                    }
                     mLaunchFlags |= FLAG_ACTIVITY_NEW_TASK;
                 }
             } else if (mSourceRecord.launchMode == LAUNCH_SINGLE_INSTANCE) {
@@ -3233,7 +3275,7 @@ class ActivityStarter {
             if (mBalVerdict.blocks()) {
                 // Stays on the same root task if the activity launch is not allowed.
                 mTargetRootTask = origRootTask;
-            } else if (mSourceRecord != null && mSourceRecord.mLaunchRootTask != null) {
+            } else if (mSourceRecord != null && mSourceRecord.mLaunchRootTask != null && !mStartActivity.isActivityTypeHomeOrRecents()) {
                 // Inherit the target-root-task from source to ensure trampoline activities will be
                 // launched into the same root task.
                 mTargetRootTask = Task.fromWindowContainerToken(mSourceRecord.mLaunchRootTask);
@@ -3383,7 +3425,8 @@ class ActivityStarter {
         TaskFragment newParent = task;
         if (mInTaskFragment != null) {
             int embeddingCheckResult = canEmbedActivity(mInTaskFragment, mStartActivity, task);
-            if (embeddingCheckResult == EMBEDDING_ALLOWED) {
+            if (embeddingCheckResult == EMBEDDING_ALLOWED
+                || com.android.internal.util.expressiveos.PixelPropsUtils.isSystemLauncher(mCallingUid)) {
                 newParent = mInTaskFragment;
                 mStartActivity.mRequestedLaunchingTaskFragmentToken =
                         mInTaskFragment.getFragmentToken();

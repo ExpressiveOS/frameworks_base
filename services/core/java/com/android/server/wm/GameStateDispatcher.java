@@ -21,13 +21,17 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.os.BatteryManager;
+import android.os.Binder;
 import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Slog;
 
-import lineageos.health.HealthInterface;
+import vendor.expressiveos.health.ChargingControlSupportedMode;
+import vendor.expressiveos.health.ChargingLimitInfo;
+import vendor.expressiveos.health.IChargingControl;
 
 class GameStateDispatcher {
     private static final String TAG = "GameStateDispatcher";
@@ -145,16 +149,29 @@ class GameStateDispatcher {
                 KEY_BYPASS_CHARGE_ENABLED, 0, UserHandle.USER_CURRENT) == 1;
     }
 
+    private IChargingControl getChargingControl() {
+        final String fqName = IChargingControl.DESCRIPTOR + "/default";
+        if (!ServiceManager.isDeclared(fqName)) {
+            return null;
+        }
+        return IChargingControl.Stub.asInterface(
+                Binder.allowBlocking(ServiceManager.waitForDeclaredService(fqName)));
+    }
+
     private int getChargingLimit() {
         try {
-            final HealthInterface health = HealthInterface.getInstance(mContext);
-            mWasChargingControlEnabled = health.getEnabled();
-            if (mWasChargingControlEnabled) {
-                return health.getLimit();
+            final IChargingControl hal = getChargingControl();
+            if (hal != null && (hal.getSupportedMode() & ChargingControlSupportedMode.LIMIT) != 0) {
+                final ChargingLimitInfo info = hal.getChargingLimit();
+                if (info != null && info.max > 0 && info.max < 100) {
+                    mWasChargingControlEnabled = true;
+                    return info.max;
+                }
             }
         } catch (Exception e) {
             Slog.w(TAG, "Failed to get charging limit", e);
         }
+        mWasChargingControlEnabled = false;
         return DEFAULT_CHARGE_LIMIT;
     }
 
@@ -171,20 +188,21 @@ class GameStateDispatcher {
             return;
         }
         try {
-            final HealthInterface health = HealthInterface.getInstance(mContext);
-            health.setMode(HealthInterface.MODE_LIMIT);
-            health.setLimit(value);
+            final IChargingControl hal = getChargingControl();
+            if (hal != null && (hal.getSupportedMode() & ChargingControlSupportedMode.LIMIT) != 0) {
+                final ChargingLimitInfo info = new ChargingLimitInfo();
+                info.max = Math.min(100, Math.max(0, value));
+                info.min = value >= 100 ? 0 : Math.max(0, info.max - 5);
+                hal.setChargingLimit(info);
+            }
         } catch (Exception e) {
             Slog.w(TAG, "Failed to set charging limit", e);
         }
     }
 
     private void setBypassActive(boolean value) {
-        try {
-            final HealthInterface health = HealthInterface.getInstance(mContext);
-            health.setEnabled(value || mWasChargingControlEnabled);
-        } catch (Exception e) {
-            Slog.w(TAG, "Failed to set charging bypass", e);
+        if (!value && !mWasChargingControlEnabled) {
+            setSmartChargeLevel(100);
         }
     }
 }

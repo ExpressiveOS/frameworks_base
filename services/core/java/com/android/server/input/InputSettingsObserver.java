@@ -37,8 +37,6 @@ import android.provider.Settings;
 import android.util.Log;
 import android.view.ViewConfiguration;
 
-import lineageos.providers.LineageSettings;
-
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -135,10 +133,7 @@ class InputSettingsObserver extends ContentObserver {
                         (reason) -> updatePointerScaleFromSettings()),
                 Map.entry(Settings.System.getUriFor(
                                 Settings.System.TOUCHPAD_THREE_FINGER_TAP_CUSTOMIZATION),
-                        (reason) -> updateTouchpadThreeFingerTapShortcutEnabled()),
-                Map.entry(LineageSettings.System.getUriFor(
-                                LineageSettings.System.SWAP_VOLUME_KEYS_ON_ROTATION),
-                        (reason) -> updateVolumeKeysRotation()));
+                        (reason) -> updateTouchpadThreeFingerTapShortcutEnabled()));
     }
 
     /**
@@ -274,13 +269,6 @@ class InputSettingsObserver extends ContentObserver {
 
     private void updateShowRotaryInput() {
         mService.updateShowRotaryInput(getBoolean(Settings.System.SHOW_ROTARY_INPUT, false));
-    }
-
-    private void updateVolumeKeysRotation() {
-        mNative.setVolumeKeysRotation(
-                LineageSettings.System.getIntForUser(mContext.getContentResolver(),
-                        LineageSettings.System.SWAP_VOLUME_KEYS_ON_ROTATION, 0,
-                        UserHandle.USER_CURRENT));
     }
 
     private void updateAccessibilityLargePointer() {
