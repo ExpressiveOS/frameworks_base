@@ -360,4 +360,8 @@
     <integer name="def_tether_dun_required">0</integer>
 
     <integer name="def_ota_disable_automatic_update">1</integer>
+
+    <!-- Default for Settings.Global.RESTRICTED_NETWORKING_MODE.
+         The per-app network access switch only works with this mode on. -->
+    <bool name="def_restricted_networking_mode">true</bool>
 </resources>

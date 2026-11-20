@@ -2478,6 +2478,10 @@ class DatabaseHelper extends SQLiteOpenHelper {
             loadIntegerSetting(stmt, Settings.Global.OTA_DISABLE_AUTOMATIC_UPDATE,
                     R.integer.def_ota_disable_automatic_update);
 
+            // The per-app network access switch only works in restricted networking mode.
+            loadBooleanSetting(stmt, Settings.Global.RESTRICTED_NETWORKING_MODE,
+                    R.bool.def_restricted_networking_mode);
+
             /*
              * IMPORTANT: Do not add any more upgrade steps here as the global,
              * secure, and system settings are no longer stored in a database

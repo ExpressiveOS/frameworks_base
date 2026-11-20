@@ -4562,8 +4562,8 @@ public class SettingsProvider extends ContentProvider {
             /**
              * ExpressiveOS: defaults that need no version step. This runs each time a user's
              * settings load, after any upgrade, and only fills a value that was never set, so a
-             * user's own choice stays and no version number can clash with a LineageOS or AOSP
-             * upgrade step.
+             * user's own choice stays and no version number can clash with an AOSP upgrade
+             * step.
              *
              * Circle to Search: Settings > System > Circle to Search shows an unset
              * SEARCH_ALL_ENTRYPOINTS_ENABLED as config_searchAllEntrypointsEnabledDefault (on),
