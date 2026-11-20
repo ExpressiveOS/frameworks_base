@@ -41,6 +41,7 @@ import android.util.Log;
 
 import com.android.internal.util.expressiveos.PixelDeviceRepository;
 import com.android.server.NtServiceInjector;
+import com.android.server.integrity.EosIntegrityService;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -552,6 +553,7 @@ public class AxSpoofManager implements IAxSpoofManager {
         String updated = existing.endsWith("\n") ? existing + pkg : existing + "\n" + pkg;
         Settings.Secure.putStringForUser(
                 mResolver, Settings.Secure.SPOOF_TRICKYSTORE_TARGET, updated, UserHandle.USER_SYSTEM);
+        EosIntegrityService.recordAutoTarget(pkg);
         Log.i(TAG, "Auto-targeted newly installed package: " + pkg);
     }
 
@@ -600,7 +602,8 @@ public class AxSpoofManager implements IAxSpoofManager {
 
         String keyboxSource = Settings.Secure.getStringForUser(
                 mResolver, KEYBOX_SOURCE_KEY, UserHandle.USER_SYSTEM);
-        boolean keyboxMissing = isEmpty(Settings.Secure.getStringForUser(
+        boolean keyboxMissing = !EosIntegrityService.hasActiveKeybox()
+                && isEmpty(Settings.Secure.getStringForUser(
                         mResolver, Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX, UserHandle.USER_SYSTEM))
                 && !KEYBOX_SOURCE_USER.equals(keyboxSource)
                 && Settings.System.getIntForUser(
@@ -656,6 +659,10 @@ public class AxSpoofManager implements IAxSpoofManager {
         if (mResolver == null) return;
         if (Settings.System.getIntForUser(
                 mResolver, PIF_ENABLED_KEY, 1, UserHandle.USER_SYSTEM) == 0) {
+            return;
+        }
+        if (EosIntegrityService.getInstance() != null
+                && EosIntegrityService.refreshCanaryPifInternal(false)) {
             return;
         }
 
@@ -758,6 +765,9 @@ public class AxSpoofManager implements IAxSpoofManager {
         if (Settings.System.getIntForUser(
                 mResolver, TRICKYSTORE_ENABLED_KEY, 1, UserHandle.USER_SYSTEM) == 0) {
             return true;
+        }
+        if (EosIntegrityService.getInstance() != null) {
+            return EosIntegrityService.refreshOfficialKeyboxInternal(false);
         }
 
         String source = Settings.Secure.getStringForUser(
@@ -1129,16 +1139,33 @@ public class AxSpoofManager implements IAxSpoofManager {
         return getCached(Settings.Secure.SPOOF_GAMEPROPS_CONFIG);
     }
 
+    public void onIntegrityServiceUpdated(boolean pifChanged, boolean restartGms) {
+        if (pifChanged) {
+            refreshKey(Settings.Secure.SPOOF_PIF_CONFIG);
+            if (mActivated && mPifEnabled) {
+                stagePifPropOverrides(getCached(Settings.Secure.SPOOF_PIF_CONFIG));
+            }
+        }
+        refreshKey(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
+        refreshKey(Settings.Secure.SPOOF_TRICKYSTORE_PATCH);
+        if (mActivated && restartGms) {
+            killGmsFamily();
+        }
+    }
+
     @Override
     public String getTrickyStoreTarget() {
         if (!mActivated || !mTrickyStoreEnabled) return null;
-        return getCached(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
+        return EosIntegrityService.getMergedTargetsOrFallback(
+                getCached(Settings.Secure.SPOOF_TRICKYSTORE_TARGET));
     }
 
     @Override
     public String getTrickyStoreKeyBox() {
         if (!mActivated || !mTrickyStoreEnabled) return null;
-        return getCached(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX);
+        final String fromService = EosIntegrityService.getActiveKeyboxBase64();
+        return fromService != null ? fromService
+                : getCached(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX);
     }
 
     @Override

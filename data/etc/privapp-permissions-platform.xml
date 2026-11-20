@@ -770,6 +770,7 @@ applications that come with the platform
     </privapp-permissions>
 
     <privapp-permissions package="com.android.settings">
+        <permission name="android.permission.MANAGE_EOS_INTEGRITY"/>
         <permission name="android.permission.INSTALL_DYNAMIC_SYSTEM"/>
         <permission name="android.permission.BIND_CELL_BROADCAST_SERVICE"/>
         <permission name="android.permission.MANAGE_SAFETY_CENTER" />

@@ -192,6 +192,7 @@ import com.android.server.incident.IncidentCompanionService;
 import com.android.server.input.InputManagerService;
 import com.android.server.inputmethod.InputMethodManagerService;
 import com.android.server.integrity.AppIntegrityManagerService;
+import com.android.server.integrity.EosIntegrityService;
 import com.android.server.job.JobSchedulerService;
 import com.android.server.lights.LightsService;
 import com.android.server.locales.LocaleManagerService;
@@ -1916,6 +1917,10 @@ public final class SystemServer implements Dumpable {
                 mSystemServiceManager.startService(AppIntegrityManagerService.class);
                 t.traceEnd();
             }
+
+            t.traceBegin("StartEosIntegrityService");
+            mSystemServiceManager.startService(EosIntegrityService.class);
+            t.traceEnd();
 
             t.traceBegin("StartLogcatManager");
             mSystemServiceManager.startService(LogcatManagerService.class);

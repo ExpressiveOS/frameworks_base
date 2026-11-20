@@ -9625,6 +9625,11 @@
                 android:protectionLevel="signature|privileged"
                 android:featureFlag="android.permission.flags.open_safety_center_apis" />
 
+    <!-- @hide Allows Expressive Studio / Settings to query metadata and trigger updates on
+         ExpressiveOS's privileged eos_integrity service without exposing raw keybox keys. -->
+    <permission android:name="android.permission.MANAGE_EOS_INTEGRITY"
+                android:protectionLevel="signature|privileged" />
+
     <!-- @SystemApi Allows an application to access the AmbientContextEvent service.
          @hide
     -->
