@@ -190,7 +190,7 @@ prebuilt_etc {
 
 prebuilt_etc {
     name: "privapp_whitelist_com.android.statementservice",
-    product_specific: true,
+    system_ext_specific: true,
     sub_dir: "permissions",
     src: "com.android.statementservice.xml",
     filename_from_src: true,
@@ -209,6 +209,13 @@ prebuilt_etc {
     system_ext_specific: true,
     sub_dir: "permissions",
     src: "com.android.storagemanager.xml",
+    filename_from_src: true,
+}
+
+prebuilt_etc {
+    name: "privapp_whitelist_com.android.appdatabackup",
+    sub_dir: "permissions",
+    src: "privapp-permissions-appbackup.xml",
     filename_from_src: true,
 }
 

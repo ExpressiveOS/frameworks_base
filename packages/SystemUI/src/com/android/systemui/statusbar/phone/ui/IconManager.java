@@ -19,11 +19,14 @@ package com.android.systemui.statusbar.phone.ui;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_BINDABLE;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_ICON;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_MOBILE_NEW;
+import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_NETWORK_TRAFFIC;
 import static com.android.systemui.statusbar.phone.StatusBarIconHolder.TYPE_WIFI_NEW;
 
 import android.annotation.Nullable;
 import android.content.Context;
 import android.os.Bundle;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -36,7 +39,9 @@ import com.android.internal.statusbar.StatusBarIcon.Shape;
 import com.android.systemui.demomode.DemoModeCommandReceiver;
 
 import com.android.systemui.kairos.KairosNetwork;
+import com.android.systemui.res.R;
 import com.android.systemui.statusbar.BaseStatusBarFrameLayout;
+import com.android.systemui.statusbar.NetworkTraffic;
 import com.android.systemui.statusbar.StatusBarIconView;
 import com.android.systemui.statusbar.StatusIconDisplayable;
 import com.android.systemui.statusbar.connectivity.ui.MobileContextProvider;
@@ -102,6 +107,9 @@ public class IconManager implements DemoModeCommandReceiver {
 
     protected ArrayList<String> mBlockList = new ArrayList<>();
 
+    private final boolean mNewIconStyle;
+    private final boolean mShowNotificationCount;
+
     public IconManager(
             ViewGroup group,
             StatusBarLocation location,
@@ -118,6 +126,11 @@ public class IconManager implements DemoModeCommandReceiver {
         mLocation = location;
         mKairosNetwork = kairosNetwork;
         mAppScope = appScope;
+
+        mNewIconStyle = StatusBarIconView.useColoredIcons(mContext);
+        mShowNotificationCount = Settings.System.getIntForUser(mContext.getContentResolver(),
+            Settings.System.STATUSBAR_NOTIF_COUNT, 0,
+            UserHandle.USER_CURRENT) == 1;
 
         reloadDimens();
 
@@ -177,6 +190,7 @@ public class IconManager implements DemoModeCommandReceiver {
             case TYPE_ICON -> addIcon(index, slot, blocked, holder.getIcon());
             case TYPE_WIFI_NEW -> addNewWifiIcon(index, slot);
             case TYPE_MOBILE_NEW -> addNewMobileIcon(index, slot, holder.getTag());
+            case TYPE_NETWORK_TRAFFIC -> addNetworkTraffic(index, slot);
             case TYPE_BINDABLE ->
                 // Safe cast, since only BindableIconHolders can set this tag on themselves
                     addBindableIcon((BindableIconHolder) holder, index);
@@ -187,6 +201,8 @@ public class IconManager implements DemoModeCommandReceiver {
     protected StatusBarIconView addIcon(int index, String slot, boolean blocked,
             StatusBarIcon icon) {
         StatusBarIconView view = onCreateStatusBarIconView(slot, blocked);
+        view.setIconStyle(mNewIconStyle);
+        view.setShowCount(mShowNotificationCount);
         view.set(icon);
         mGroup.addView(view, index, onCreateLayoutParams(icon.shape));
         return view;
@@ -241,6 +257,12 @@ public class IconManager implements DemoModeCommandReceiver {
         return view;
     }
 
+    private NetworkTraffic addNetworkTraffic(int index, String slot) {
+        NetworkTraffic view = onCreateNetworkTraffic(slot);
+        mGroup.addView(view, index, onCreateLayoutParams(Shape.WRAP_CONTENT));
+        return view;
+    }
+
     private StatusBarIconView onCreateStatusBarIconView(String slot, boolean blocked) {
         return new StatusBarIconView(mContext, slot, null, blocked);
     }
@@ -276,6 +298,11 @@ public class IconManager implements DemoModeCommandReceiver {
                             mMobileIconsViewModel.get().viewModelForSub(subId, mLocation)
                     );
         }
+    }
+
+    private NetworkTraffic onCreateNetworkTraffic(String slot) {
+        NetworkTraffic view = NetworkTraffic.fromContext(mContext, slot);
+        return view;
     }
 
     protected LinearLayout.LayoutParams onCreateLayoutParams(Shape shape) {

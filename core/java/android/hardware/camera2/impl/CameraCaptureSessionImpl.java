@@ -17,6 +17,7 @@ package android.hardware.camera2.impl;
 
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
+import android.app.ActivityThread;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraDevice;
@@ -30,6 +31,7 @@ import android.hardware.camera2.utils.TaskSingleDrainer;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.SystemClock;
+import android.os.SystemProperties;
 import android.util.Log;
 import android.view.Surface;
 
@@ -135,6 +137,23 @@ public class CameraCaptureSessionImpl extends CameraCaptureSession
             Log.e(TAG, mIdString + "Failed to create capture session; configuration failed");
             mConfigureSuccess = false;
         }
+
+        setSkipUnconfigure();
+    }
+
+    private void setSkipUnconfigure() {
+        String packageName = ActivityThread.currentOpPackageName();
+        if (packageName == null || packageName.isEmpty() || 
+            packageName.equals("com.google.android.GoogleCamera")) {
+            return;
+        }
+
+        List<String> packageList = Arrays.asList(SystemProperties.get(
+                "vendor.camera.skip_unconfigure.packagelist", packageName).split(","));
+
+        if (packageList.contains(packageName)) {
+            mSkipUnconfigure = true;
+        }
     }
 
 
@@ -237,7 +256,8 @@ public class CameraCaptureSessionImpl extends CameraCaptureSession
         } else if (request.isReprocess() && !isReprocessable()) {
             throw new IllegalArgumentException("this capture session cannot handle reprocess " +
                     "requests");
-        } else if (request.isReprocess() && request.getReprocessableSessionId() != mId) {
+        } else if (!mDeviceImpl.isPrivilegedApp() &&
+                request.isReprocess() && request.getReprocessableSessionId() != mId) {
             throw new IllegalArgumentException("capture request was created for another session");
         }
     }

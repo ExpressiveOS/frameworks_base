@@ -17,10 +17,14 @@
 package com.android.systemui.statusbar.pipeline.mobile.domain.interactor
 
 import android.content.Context
+import android.telephony.SubscriptionManager
+import android.provider.Settings
+import com.android.systemui.Dependency
 import com.android.settingslib.SignalIcon.MobileIconGroup
 import com.android.settingslib.graph.SignalDrawable
 import com.android.settingslib.mobile.MobileIconCarrierIdOverrides
 import com.android.settingslib.mobile.MobileIconCarrierIdOverridesImpl
+import com.android.systemui.tuner.TunerService
 import com.android.systemui.kairos.State
 import com.android.systemui.kairos.combine
 import com.android.systemui.kairos.flatMap
@@ -42,6 +46,8 @@ import com.android.systemui.statusbar.pipeline.satellite.ui.model.SatelliteIconM
 import com.android.systemui.statusbar.pipeline.shared.data.model.DataActivityModel
 import com.android.systemui.util.lifecycle.kairos.KairosBuilder
 import com.android.systemui.util.lifecycle.kairos.kairosBuilder
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
 
 interface MobileIconInteractorKairos {
     /** The table log created for this connection */
@@ -123,11 +129,29 @@ interface MobileIconInteractorKairos {
     /** See [MobileIconsInteractor.isForceHidden]. */
     val isForceHidden: State<Boolean>
 
+    /** See [MobileIconsInteractor.isRoamingForceHidden]. */
+    val isRoamingForceHidden: State<Boolean>
+
+    /** True when VoLTE/VONR available */
+    val isMobileHd: State<Boolean>
+
+    /** See [MobileIconsInteractor.isMobileHdForceHidden]. */
+    val isMobileHdForceHidden: State<Boolean>
+
+    /** True when VoWifi available */
+    val isVoWifi: State<Boolean>
+
+    /** See [MobileIconsInteractor.isVoWifiForceHidden]. */
+    val isVoWifiForceHidden: State<Boolean>
+
     /** See [MobileConnectionRepository.isAllowedDuringAirplaneMode]. */
     val isAllowedDuringAirplaneMode: State<Boolean>
 
     /** True when in carrier network change mode */
     val carrierNetworkChangeActive: State<Boolean>
+
+    /** Whether to show the 4G icon instead of LTE. */
+    val shouldShowFourgIcon: State<Boolean>
 }
 
 /** Interactor for a single mobile connection. This connection _should_ have one subscription ID */
@@ -141,6 +165,9 @@ class MobileIconInteractorKairosImpl(
     defaultMobileIconGroup: State<MobileIconGroup>,
     isDefaultConnectionFailed: State<Boolean>,
     override val isForceHidden: State<Boolean>,
+    override val isRoamingForceHidden: State<Boolean>,
+    override val isMobileHdForceHidden: State<Boolean>,
+    override val isVoWifiForceHidden: State<Boolean>,
     private val connectionRepository: MobileConnectionRepositoryKairos,
     private val context: Context,
     private val carrierIdOverrides: MobileIconCarrierIdOverrides =
@@ -196,13 +223,40 @@ class MobileIconInteractorKairosImpl(
             }
         }
 
+    private fun resolveCarrierIdForIconOverride(rawCarrierId: Int): Int {
+        if (carrierIdOverrides.carrierIdEntryExists(rawCarrierId)) {
+            return rawCarrierId
+        }
+        val subInfo =
+            context.getSystemService(SubscriptionManager::class.java)
+                ?.getActiveSubscriptionInfo(subscriptionId)
+        if (subInfo != null) {
+            val fromSub = subInfo.carrierId
+            if (carrierIdOverrides.carrierIdEntryExists(fromSub)) {
+                return fromSub
+            }
+            val mcc = subInfo.mccString
+            val mnc = subInfo.mncString
+            if (mcc != null && mnc != null) {
+                val inferred =
+                    MobileIconCarrierIdOverridesImpl.inferCarrierIdFromMccMnc(mcc + mnc)
+                if (inferred != null) {
+                    return inferred
+                }
+            }
+        }
+        return rawCarrierId
+    }
+
     override val networkTypeIconGroup: State<NetworkTypeIconModel> =
         combine(defaultNetworkType, connectionRepository.carrierId) { networkType, carrierId ->
-                // DefaultIcon comes out of the icongroup lookup, we check for overrides here
-                if (carrierIdOverrides.carrierIdEntryExists(carrierId)) {
+                // DefaultIcon comes out of the icongroup lookup, we check for overrides here.
+                // Resolve via SubscriptionInfo/MCC for eSIM profiles that report UNKNOWN.
+                val resolvedCarrierId = resolveCarrierIdForIconOverride(carrierId)
+                if (carrierIdOverrides.carrierIdEntryExists(resolvedCarrierId)) {
                     val iconOverride =
                         carrierIdOverrides.getOverrideFor(
-                            carrierId,
+                            resolvedCarrierId,
                             networkType.name,
                             context.resources,
                         )
@@ -339,19 +393,28 @@ class MobileIconInteractorKairosImpl(
     // See b/346904529 for details
     private val satelliteShownLevel: State<Int> = connectionRepository.satelliteLevel
 
+    private val showRoaming: State<Boolean> =
+        combine(isRoaming, isRoamingForceHidden) { roaming, hidden -> roaming && !hidden }
+
     private val cellularIcon: State<SignalIconModel.CellularTypeIconModel.Cellular> =
         combine(
-            cellularShownLevel,
-            numberOfLevels,
-            showExclamationMarkForCellular,
-            carrierNetworkChangeActive,
-        ) { cellularShownLevel, numberOfLevels, showExclamationMark, carrierNetworkChange ->
-            SignalIconModel.CellularTypeIconModel.Cellular(
+            combine(
                 cellularShownLevel,
                 numberOfLevels,
-                showExclamationMark,
-                carrierNetworkChange,
-            )
+                showExclamationMarkForCellular,
+                carrierNetworkChangeActive,
+            ) { level, numLevels, showEx, carrierChange ->
+                SignalIconModel.CellularTypeIconModel.Cellular(
+                    level = level,
+                    numberOfLevels = numLevels,
+                    showExclamationMark = showEx,
+                    carrierNetworkChange = carrierChange,
+                    showRoaming = false,
+                )
+            },
+            showRoaming,
+        ) { icon, roaming ->
+            icon.copy(showRoaming = roaming)
         }
 
     private val satelliteIcon: State<SignalIconModel.Satellite> =
@@ -402,4 +465,33 @@ class MobileIconInteractorKairosImpl(
                     )
                 }
             }
+
+    override val isMobileHd: State<Boolean> =
+        connectionRepository.imsState
+            .map { it.isHdVoiceCapable() }
+
+    override val isVoWifi: State<Boolean> =
+        connectionRepository.imsState
+            .map { it.isVoWifiAvailable() }
+
+    private val SHOW_FOURG_ICON: String =
+            "system:" + Settings.System.SHOW_FOURG_ICON
+
+    override val shouldShowFourgIcon: State<Boolean> = buildState {
+        callbackFlow {
+                val callback =
+                    object : TunerService.Tunable {
+                        override fun onTuningChanged(key: String, newValue: String?) {
+                            when (key) {
+                                SHOW_FOURG_ICON ->
+                                    trySend(TunerService.parseIntegerSwitch(newValue, false))
+                            }
+                        }
+                    }
+                Dependency.get(TunerService::class.java).addTunable(callback, SHOW_FOURG_ICON)
+
+                awaitClose { Dependency.get(TunerService::class.java).removeTunable(callback) }
+            }
+            .toState(initialValue = false)
+    }
 }

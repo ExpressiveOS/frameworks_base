@@ -174,6 +174,7 @@ public final class PermissionManager {
             "permission grant or revoke changed gids";
 
     private static final String SYSTEM_PKG = "android";
+    private static final String FACEAUTH_PKG = "co.aospa.sense";
 
     /**
      * Refuse to install package if groups of permissions are bad
@@ -254,6 +255,9 @@ public final class PermissionManager {
     private PermissionUsageHelper mUsageHelper;
 
     private List<SplitPermissionInfo> mEnabledSplitPermissionInfos;
+
+    private static String[] sLocationProviderPkgNames;
+    private static String[] sLocationExtraPkgNames;
 
     /**
      * Creates a new instance.
@@ -1367,10 +1371,21 @@ public final class PermissionManager {
         updateIndicatorExemptedPackages(context);
         ArraySet<String> pkgNames = new ArraySet<>();
         pkgNames.add(SYSTEM_PKG);
+        pkgNames.add(FACEAUTH_PKG);
         for (int i = 0; i < INDICATOR_EXEMPTED_PACKAGES.length; i++) {
             String exemptedPackage = INDICATOR_EXEMPTED_PACKAGES[i];
             if (exemptedPackage != null) {
                 pkgNames.add(exemptedPackage);
+            }
+        }
+        for (String pkgName: sLocationProviderPkgNames) {
+            if (pkgName != null) {
+                pkgNames.add(pkgName);
+            }
+        }
+        for (String pkgName: sLocationExtraPkgNames) {
+            if (pkgName != null) {
+                pkgNames.add(pkgName);
             }
         }
         return pkgNames;
@@ -1388,6 +1403,10 @@ public final class PermissionManager {
             for (int i = 0; i < EXEMPTED_ROLES.length; i++) {
                 INDICATOR_EXEMPTED_PACKAGES[i] = context.getString(EXEMPTED_ROLES[i]);
             }
+            sLocationProviderPkgNames = context.getResources().getStringArray(
+                    R.array.config_locationProviderPackageNames);
+            sLocationExtraPkgNames = context.getResources().getStringArray(
+                    R.array.config_locationExtraPackageNames);
         }
     }
     /**

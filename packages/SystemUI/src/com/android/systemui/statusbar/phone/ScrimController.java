@@ -86,6 +86,7 @@ import com.android.systemui.shade.ui.ShadeColors;
 import com.android.systemui.statusbar.notification.stack.ViewState;
 import com.android.systemui.statusbar.policy.ConfigurationController;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
+import com.android.systemui.util.ScrimUtils;
 import com.android.systemui.util.wakelock.DelayedWakeLock;
 import com.android.systemui.util.wakelock.WakeLock;
 import com.android.systemui.window.domain.interactor.WindowRootViewBlurInteractor;
@@ -509,7 +510,9 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
                             mStatusBarKeyguardViewManager.onKeyguardFadedAway();
                         }
                         dispatchScrimsVisible();
-                        dispatchBackScrimState(mScrimBehind.getViewAlpha());
+                        if (mScrimBehind != null) {
+                            dispatchBackScrimState(mScrimBehind.getViewAlpha());
+                        }
                     }
                 };
 
@@ -656,6 +659,18 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
         mState = state;
         TrackTracer.instantForGroup("scrim", "state", mState.ordinal());
 
+        if (state == ScrimState.AOD || state == ScrimState.PULSING
+                || oldState == ScrimState.AOD || oldState == ScrimState.PULSING) {
+            mInFrontTint = Color.BLACK;
+            mBehindTint = Color.BLACK;
+            mNotificationsTint = Color.BLACK;
+            updateScrimColor(mScrimInFront, mInFrontAlpha, mInFrontTint);
+            if (mScrimBehind != null) {
+                updateScrimColor(mScrimBehind, mBehindAlpha, mBehindTint);
+            }
+            updateScrimColor(mNotificationsScrim, mNotificationsAlpha, mNotificationsTint);
+        }
+
         if (mCallback != null) {
             mCallback.onCancelled();
         }
@@ -719,7 +734,9 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
             scheduleUpdate();
         }
 
-        dispatchBackScrimState(mScrimBehind.getViewAlpha());
+        if (mScrimBehind != null) {
+            dispatchBackScrimState(mScrimBehind.getViewAlpha());
+        }
     }
 
     private static void debugLog(String state) {
@@ -777,6 +794,10 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
 
     public float getBackScaling() {
         return mNotificationsScrim.getScaleY();
+    }
+
+    public float getScrimBehindAlpha() {
+        return mScrimBehindAlphaKeyguard;
     }
 
     public void onTrackingStarted() {
@@ -1236,7 +1257,10 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
         setOrAdaptCurrentAnimation(mScrimBehind);
         setOrAdaptCurrentAnimation(mNotificationsScrim);
         setOrAdaptCurrentAnimation(mScrimInFront);
-        dispatchBackScrimState(mScrimBehind.getViewAlpha());
+        if (mScrimBehind != null) {
+            dispatchBackScrimState(mScrimBehind.getViewAlpha());
+        }
+        ScrimUtils.get(mScrimBehind.getContext()).onScrimDispatched();
     }
 
     /**
@@ -1302,17 +1326,32 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
         // Make sure we have the right gradients and their opacities will satisfy GAR.
         if (mNeedsDrawableColorUpdate) {
             mNeedsDrawableColorUpdate = false;
-            // Only animate scrim color if the scrim view is actually visible
-            boolean animateScrimInFront = mScrimInFront.getViewAlpha() != 0 && !mBlankScreen;
-            boolean animateBehindScrim = mScrimBehind.getViewAlpha() != 0 && !mBlankScreen;
-            boolean animateScrimNotifications = mNotificationsScrim.getViewAlpha() != 0
-                    && !mBlankScreen;
+            if (mState == ScrimState.AOD || mState == ScrimState.PULSING) {
+                GradientColors blackColors = new GradientColors();
+                blackColors.setMainColor(Color.BLACK);
+                blackColors.setSecondaryColor(Color.BLACK);
+                blackColors.setSupportsDarkText(false);
+                mScrimInFront.setColors(blackColors, false);
+                if (mScrimBehind != null) {
+                    mScrimBehind.setColors(blackColors, false);
+                }
+                mNotificationsScrim.setColors(blackColors, false);
+            } else {
+                boolean animateScrimInFront = mScrimInFront.getViewAlpha() != 0 && !mBlankScreen;
+                boolean animateBehindScrim = mScrimBehind != null && mScrimBehind.getViewAlpha() != 0 && !mBlankScreen;
+                boolean animateScrimNotifications = mNotificationsScrim.getViewAlpha() != 0
+                        && !mBlankScreen;
 
-            mScrimInFront.setColors(mColors, animateScrimInFront);
-            mScrimBehind.setColors(mColors, animateBehindScrim);
-            mNotificationsScrim.setColors(mColors, animateScrimNotifications);
+                mScrimInFront.setColors(mColors, animateScrimInFront);
+                if (mScrimBehind != null) {
+                    mScrimBehind.setColors(mColors, animateBehindScrim);
+                }
+                mNotificationsScrim.setColors(mColors, animateScrimNotifications);
+             }
 
-            dispatchBackScrimState(mScrimBehind.getViewAlpha());
+            if (mScrimBehind != null) {
+                dispatchBackScrimState(mScrimBehind.getViewAlpha());
+            }
         }
         if (Flags.bouncerUiRevamp()) {
             // Blur the notification scrim as needed. The blur is needed only when we show the
@@ -1332,6 +1371,7 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
         // Prevent notification scrim flicker when transitioning away from keyguard.
         if (mKeyguardStateController.isKeyguardGoingAway()) {
             mNotificationsAlpha = 0;
+            mBehindAlpha = 0;
         }
 
         // Prevent flickering for activities above keyguard and quick settings in keyguard.
@@ -1362,6 +1402,7 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
     private void dispatchScrimsVisible() {
         final ScrimView backScrim = mClipsQsScrim ? mNotificationsScrim : mScrimBehind;
         final int currentScrimVisibility;
+        if (mScrimInFront == null || backScrim == null) return;
         if (mScrimInFront.getViewAlpha() == 1 || backScrim.getViewAlpha() == 1) {
             currentScrimVisibility = OPAQUE;
         } else if (mScrimInFront.getViewAlpha() == 0 && backScrim.getViewAlpha() == 0) {
@@ -1552,12 +1593,16 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
 
         // When unlocking with fingerprint, we'll fade the scrims from black to transparent.
         // At the end of the animation we need to remove the tint.
-        if (state == ScrimState.UNLOCKED) {
+        if (state == ScrimState.UNLOCKED
+                || state == ScrimState.AOD
+                || state == ScrimState.PULSING) {
             mInFrontTint = Color.TRANSPARENT;
             mBehindTint = mState.getBehindTint();
             mNotificationsTint = mState.getNotifTint();
             updateScrimColor(mScrimInFront, mInFrontAlpha, mInFrontTint);
-            updateScrimColor(mScrimBehind, mBehindAlpha, mBehindTint);
+            if (mScrimBehind != null) {
+                updateScrimColor(mScrimBehind, mBehindAlpha, mBehindTint);
+            }
             updateScrimColor(mNotificationsScrim, mNotificationsAlpha, mNotificationsTint);
         }
     }
@@ -1572,7 +1617,10 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
     }
 
     private void updateScrim(ScrimView scrim, float alpha) {
-        final float currentAlpha = scrim.getViewAlpha();
+        float currentAlpha;
+
+        if (scrim == null) return;
+        currentAlpha = scrim.getViewAlpha();
 
         ValueAnimator previousAnimator = ViewState.getChildTag(scrim, TAG_KEY_ANIM);
         if (previousAnimator != null) {
@@ -1698,8 +1746,12 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
     }
 
     private void onThemeChanged() {
+        if (mScrimBehind != null) cancelAnimator(ViewState.getChildTag(mScrimBehind, TAG_KEY_ANIM));
+        if (mNotificationsScrim != null) cancelAnimator(ViewState.getChildTag(mNotificationsScrim, TAG_KEY_ANIM));
+        if (mScrimInFront != null) cancelAnimator(ViewState.getChildTag(mScrimInFront, TAG_KEY_ANIM));
         updateThemeColors();
-        scheduleUpdate();
+        mState.prepare(mState);
+        applyAndDispatchState();
     }
 
     @Override

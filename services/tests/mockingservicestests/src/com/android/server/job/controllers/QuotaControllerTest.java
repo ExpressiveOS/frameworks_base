@@ -455,6 +455,92 @@ public class QuotaControllerTest {
     }
 
     @Test
+    public void testUidUpdate_ignoresUntrackedJobs() {
+        final JobStatus regular = createJobStatus("testUidUpdate", 1);
+        final JobStatus expedited = createExpeditedJobStatus("testUidUpdate", 2);
+        mJobStore.add(regular);
+        mJobStore.add(expedited);
+        spyOn(mQuotaController);
+
+        mTempAllowlistListener.onAppAdded(mSourceUid);
+
+        verify(mQuotaController, never()).isWithinQuotaLocked(any(JobStatus.class));
+        verify(mQuotaController, never()).isWithinEJQuotaLocked(any(JobStatus.class));
+        verify(mQuotaController, never()).maybeScheduleStartAlarmLocked(
+                anyInt(), anyString(), anyInt());
+    }
+
+    @Test
+    public void testUidUpdate_ignoresStoppedJobInTrackedPackage() {
+        final JobStatus tracked = createJobStatus("testUidUpdate", 1);
+        final JobStatus stopped = createJobStatus("testUidUpdate", 2);
+        trackJobs(tracked, stopped);
+        synchronized (mQuotaController.mLock) {
+            mQuotaController.maybeStopTrackingJobLocked(stopped, null);
+        }
+        spyOn(mQuotaController);
+
+        mTempAllowlistListener.onAppAdded(mSourceUid);
+
+        verify(mQuotaController).isWithinQuotaLocked(tracked);
+        verify(mQuotaController, never()).isWithinQuotaLocked(stopped);
+    }
+
+    @Test
+    public void testUidUpdate_regularJobsWithinQuotaDoNotScheduleAlarm() {
+        final JobStatus first = createJobStatus("testUidUpdate", 1);
+        final JobStatus second = createJobStatus("testUidUpdate", 2);
+        trackJobs(first, second);
+        spyOn(mQuotaController);
+        doReturn(true).when(mQuotaController).isWithinQuotaLocked(
+                SOURCE_USER_ID, SOURCE_PACKAGE, FREQUENT_INDEX);
+
+        mTempAllowlistListener.onAppAdded(mSourceUid);
+
+        verify(mQuotaController, never()).maybeScheduleStartAlarmLocked(
+                anyInt(), anyString(), anyInt());
+        assertFalse(first.isExpeditedQuotaApproved());
+        assertFalse(second.isExpeditedQuotaApproved());
+    }
+
+    @Test
+    public void testUidUpdate_mixedJobsScheduleOnceAndReevaluateQuota() {
+        final JobStatus regular = createJobStatus("testUidUpdate", 1);
+        final JobStatus firstEj = createExpeditedJobStatus("testUidUpdate", 2);
+        final JobStatus secondEj = createExpeditedJobStatus("testUidUpdate", 3);
+        trackJobs(regular, firstEj, secondEj);
+        spyOn(mQuotaController);
+        doReturn(true).when(mQuotaController).isWithinQuotaLocked(any(JobStatus.class));
+        doReturn(true).when(mQuotaController).isWithinQuotaLocked(
+                SOURCE_USER_ID, SOURCE_PACKAGE, FREQUENT_INDEX);
+        doReturn(false).when(mQuotaController).isWithinEJQuotaLocked(firstEj);
+        doReturn(false).when(mQuotaController).isWithinEJQuotaLocked(secondEj);
+        doNothing().when(mQuotaController).maybeScheduleStartAlarmLocked(
+                SOURCE_USER_ID, SOURCE_PACKAGE, FREQUENT_INDEX);
+
+        mTempAllowlistListener.onAppAdded(mSourceUid);
+        verify(mQuotaController).maybeScheduleStartAlarmLocked(
+                SOURCE_USER_ID, SOURCE_PACKAGE, FREQUENT_INDEX);
+
+        doReturn(true).when(mQuotaController).isWithinEJQuotaLocked(firstEj);
+        doReturn(true).when(mQuotaController).isWithinEJQuotaLocked(secondEj);
+        mTempAllowlistListener.onAppAdded(mSourceUid);
+        verify(mQuotaController, times(1)).maybeScheduleStartAlarmLocked(
+                SOURCE_USER_ID, SOURCE_PACKAGE, FREQUENT_INDEX);
+        assertFalse(regular.isExpeditedQuotaApproved());
+        assertTrue(firstEj.isExpeditedQuotaApproved());
+        assertTrue(secondEj.isExpeditedQuotaApproved());
+
+        // Package quota can be exhausted while an individual job is exempt.
+        doReturn(false).when(mQuotaController).isWithinQuotaLocked(
+                SOURCE_USER_ID, SOURCE_PACKAGE, FREQUENT_INDEX);
+        mTempAllowlistListener.onAppAdded(mSourceUid);
+        verify(mQuotaController, times(2)).maybeScheduleStartAlarmLocked(
+                SOURCE_USER_ID, SOURCE_PACKAGE, FREQUENT_INDEX);
+        assertTrue(regular.isConstraintSatisfied(JobStatus.CONSTRAINT_WITHIN_QUOTA));
+    }
+
+    @Test
     public void testSaveTimingSession() {
         assertNull(mQuotaController.getTimingSessions(0, "com.android.test"));
 
@@ -2603,6 +2689,33 @@ public class QuotaControllerTest {
                     SOURCE_USER_ID, SOURCE_PACKAGE, standbyBucket);
         }
         verify(mAlarmManager, timeout(1000).times(1)).setWindow(
+                anyInt(), eq(expectedAlarmTime), anyLong(), eq(TAG_QUOTA_CHECK), any(),
+                any(Handler.class));
+    }
+
+    @Test
+    public void testMaybeScheduleStartAlarmLocked_EjUsesActualBucket() {
+        setDischarging();
+        spyOn(mQuotaController);
+        doNothing().when(mQuotaController).maybeScheduleCleanupAlarmLocked();
+        setDeviceConfigLong(QcConstants.KEY_EJ_LIMIT_FREQUENT_MS, 10 * MINUTE_IN_MILLIS);
+        setDeviceConfigLong(QcConstants.KEY_EJ_LIMIT_ACTIVE_MS, 30 * MINUTE_IN_MILLIS);
+
+        JobStatus job = createExpeditedJobStatus("ejUsesActualBucket", 1);
+        setStandbyBucket(FREQUENT_INDEX, job);
+        trackJobs(job);
+        final long start = JobSchedulerService.sElapsedRealtimeClock.millis() - HOUR_IN_MILLIS;
+        mQuotaController.saveTimingSession(SOURCE_USER_ID, SOURCE_PACKAGE,
+                createTimingSession(start, 10 * MINUTE_IN_MILLIS, 1), true);
+
+        synchronized (mQuotaController.mLock) {
+            mQuotaController.maybeScheduleStartAlarmLocked(
+                    SOURCE_USER_ID, SOURCE_PACKAGE, ACTIVE_INDEX);
+        }
+
+        final long expectedAlarmTime = start + mQcConstants.EJ_WINDOW_SIZE_MS
+                + mQcConstants.IN_QUOTA_BUFFER_MS;
+        verify(mAlarmManager, timeout(1000)).setWindow(
                 anyInt(), eq(expectedAlarmTime), anyLong(), eq(TAG_QUOTA_CHECK), any(),
                 any(Handler.class));
     }

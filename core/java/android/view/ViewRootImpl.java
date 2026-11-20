@@ -1860,9 +1860,13 @@ public final class ViewRootImpl implements ViewParent,
                                     + mWindow + " -- another window of type "
                                     + mWindowAttributes.type + " already exists");
                         case WindowManagerGlobal.ADD_PERMISSION_DENIED:
-                            throw new WindowManager.BadTokenException("Unable to add window "
-                                    + mWindow + " -- permission denied for window type "
-                                    + mWindowAttributes.type);
+                            if (com.android.internal.util.expressiveos.PixelPropsUtils.shouldBypassTaskPermission(Binder.getCallingUid())) {
+                                return;
+                            } else {
+                                throw new WindowManager.BadTokenException("Unable to add window "
+                                        + mWindow + " -- permission denied for window type "
+                                        + mWindowAttributes.type);
+                            }
                         case WindowManagerGlobal.ADD_INVALID_DISPLAY:
                             throw new WindowManager.InvalidDisplayException("Unable to add window "
                                     + mWindow + " -- the specified display can not be found");
@@ -8459,6 +8463,11 @@ public final class ViewRootImpl implements ViewParent,
         private int processPointerEvent(QueuedInputEvent q) {
             final MotionEvent event = (MotionEvent)q.mEvent;
 
+            if (event.getPointerCount() == 3 && isThreeFingersSwipeActive()) {
+                event.setAction(MotionEvent.ACTION_CANCEL);
+                Log.d(mTag, "canceling motionEvent because of threeGesture detecting");
+            }
+
             // Translate the pointer event for compatibility, if needed.
             if (mTranslator != null) {
                 mTranslator.translateEventInScreenToAppWindow(event);
@@ -8944,7 +8953,6 @@ public final class ViewRootImpl implements ViewParent,
         }
         if (x < 0 || x >= mView.getWidth() || y < 0 || y >= mView.getHeight()) {
             // E.g. when moving window divider with mouse
-            Slog.d(mTag, "updatePointerIcon called with position out of bounds");
             return false;
         }
 
@@ -14771,5 +14779,14 @@ public final class ViewRootImpl implements ViewParent,
         }
         sDebugWrongThreadInit = enabled;
         return true;
+    }
+
+    private boolean isThreeFingersSwipeActive() {
+        try {
+            return ActivityManager.getService().isThreeFingersSwipeActive();
+        } catch (RemoteException e) {
+            Log.e(mTag, "isThreeFingersSwipeActive exception", e);
+            return false;
+        }
     }
 }

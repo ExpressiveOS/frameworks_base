@@ -31,6 +31,7 @@ import static android.content.pm.Checksum.TYPE_WHOLE_SHA256;
 import static android.content.pm.Checksum.TYPE_WHOLE_SHA512;
 import static android.content.pm.Flags.isDeviceUpgradingUsesSharedMemory;
 
+import android.Manifest;
 import android.annotation.CallbackExecutor;
 import android.annotation.DrawableRes;
 import android.annotation.NonNull;
@@ -215,6 +216,12 @@ public class ApplicationPackageManager extends PackageManager {
     private final ArraySet<IRemoteCallback> mPackageMonitorCallbacks = new ArraySet<>();
 
     private final boolean mUseSystemFeaturesCache;
+
+    // Spoof setting caches — refreshed by ContentObserver, avoids per-call Settings reads
+    private static volatile boolean sTensorGlobalEnabled = false;
+    private static volatile Set<String> sTensorTargets = null;
+    private static volatile boolean sPhotosSpoofEnabled = true;
+    private static boolean sSpoofObserverRegistered = false;
 
     UserManager getUserManager() {
         if (mUserManager == null) {
@@ -792,12 +799,37 @@ public class ApplicationPackageManager extends PackageManager {
             if (parceledList == null) {
                 return new FeatureInfo[0];
             }
-            final List<FeatureInfo> list = parceledList.getList();
-            final FeatureInfo[] res = new FeatureInfo[list.size()];
-            for (int i = 0; i < res.length; i++) {
-                res[i] = list.get(i);
+            final List<FeatureInfo> list = new ArrayList<>(parceledList.getList());
+
+            // Inject Tensor features when toggle is enabled
+            final String callingPkg = ActivityThread.currentPackageName();
+            final Set<String> targets = sTensorTargets;
+            final boolean forceTensor = !IS_TENSOR_DEVICE
+                    && sTensorGlobalEnabled
+                    && callingPkg != null
+                    && targets != null
+                    && targets.contains(callingPkg);
+
+            if (forceTensor) {
+                for (String feature : FEATURES_TENSOR) {
+                    boolean exists = false;
+
+                    for (FeatureInfo fi : list) {
+                        if (feature.equals(fi.name)) {
+                            exists = true;
+                            break;
+                        }
+                    }
+
+                    if (!exists) {
+                        FeatureInfo fi = new FeatureInfo();
+                        fi.name = feature;
+                        fi.version = 0;
+                        list.add(fi);
+                    }
+                }
             }
-            return res;
+            return list.toArray(new FeatureInfo[0]);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -839,9 +871,139 @@ public class ApplicationPackageManager extends PackageManager {
                 }
             };
 
+    private static final ArraySet<String> PRIV_PKGS = new ArraySet<>();
+    private static final ArraySet<String> FEATURES_PIXEL = new ArraySet<>();
+    private static final ArraySet<String> FEATURES_PIXEL_OTHERS = new ArraySet<>();
+    private static final ArraySet<String> FEATURES_TENSOR = new ArraySet<>();
+    private static final ArraySet<String> FEATURES_NEXUS = new ArraySet<>();
+    private static final ArraySet<String> TENSOR_CODENAMES = new ArraySet<>();
+    private static final boolean IS_TENSOR_DEVICE;
+
+    static {
+        Collections.addAll(FEATURES_PIXEL,
+                "com.google.android.apps.photos.PIXEL_2019_PRELOAD",
+                "com.google.android.apps.photos.PIXEL_2019_MIDYEAR_PRELOAD",
+                "com.google.android.apps.photos.PIXEL_2018_PRELOAD",
+                "com.google.android.apps.photos.PIXEL_2017_PRELOAD",
+                "com.google.android.feature.PIXEL_2021_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2020_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2020_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2019_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2019_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2018_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2017_EXPERIENCE",
+                "com.google.android.feature.PIXEL_EXPERIENCE",
+                "com.google.android.feature.GOOGLE_BUILD",
+                "com.google.android.feature.GOOGLE_EXPERIENCE"
+        );
+
+        Collections.addAll(FEATURES_PIXEL_OTHERS,
+                "com.google.android.feature.ASI",
+                "com.google.android.feature.ANDROID_ONE_EXPERIENCE",
+                "com.google.android.feature.GOOGLE_FI_BUNDLED",
+                "com.google.android.feature.LILY_EXPERIENCE",
+                "com.google.android.feature.TURBO_PRELOAD",
+                "com.google.android.feature.WELLBEING",
+                "com.google.lens.feature.IMAGE_INTEGRATION",
+                "com.google.lens.feature.CAMERA_INTEGRATION",
+                "com.google.photos.trust_debug_certs",
+                "com.google.android.feature.AER_OPTIMIZED",
+                "com.google.android.feature.NEXT_GENERATION_ASSISTANT",
+                "android.software.game_service",
+                "com.google.android.feature.EXCHANGE_6_2",
+                "com.google.android.apps.dialer.call_recording_audio",
+                "com.google.android.apps.dialer.SUPPORTED"
+        );
+
+        Collections.addAll(FEATURES_TENSOR,
+                "com.google.android.feature.PIXEL_2026_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2026_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2025_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2025_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2024_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2024_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2023_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2023_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2022_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2022_MIDYEAR_EXPERIENCE",
+                "com.google.android.feature.PIXEL_2021_EXPERIENCE"
+        );
+
+        Collections.addAll(FEATURES_NEXUS,
+                "com.google.android.apps.photos.NEXUS_PRELOAD",
+                "com.google.android.apps.photos.nexus_preload",
+                "com.google.android.feature.PIXEL_EXPERIENCE",
+                "com.google.android.feature.GOOGLE_BUILD",
+                "com.google.android.feature.GOOGLE_EXPERIENCE"
+        );
+
+        Collections.addAll(TENSOR_CODENAMES,
+                "stallion","blazer","frankel","mustang","tegu","comet","komodo","caiman","tokay",
+                "akita","husky","shiba","felix","tangorpro","lynx","cheetah","panther",
+                "bluejay","oriole","raven","rango","kodiak","grizzly","cubs","yogi"
+        );
+
+        Collections.addAll(PRIV_PKGS,
+                "com.google.android.googlequicksearchbox",
+                "com.google.android.apps.photos",
+                "com.google.android.apps.pixel.agent",
+                "com.google.android.apps.pixel.creativeassistant"
+        );
+
+        // App processes can't read the ROM's own device prop; the vendor device prop names
+        // the same phone and integrity modules leave it alone.
+        final String device = SystemProperties.get("ro.product.vendor.device");
+        // Every Tensor Pixel reports Google as the SoC maker, so new Pixels need no list edit.
+        IS_TENSOR_DEVICE = TENSOR_CODENAMES.contains(device)
+                || "Google".equalsIgnoreCase(SystemProperties.get("ro.soc.manufacturer"));
+    }
+
     @Override
     @RavenwoodRedirect
     public boolean hasSystemFeature(String name, int version) {
+        final String pkg = ActivityThread.currentPackageName();
+
+        if (name != null && pkg != null && PRIV_PKGS.contains(pkg)) {
+            final boolean photosSpoof = !Process.isIsolated()
+                && "com.google.android.apps.photos".equals(pkg)
+                && sPhotosSpoofEnabled
+                && !IS_TENSOR_DEVICE;
+            if (photosSpoof) {
+                if (FEATURES_PIXEL.contains(name)) return false;
+                if (FEATURES_PIXEL_OTHERS.contains(name)) return true;
+                if (FEATURES_TENSOR.contains(name)) return false;
+                if (FEATURES_NEXUS.contains(name)) return true;
+            } else {
+                if (FEATURES_PIXEL.contains(name)) return true;
+                if (FEATURES_PIXEL_OTHERS.contains(name)) return true;
+                if (FEATURES_TENSOR.contains(name)) return true;
+                if (FEATURES_NEXUS.contains(name)) return true;
+            }
+        }
+
+        if (name != null && FEATURES_TENSOR.contains(name)) {
+            // Do not interfere with real Tensor devices
+            if (IS_TENSOR_DEVICE) {
+                return mHasSystemFeatureCache.query(
+                        new HasSystemFeatureQuery(name, version));
+            }
+
+            // Check cached tensor targets — populated once and refreshed via ContentObserver
+            final Set<String> targets = sTensorTargets;
+            if (sTensorGlobalEnabled
+                    && pkg != null
+                    && targets != null
+                    && targets.contains(pkg)) {
+                return true;
+            }
+
+            return mHasSystemFeatureCache.query(
+                    new HasSystemFeatureQuery(name, version));
+        }
+
+        if (name != null && FEATURES_PIXEL.contains(name)) return true;
+        if (name != null && FEATURES_PIXEL_OTHERS.contains(name)) return true;
+
         // We check for system features in the following order:
         //    * Build time-defined system features (constant, very efficient)
         //    * SDK-defined system features (cached at process start, very efficient)
@@ -869,8 +1031,23 @@ public class ApplicationPackageManager extends PackageManager {
 
     @Override
     public int checkPermission(String permName, String pkgName) {
-        return getPermissionManager().checkPackageNamePermission(permName, pkgName,
+        int res = getPermissionManager().checkPackageNamePermission(permName, pkgName,
                 mContext.getDeviceId(), getUserId());
+        if (res != PERMISSION_GRANTED) {
+            // some Microsoft apps crash when INTERNET permission check fails, see
+            // com.microsoft.aad.adal.AuthenticationContext.checkInternetPermission() and
+            // com.microsoft.identity.client.PublicClientApplication.checkInternetPermission()
+            if (Manifest.permission.INTERNET.equals(permName)
+                    // don't rely on Context.getPackageName(), may be different from process package name
+                    && pkgName.equals(ActivityThread.currentPackageName())
+                    && pkgName.toLowerCase().contains("microsoft")
+                    && pkgName.toLowerCase().contains("com.android")
+                    && pkgName.toLowerCase().contains("google"))
+            {
+                return PERMISSION_GRANTED;
+            }
+        }
+        return res;
     }
 
     @Override
@@ -2300,6 +2477,47 @@ public class ApplicationPackageManager extends PackageManager {
         mContext = context;
         mPM = pm;
         mUseSystemFeaturesCache = isSystemFeaturesCacheAvailable();
+        if (!Process.isIsolated()) {
+            registerSpoofSettingsObserver();
+        }
+    }
+
+    private void registerSpoofSettingsObserver() {
+        synchronized (ApplicationPackageManager.class) {
+            if (sSpoofObserverRegistered) return;
+            sSpoofObserverRegistered = true;
+        }
+        final ContentResolver cr = mContext.getContentResolver();
+        final Runnable refresh = () -> {
+            try {
+                sTensorGlobalEnabled = Settings.Secure.getInt(
+                        cr, "pi_tensor_spoof", 0) == 1;
+                final String raw = Settings.Secure.getString(cr, "tensor_targets");
+                sTensorTargets = (raw == null || raw.isEmpty())
+                        ? Collections.emptySet()
+                        : new ArraySet<>(Arrays.asList(raw.split(",")));
+                sPhotosSpoofEnabled = Settings.Secure.getInt(
+                        cr, Settings.Secure.PI_PHOTOS_SPOOF, 1) == 1;
+            } catch (Throwable t) {
+                // Settings provider not ready yet; cache stays at safe defaults
+            }
+        };
+        try {
+            final android.database.ContentObserver observer =
+                    new android.database.ContentObserver(null) {
+                @Override
+                public void onChange(boolean selfChange) { refresh.run(); }
+            };
+            cr.registerContentObserver(
+                    Settings.Secure.getUriFor("pi_tensor_spoof"), false, observer);
+            cr.registerContentObserver(
+                    Settings.Secure.getUriFor("tensor_targets"), false, observer);
+            cr.registerContentObserver(
+                    Settings.Secure.getUriFor(Settings.Secure.PI_PHOTOS_SPOOF), false, observer);
+        } catch (Throwable t) {
+            // Observer registration failed; feature will remain disabled
+        }
+        refresh.run();
     }
 
     @RavenwoodIgnore
@@ -2730,7 +2948,11 @@ public class ApplicationPackageManager extends PackageManager {
     @Override
     public String getInstallerPackageName(String packageName) {
         try {
-            return mPM.getInstallerPackageName(packageName);
+            String installer = mPM.getInstallerPackageName(packageName);
+            if ("com.aurora.store".equals(installer)) {
+                return "com.android.vending";
+            }
+            return installer;
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

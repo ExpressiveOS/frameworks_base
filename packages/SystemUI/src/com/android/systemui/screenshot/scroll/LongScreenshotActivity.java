@@ -222,12 +222,21 @@ public class LongScreenshotActivity extends Activity {
             mCacheLoadFuture = null;
         } else {
             LongScreenshot longScreenshot = mLongScreenshotHolder.takeLongScreenshot();
+            setMagnification(mLongScreenshotHolder.getNeedsMagnification());
             if (longScreenshot != null) {
                 onLongScreenshotReceived(longScreenshot);
             } else {
                 Log.e(TAG, "No long screenshot available!");
                 finishAndRemoveTask();
             }
+        }
+    }
+
+    private void setMagnification(boolean status) {
+        if (status) {
+            mCropView.setCropInteractionListener(mMagnifierView);
+        } else {
+            mCropView.setCropInteractionListener(null);
         }
     }
 
@@ -453,7 +462,8 @@ public class LongScreenshotActivity extends Activity {
         // TODO(b/298931528): Add support for long screenshot on external displays.
         ListenableFuture<ImageExporter.Result> exportFuture = mImageExporter.export(
                 mBackgroundExecutor, UUID.randomUUID(), mOutputBitmap, ZonedDateTime.now(),
-                mScreenshotUserHandle, Display.DEFAULT_DISPLAY);
+                mScreenshotUserHandle, Display.DEFAULT_DISPLAY,
+                mLongScreenshotHolder.getForegroundAppName());
         exportFuture.addListener(() -> onExportCompleted(action, exportFuture), mUiExecutor);
     }
 

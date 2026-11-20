@@ -18,6 +18,7 @@ package com.android.systemui.statusbar.quickactions.media.domain.interactor
 
 import android.graphics.drawable.Drawable
 import android.platform.test.flag.junit.FlagsParameterization
+import android.provider.Settings
 import androidx.test.filters.SmallTest
 import com.android.systemui.SysuiTestCase
 import com.android.systemui.flags.parameterizeSceneContainerFlag
@@ -31,6 +32,7 @@ import com.android.systemui.media.controls.shared.model.MediaButton
 import com.android.systemui.media.controls.shared.model.MediaData
 import com.android.systemui.media.remedia.data.repository.mediaRepository
 import com.android.systemui.media.remedia.shared.flag.MediaControlsInComposeFlag
+import com.android.systemui.statusbar.quickactions.popups.shared.DynamicIslandFeatureSettings
 import com.android.systemui.testKosmos
 import com.google.common.truth.Truth.assertThat
 import org.junit.Before
@@ -61,6 +63,16 @@ class MediaControlChipInteractorTest(flags: FlagsParameterization) : SysuiTestCa
 
     @Before
     fun setUp() {
+        Settings.System.putInt(
+            mContext.contentResolver,
+            Settings.System.STATUS_BAR_SHOW_DYNAMIC_ISLAND,
+            1,
+        )
+        Settings.System.putInt(
+            mContext.contentResolver,
+            DynamicIslandFeatureSettings.MEDIA_CONTROLS,
+            1,
+        )
         kosmos.underTest.initialize()
         MockitoAnnotations.initMocks(this)
     }
@@ -185,6 +197,19 @@ class MediaControlChipInteractorTest(flags: FlagsParameterization) : SysuiTestCa
             updateMedia(updatedUserMedia)
 
             assertThat(model?.playOrPause).isNull()
+        }
+
+    @Test
+    fun mediaControlChipModel_withPackageName_preserved() =
+        kosmos.runTest {
+            val model by collectLastValue(underTest.mediaControlChipModel)
+
+            val userMedia =
+                MediaData(active = true, packageName = "com.google.android.apps.youtube.music")
+            updateMedia(userMedia)
+
+            assertThat(model).isNotNull()
+            assertThat(model?.packageName).isEqualTo("com.google.android.apps.youtube.music")
         }
 
     private fun updateMedia(mediaData: MediaData) {

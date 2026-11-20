@@ -195,6 +195,7 @@ public class CommandQueue extends IStatusBar.Stub implements
     private static final int MSG_END_MOTION_CUES = 89 << MSG_SHIFT;
     private static final int MSG_ON_DISPLAY_INFO_CHANGED = 90 << MSG_SHIFT;
     private static final int MSG_ON_CONFIGURATION_CHANGED = 91 << MSG_SHIFT;
+    private static final int MSG_RESTART_SYSTEMUI = 92 << MSG_SHIFT;
 
     public static final int FLAG_EXCLUDE_NONE = 0;
     public static final int FLAG_EXCLUDE_SEARCH_PANEL = 1 << 0;
@@ -386,7 +387,7 @@ public class CommandQueue extends IStatusBar.Stub implements
         default void showPinningEscapeToast() { }
         default void handleShowGlobalActionsMenu() { }
         default void handleShowOrHideGlobalActionsMenu() { }
-        default void handleShowShutdownUi(boolean isReboot, String reason) { }
+        default void handleShowShutdownUi(boolean isReboot, String reason, boolean rebootCustom) { }
 
         default void showWirelessChargingAnimation(int batteryLevel) {  }
 
@@ -623,6 +624,8 @@ public class CommandQueue extends IStatusBar.Stub implements
          * @see IStatusBar#onConfigurationChanged()
          */
         default void onConfigurationChanged() {}
+
+        default void restartSystemUI() {}
     }
 
     @VisibleForTesting
@@ -1134,10 +1137,10 @@ public class CommandQueue extends IStatusBar.Stub implements
     }
 
     @Override
-    public void showShutdownUi(boolean isReboot, String reason) {
+    public void showShutdownUi(boolean isReboot, String reason, boolean rebootCustom) {
         synchronized (mLock) {
             mHandler.removeMessages(MSG_SHOW_SHUTDOWN_UI);
-            mHandler.obtainMessage(MSG_SHOW_SHUTDOWN_UI, isReboot ? 1 : 0, 0, reason)
+            mHandler.obtainMessage(MSG_SHOW_SHUTDOWN_UI, isReboot ? 1 : 0, rebootCustom ? 1 : 0, reason)
                     .sendToTarget();
         }
     }
@@ -1614,6 +1617,14 @@ public class CommandQueue extends IStatusBar.Stub implements
         mHandler.obtainMessage(MSG_ON_CONFIGURATION_CHANGED).sendToTarget();
     }
 
+    @Override
+    public void restartSystemUI() {
+        synchronized (mLock) {
+            mHandler.removeMessages(MSG_RESTART_SYSTEMUI);
+            mHandler.obtainMessage(MSG_RESTART_SYSTEMUI).sendToTarget();
+        }
+    }
+
     private final class H extends Handler {
         private H(Looper l) {
             super(l);
@@ -1840,7 +1851,8 @@ public class CommandQueue extends IStatusBar.Stub implements
                     break;
                 case MSG_SHOW_SHUTDOWN_UI:
                     for (Callbacks callback : mCallbacks) {
-                        callback.handleShowShutdownUi(msg.arg1 != 0, (String) msg.obj);
+                        callback.handleShowShutdownUi(msg.arg1 != 0, (String) msg.obj,
+                                msg.arg2 != 0);
                     }
                     break;
                 case MSG_SET_TOP_APP_HIDES_STATUS_BAR:
@@ -2185,6 +2197,11 @@ public class CommandQueue extends IStatusBar.Stub implements
                 case MSG_ON_CONFIGURATION_CHANGED:
                     for (Callbacks callback : mCallbacks) {
                         callback.onConfigurationChanged();
+                    }
+                    break;
+                case MSG_RESTART_SYSTEMUI:
+                    for (int i = 0; i < mCallbacks.size(); i++) {
+                        mCallbacks.get(i).restartSystemUI();
                     }
                     break;
             }

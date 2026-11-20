@@ -51,6 +51,7 @@ import android.annotation.SpecialUsers.CannotBeSpecialUser;
 import android.annotation.UserIdInt;
 import android.app.ActivityManager;
 import android.app.AppGlobals;
+import android.app.AxSandboxManager;
 import android.app.backup.BackupManager;
 import android.app.compat.CompatChanges;
 import android.app.job.JobInfo;
@@ -463,6 +464,13 @@ public class SettingsProvider extends ContentProvider {
     public Bundle call(String method, String name, Bundle args) {
         final @CanBeCURRENT @UserIdInt int requestingUserId = getRequestingUserId(args);
         final int callingDeviceId = getDeviceId();
+        if (method != null && method.startsWith("GET_")) {
+            String spoofed = getSpoofedValue(name);
+            if (spoofed != null) {
+                return Bundle.forPair(Settings.NameValueTable.VALUE, spoofed);
+            }
+        }
+
         switch (method) {
             case Settings.CALL_METHOD_GET_CONFIG -> {
                 Setting setting = getConfigSetting(name);
@@ -635,6 +643,34 @@ public class SettingsProvider extends ContentProvider {
         return null;
     }
 
+    private String getSpoofedValue(String name) {
+        String callingPackage = getCallingPackage();
+        if (callingPackage == null) return null;
+
+        if (callingPackage.startsWith("com.android.")
+                || callingPackage.startsWith("com.google.android.")) {
+            return null;
+        }
+
+        String settings = null;
+        // The lookup is a system-only call: run it as SettingsProvider, not as the app that
+        // is reading the setting.
+        final int callingUserId = UserHandle.getCallingUserId();
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            AxSandboxManager sandboxManager =
+                    getContext().getSystemService(AxSandboxManager.class);
+            if (sandboxManager != null) {
+                settings = sandboxManager.getSpoofedSetting(callingPackage, name, callingUserId);
+            }
+        } catch (Exception e) {
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+
+        return settings;
+    }
+
     @Override
     public String getType(Uri uri) {
         Arguments args = new Arguments(uri, null, null, true);
@@ -658,6 +694,18 @@ public class SettingsProvider extends ContentProvider {
         // If a legacy table that is gone, done.
         if (REMOVED_LEGACY_TABLES.contains(args.table)) {
             return new MatrixCursor(normalizedProjection, 0);
+        }
+
+        if (args.name != null) {
+            String spoofed = getSpoofedValue(args.name);
+            if (spoofed != null) {
+                synchronized (mLock) {
+                    SettingsState state = mSettingsRegistry.getSettingsLocked(
+                            SettingsState.SETTINGS_TYPE_GLOBAL, UserHandle.USER_SYSTEM, Context.DEVICE_ID_DEFAULT);
+                    SettingsState.Setting s = state.new Setting(args.name, spoofed, true, null, null);
+                    return packageSettingForQuery(s, normalizedProjection, null);
+                }
+            }
         }
 
         final int callingDeviceId = getDeviceId();
@@ -873,6 +921,8 @@ public class SettingsProvider extends ContentProvider {
         final String cacheRingtoneSetting;
         if (Settings.System.RINGTONE_CACHE_URI.equals(uri)) {
             cacheRingtoneSetting = Settings.System.RINGTONE;
+        } else if (Settings.System.RINGTONE2_CACHE_URI.equals(uri)) {
+            cacheRingtoneSetting = Settings.System.RINGTONE2;
         } else if (uri != null && ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())
                 && Settings.AUTHORITY.equals(
                         ContentProvider.getAuthorityWithoutUserId(uri.getAuthority()))
@@ -882,6 +932,15 @@ public class SettingsProvider extends ContentProvider {
             // which should be in the form of "content://settings/system/ringtone_cache_xxxx".
             cacheRingtoneSetting = uri.getPathSegments().get(1)
                     .replace(Settings.System.RINGTONE_CACHE, Settings.System.RINGTONE);
+        } else if (uri != null && ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())
+                && Settings.AUTHORITY.equals(
+                        ContentProvider.getAuthorityWithoutUserId(uri.getAuthority()))
+                && uri.getPathSegments().size() == 2
+                && uri.getPathSegments().get(1).startsWith(Settings.System.RINGTONE2_CACHE)) {
+            // Check whether the uri is ringtone cache uri for a specific PhoneAccountHandle,
+            // which should be in the form of "content://settings/system/ringtone2_cache_xxxx".
+            cacheRingtoneSetting = uri.getPathSegments().get(1)
+                    .replace(Settings.System.RINGTONE2_CACHE, Settings.System.RINGTONE);
         } else if (Settings.System.NOTIFICATION_SOUND_CACHE_URI.equals(uri)) {
             cacheRingtoneSetting = Settings.System.NOTIFICATION_SOUND;
         } else if (Settings.System.ALARM_ALERT_CACHE_URI.equals(uri)) {
@@ -901,6 +960,8 @@ public class SettingsProvider extends ContentProvider {
             return null;
         } else if (Settings.System.RINGTONE.equals(setting)) {
             return Settings.System.RINGTONE_CACHE;
+        } else if (Settings.System.RINGTONE2.equals(setting)) {
+            return Settings.System.RINGTONE2_CACHE;
         } else if (setting.startsWith(Settings.System.RINGTONE
                 + RingtoneManager.RINGTONE_DELIMITER_FOR_PHONE_ACCOUNT_HANDLE)) {
             return setting.replace(Settings.System.RINGTONE, Settings.System.RINGTONE_CACHE);
@@ -1285,8 +1346,9 @@ public class SettingsProvider extends ContentProvider {
             Slog.v(LOG_TAG, "setAllConfigSettings for prefix: " + prefix);
         }
 
-        enforceDeviceConfigWritePermission(getContext(), keyValues.keySet());
         final String callingPackage = resolveCallingPackage();
+
+        enforceDeviceConfigWritePermission(getContext(), keyValues.keySet());
 
         synchronized (mLock) {
             if (getSyncDisabledModeConfigLocked() != SYNC_DISABLED_MODE_NONE) {
@@ -2649,7 +2711,7 @@ public class SettingsProvider extends ContentProvider {
                 return;
             }
         }
-        throw new SecurityException("Permission denial, must have one of: "
+        throw new SecurityException("Permission denial: " + resolveCallingPackage() + " must have one of: "
             + Arrays.toString(permissions));
     }
 
@@ -2678,6 +2740,13 @@ public class SettingsProvider extends ContentProvider {
                 context.checkCallingOrSelfPermission(
                 Manifest.permission.WRITE_DEVICE_CONFIG)
                 == PackageManager.PERMISSION_GRANTED;
+        boolean isRoot = Binder.getCallingUid() == Process.ROOT_UID;
+        String callingPackage = resolveCallingPackage();
+
+        if (isRoot || callingPackage.equals("com.google.android.gms")) {
+             return;
+         }
+
         // Only the shell user and tests request the allowlist permission; this is used to force
         // the WRITE_ALLOWLISTED_DEVICE_CONFIG path to log any flags that need to be allowlisted.
         boolean isRestrictedShell = android.security.Flags.protectDeviceConfigFlags()
@@ -3282,11 +3351,14 @@ public class SettingsProvider extends ContentProvider {
      * Schedule the job service to make a copy of all the settings files.
      */
     public void scheduleWriteFallbackFilesJob() {
+        // SettingsProvider starts before JobSchedulerService is published.
+        if (ServiceManager.checkService(Context.JOB_SCHEDULER_SERVICE) == null) {
+            return;
+        }
         final Context context = getContext();
         JobScheduler jobScheduler =
                 (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if (jobScheduler == null) {
-            // Might happen: SettingsProvider is created before JobSchedulerService in system server
             return;
         }
         jobScheduler = jobScheduler.forNamespace(SETTINGS_PROVIDER_JOBS_NS);
@@ -4438,6 +4510,7 @@ public class SettingsProvider extends ContentProvider {
 
                 // If up do date - done.
                 if (oldVersion == newVersion) {
+                    ensureExpressiveOsDefaultsLocked();
                     return;
                 }
 
@@ -4482,6 +4555,37 @@ public class SettingsProvider extends ContentProvider {
                 SettingsState systemSettings = getSettingsLocked(
                         SETTINGS_TYPE_SYSTEM, mUserId, mDeviceId);
                 systemSettings.setVersionLocked(newVersion);
+
+                ensureExpressiveOsDefaultsLocked();
+            }
+
+            /**
+             * ExpressiveOS: defaults that need no version step. This runs each time a user's
+             * settings load, after any upgrade, and only fills a value that was never set, so a
+             * user's own choice stays and no version number can clash with a LineageOS or AOSP
+             * upgrade step.
+             *
+             * Circle to Search: Settings > System > Circle to Search shows an unset
+             * SEARCH_ALL_ENTRYPOINTS_ENABLED as config_searchAllEntrypointsEnabledDefault (on),
+             * but Pixel Launcher reads it as off ("Contextual Search invocation failed: setting
+             * disabled"), so holding the navigation handle did nothing. Write the default the
+             * switch shows.
+             */
+            private void ensureExpressiveOsDefaultsLocked() {
+                final SettingsState secureSettings = getSettingsLocked(
+                        SETTINGS_TYPE_SECURE, mUserId, mDeviceId);
+                if (secureSettings == null || !secureSettings.getSettingLocked(
+                        Settings.Secure.SEARCH_ALL_ENTRYPOINTS_ENABLED).isNull()) {
+                    return;
+                }
+                final boolean onByDefault = getContext().getResources().getBoolean(
+                        com.android.internal.R.bool.config_searchAllEntrypointsEnabledDefault);
+                secureSettings.insertSettingOverrideableByRestoreLocked(
+                        Settings.Secure.SEARCH_ALL_ENTRYPOINTS_ENABLED,
+                        onByDefault ? "1" : "0",
+                        null,
+                        true,
+                        SettingsState.SYSTEM_PACKAGE_NAME);
             }
 
             private SettingsState getGlobalSettingsLocked() {

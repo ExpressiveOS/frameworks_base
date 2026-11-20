@@ -17,11 +17,13 @@
 package com.android.frameworks.core.batterystatsviewer;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.BatteryConsumer;
 import android.os.BatteryStatsManager;
 import android.os.BatteryUsageStats;
 import android.os.BatteryUsageStatsQuery;
 import android.os.Bundle;
+import android.os.UserHandle;
 import android.util.SparseArray;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -32,7 +34,6 @@ import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.activity.ComponentActivity;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.loader.app.LoaderManager;
@@ -42,6 +43,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import com.android.settingslib.collapsingtoolbar.CollapsingToolbarBaseActivity;
 import com.android.settingslib.utils.AsyncLoaderCompat;
 
 import java.util.ArrayList;
@@ -49,7 +51,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
-public class BatteryStatsViewerActivity extends ComponentActivity {
+public class BatteryStatsViewerActivity extends CollapsingToolbarBaseActivity {
     public static final String EXTRA_BATTERY_CONSUMER = "batteryConsumerId";
 
     private static final int BATTERY_STATS_REFRESH_RATE_MILLIS = 60 * 1000;
@@ -88,7 +90,6 @@ public class BatteryStatsViewerActivity extends ComponentActivity {
         setContentView(R.layout.battery_stats_viewer_layout);
 
         mSwipeRefreshLayout = findViewById(R.id.swipe_refresh);
-        mSwipeRefreshLayout.setColorSchemeResources(android.R.color.holo_green_light);
         mSwipeRefreshLayout.setRefreshing(true);
         mSwipeRefreshLayout.setOnRefreshListener(this::onRefresh);
 
@@ -209,8 +210,12 @@ public class BatteryStatsViewerActivity extends ComponentActivity {
                 mDetailsView.setVisibility(View.GONE);
             }
             if (batteryConsumerInfo.iconInfo != null) {
+                final PackageManager pm = getPackageManager();
                 mIconView.setImageDrawable(
-                        batteryConsumerInfo.iconInfo.loadIcon(getPackageManager()));
+                    pm.getUserBadgedIcon(
+                        pm.getApplicationIcon(batteryConsumerInfo.iconInfo),
+                        UserHandle.getUserHandleForUid(
+                            batteryConsumerInfo.iconInfo.uid)));
             } else {
                 mIconView.setImageResource(R.drawable.gm_device_24);
             }
@@ -343,27 +348,26 @@ public class BatteryStatsViewerActivity extends ComponentActivity {
             switch (entry.entryType) {
                 case UID:
                     setTitleIconAndBackground(viewHolder, entry.title,
-                            R.drawable.gm_energy_24, 0);
+                            R.drawable.gm_energy_24);
                     setPowerText(viewHolder.value1TextView, entry.value1);
                     setProportionText(viewHolder.value2TextView, entry);
                     bindSlices(viewHolder, entry);
                     break;
                 case DEVICE_TOTAL_POWER:
                     setTitleIconAndBackground(viewHolder, entry.title,
-                            R.drawable.gm_sum_24, 0);
+                            R.drawable.gm_sum_24);
                     setPowerText(viewHolder.value1TextView, entry.value1);
                     setPowerText(viewHolder.value2TextView, entry.value2);
                     break;
                 case DEVICE_POWER:
                     setTitleIconAndBackground(viewHolder, entry.title,
-                            R.drawable.gm_calculate_24,
-                            R.color.battery_consumer_bg_power_profile);
+                            R.drawable.gm_calculate_24);
                     setPowerText(viewHolder.value1TextView, entry.value1);
                     setPowerText(viewHolder.value2TextView, entry.value2);
                     break;
                 case DEVICE_DURATION:
                     setTitleIconAndBackground(viewHolder, entry.title,
-                            R.drawable.gm_timer_24, 0);
+                            R.drawable.gm_timer_24);
                     setDurationText(viewHolder.value1TextView, (long) entry.value1);
                     viewHolder.value2TextView.setVisibility(View.GONE);
                     break;
@@ -429,11 +433,9 @@ public class BatteryStatsViewerActivity extends ComponentActivity {
             }
         }
 
-        private void setTitleIconAndBackground(ViewHolder viewHolder, String title, int icon,
-                int background) {
+        private void setTitleIconAndBackground(ViewHolder viewHolder, String title, int icon) {
             viewHolder.titleTextView.setText(title);
             viewHolder.iconImageView.setImageResource(icon);
-            viewHolder.itemView.setBackgroundResource(background);
         }
 
         private void setProportionText(TextView textView, BatteryConsumerData.Entry entry) {

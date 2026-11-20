@@ -52,21 +52,36 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.app.ActivityManager;
+import android.app.WindowConfiguration;
+import android.content.ContentResolver;
+import android.content.Context;
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.graphics.Rect;
 import android.graphics.Region;
 import android.graphics.RenderEffect;
+import android.graphics.drawable.Animatable;
 import android.graphics.Shader;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.TransitionDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.PowerManager;
 import android.os.Trace;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.IndentingPrintWriter;
 import android.util.Log;
 import android.util.MathUtils;
+import android.util.TypedValue;
 import android.view.Display;
+import android.view.GestureDetector;
 import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
 import android.view.MotionEvent;
@@ -74,12 +89,14 @@ import android.view.VelocityTracker;
 import android.view.View;
 import android.view.View.AccessibilityDelegate;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
 import android.view.ViewPropertyAnimator;
 import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.ImageView;
 
 import com.android.app.animation.Interpolators;
 import com.android.internal.annotations.VisibleForTesting;
@@ -96,6 +113,7 @@ import com.android.systemui.DejankUtils;
 import com.android.systemui.Dumpable;
 import com.android.systemui.Flags;
 import com.android.systemui.Gefingerpoken;
+import com.android.systemui.android.header.StatusBarHeaderMachine;
 import com.android.systemui.bouncer.domain.interactor.AlternateBouncerInteractor;
 import com.android.systemui.brightness.data.repository.BrightnessMirrorShowingRepository;
 import com.android.systemui.brightness.domain.interactor.BrightnessMirrorShowingInteractor;
@@ -145,6 +163,7 @@ import com.android.systemui.shade.data.repository.FlingInfo;
 import com.android.systemui.shade.data.repository.ShadeDisplaysRepository;
 import com.android.systemui.shade.data.repository.ShadeRepository;
 import com.android.systemui.shade.domain.interactor.ShadeAnimationInteractor;
+import com.android.systemui.shared.system.ActivityManagerWrapper;
 import com.android.systemui.shared.system.QuickStepContract;
 import com.android.systemui.statusbar.CommandQueue;
 import com.android.systemui.statusbar.GestureRecorder;
@@ -162,11 +181,15 @@ import com.android.systemui.statusbar.notification.DynamicPrivacyController;
 import com.android.systemui.statusbar.notification.NotificationWakeUpCoordinator;
 import com.android.systemui.statusbar.notification.PropertyAnimator;
 import com.android.systemui.statusbar.notification.ViewGroupFadeHelper;
+import com.android.systemui.statusbar.notification.collection.ListEntry;
+import com.android.systemui.statusbar.notification.collection.NotifPipeline;
 import com.android.systemui.statusbar.notification.collection.NotificationEntry;
+import com.android.systemui.statusbar.notification.collection.PipelineEntry;
 import com.android.systemui.statusbar.notification.domain.interactor.ActiveNotificationsInteractor;
 import com.android.systemui.statusbar.notification.headsup.HeadsUpManager;
 import com.android.systemui.statusbar.notification.headsup.HeadsUpTouchHelper;
 import com.android.systemui.statusbar.notification.headsup.OnHeadsUpChangedListener;
+import com.android.systemui.statusbar.notification.interruption.KeyguardNotificationVisibilityProvider;
 import com.android.systemui.statusbar.notification.row.ExpandableNotificationRow;
 import com.android.systemui.statusbar.notification.row.ExpandableView;
 import com.android.systemui.statusbar.notification.row.NotificationGutsManager;
@@ -194,11 +217,15 @@ import com.android.systemui.statusbar.phone.UnlockedScreenOffAnimationController
 import com.android.systemui.statusbar.policy.ConfigurationController;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.statusbar.policy.SplitShadeStateController;
+import com.android.systemui.tuner.TunerService;
 import com.android.systemui.unfold.SysUIUnfoldComponent;
+import com.android.systemui.util.ScrimUtils;
 import com.android.systemui.util.Utils;
 import com.android.systemui.util.time.SystemClock;
 import com.android.systemui.window.domain.interactor.WindowRootViewBlurInteractor;
 import com.android.wm.shell.animation.FlingAnimationUtils;
+
+import com.bosphere.fadingedgelayout.FadingEdgeLayout;
 
 import dalvik.annotation.optimization.NeverCompile;
 
@@ -212,6 +239,8 @@ import kotlin.Unit;
 import kotlinx.coroutines.CoroutineDispatcher;
 import kotlinx.coroutines.flow.MutableStateFlow;
 import kotlinx.coroutines.flow.StateFlow;
+
+import lineageos.providers.LineageSettings;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -255,6 +284,25 @@ public final class NotificationPanelViewController implements
     private static final String COUNTER_PANEL_OPEN = "panel_open";
     public static final String COUNTER_PANEL_OPEN_QS = "panel_open_qs";
     private static final String COUNTER_PANEL_OPEN_PEEK = "panel_open_peek";
+    private static final String DOUBLE_TAP_SLEEP_GESTURE =
+            "lineagesystem:" + LineageSettings.System.DOUBLE_TAP_SLEEP_GESTURE;
+    private static final String STATUS_BAR_TRIPLE_TAP_FREEFORM =
+            "system:" + Settings.System.STATUS_BAR_TRIPLE_TAP_FREEFORM;
+    private static final String LMO_FREEFORM_PACKAGE = "com.libremobileos.freeform";
+    private static final String LMO_FREEFORM_START_ACTION =
+            "com.libremobileos.freeform.START_FREEFORM";
+    private static final long TRIPLE_TAP_TIMEOUT_MS = 200L;
+    private static final String STATUS_BAR_BRIGHTNESS_CONTROL =
+            "system:" + Settings.System.STATUS_BAR_BRIGHTNESS_CONTROL;
+    private static final String STATUS_BAR_BRIGHTNESS_CONTROL_LOCKSCREEN =
+            "system:" + Settings.System.STATUS_BAR_BRIGHTNESS_CONTROL_LOCKSCREEN;
+     private static final String STATUS_BAR_CUSTOM_HEADER =
+             "system:" + Settings.System.STATUS_BAR_CUSTOM_HEADER;
+     private static final String STATUS_BAR_CUSTOM_HEADER_HEIGHT =
+             "system:" + Settings.System.STATUS_BAR_CUSTOM_HEADER_HEIGHT;
+     private static final String STATUS_BAR_CUSTOM_HEADER_SHADOW =
+             "system:" + Settings.System.STATUS_BAR_CUSTOM_HEADER_SHADOW;
+
     private static final Rect M_DUMMY_DIRTY_RECT = new Rect(0, 0, 1, 1);
     private static final Rect EMPTY_RECT = new Rect();
     //TODO(b/394977231) delete this temporary workaround used only by tests
@@ -294,6 +342,7 @@ public final class NotificationPanelViewController implements
     private final ConfigurationController mConfigurationController;
     private final Provider<FlingAnimationUtils.Builder> mFlingAnimationUtilsBuilder;
     private final NotificationStackScrollLayoutController mNotificationStackScrollLayoutController;
+    private final PowerManager mPowerManager;
     private final AccessibilityManager mAccessibilityManager;
     private final NotificationWakeUpCoordinator mWakeUpCoordinator;
     private final PulseExpansionHandler mPulseExpansionHandler;
@@ -330,6 +379,7 @@ public final class NotificationPanelViewController implements
     private final TouchHandler mTouchHandler = new TouchHandler();
     private final BlurConfig mBlurConfig;
     private final WindowRootViewBlurInteractor mWindowRootViewBlurInteractor;
+    private final TunerService mTunerService;
 
     private long mDownTime;
     private long mStatusBarLongPressDowntime = -1L;
@@ -470,6 +520,17 @@ public final class NotificationPanelViewController implements
     private final NotificationShadeDepthController mDepthController;
     private final NavigationBarController mNavigationBarController;
     private final int mDisplayId;
+    private boolean mDoubleTapToSleepEnabled;
+    private GestureDetector mDoubleTapGesture;
+    private boolean mTripleTapToFreeformEnabled;
+    /** A double tap was detected; a third tap within the double tap timeout opens freeform. */
+    private boolean mTripleTapArmed;
+    private long mLastTapUpTime = -1L;
+    private float mLastTapDownX;
+    private float mLastTapDownY;
+    /** Goes to sleep after the double tap timeout unless a third tap turns it into a triple tap. */
+    private Runnable mDeferredDoubleTapSleepRunnable;
+    private final Handler mHandler;
 
     private final KeyguardIndicationController mKeyguardIndicationController;
     private int mHeadsUpInset;
@@ -488,6 +549,7 @@ public final class NotificationPanelViewController implements
     private boolean mIsGestureNavigation;
     private int mOldLayoutDirection;
 
+    private final ContentResolver mContentResolver;
     private float mMinFraction;
 
     private final KeyguardMediaController mKeyguardMediaController;
@@ -500,6 +562,20 @@ public final class NotificationPanelViewController implements
     private int mSplitShadeScrimTransitionDistance;
 
     private final NotificationListContainer mNotificationListContainer;
+
+    private boolean mBrightnessControl;
+    private boolean mBrightnessControlLockscreen;
+
+    private FadingEdgeLayout mQsHeaderLayout;
+    private ImageView mQsHeaderImageView;
+    private boolean mHeaderImageEnabled;
+    private int mHeaderImageHeight;
+    private int mBottomFadeHeight;
+    private int mHeaderImageShadow;
+    private float mShadeHeaderExpansion;
+    private Drawable mCurrentBackground;
+    private StatusBarHeaderMachine mStatusBarHeaderMachine;
+
     private final NPVCDownEventState.Buffer mLastDownEvents;
     private final KeyguardClockInteractor mKeyguardClockInteractor;
     private float mMinExpandHeight;
@@ -550,6 +626,8 @@ public final class NotificationPanelViewController implements
     private final DreamingToLockscreenTransitionViewModel mDreamingToLockscreenTransitionViewModel;
     private final SharedNotificationContainerInteractor mSharedNotificationContainerInteractor;
     private final ActiveNotificationsInteractor mActiveNotificationsInteractor;
+    private final NotifPipeline mNotifPipeline;
+    private final KeyguardNotificationVisibilityProvider mKeyguardNotificationVisibilityProvider;
     private final KeyguardTransitionInteractor mKeyguardTransitionInteractor;
     private final KeyguardInteractor mKeyguardInteractor;
     private final PowerInteractor mPowerInteractor;
@@ -574,6 +652,7 @@ public final class NotificationPanelViewController implements
 
     @Inject
     public NotificationPanelViewController(NotificationPanelView view,
+            @Main Handler handler,
             NotificationWakeUpCoordinator coordinator,
             PulseExpansionHandler pulseExpansionHandler,
             DynamicPrivacyController dynamicPrivacyController,
@@ -588,6 +667,7 @@ public final class NotificationPanelViewController implements
             CommandQueue commandQueue,
             VibratorHelper vibratorHelper,
             LatencyTracker latencyTracker,
+            PowerManager powerManager,
             AccessibilityManager accessibilityManager,
             @DisplayId int displayId,
             KeyguardUpdateMonitor keyguardUpdateMonitor,
@@ -615,6 +695,7 @@ public final class NotificationPanelViewController implements
             QuickSettingsControllerImpl quickSettingsController,
             FragmentService fragmentService,
             IStatusBarService statusBarService,
+            ContentResolver contentResolver,
             ShadeHeaderController shadeHeaderController,
             ScreenOffAnimationController screenOffAnimationController,
             LockscreenGestureLogger lockscreenGestureLogger,
@@ -639,6 +720,8 @@ public final class NotificationPanelViewController implements
             ActivityStarter activityStarter,
             SharedNotificationContainerInteractor sharedNotificationContainerInteractor,
             ActiveNotificationsInteractor activeNotificationsInteractor,
+            NotifPipeline notifPipeline,
+            KeyguardNotificationVisibilityProvider keyguardNotificationVisibilityProvider,
             ShadeAnimationInteractor shadeAnimationInteractor,
             DeviceEntryFaceAuthInteractor deviceEntryFaceAuthInteractor,
             SplitShadeStateController splitShadeStateController,
@@ -648,7 +731,9 @@ public final class NotificationPanelViewController implements
             BrightnessMirrorShowingRepository brightnessMirrorShowingRepository,
             BlurConfig blurConfig,
             Lazy<ShadeDisplaysRepository> shadeDisplaysRepository,
-            WindowRootViewBlurInteractor windowRootViewBlurInteractor) {
+            WindowRootViewBlurInteractor windowRootViewBlurInteractor,
+            TunerService tunerService,
+            Context context) {
         mBlurConfig = blurConfig;
         mWindowRootViewBlurInteractor = windowRootViewBlurInteractor;
         SceneContainerFlag.assertInLegacyMode();
@@ -671,6 +756,8 @@ public final class NotificationPanelViewController implements
         mKeyguardTransitionInteractor = keyguardTransitionInteractor;
         mSharedNotificationContainerInteractor = sharedNotificationContainerInteractor;
         mActiveNotificationsInteractor = activeNotificationsInteractor;
+        mNotifPipeline = notifPipeline;
+        mKeyguardNotificationVisibilityProvider = keyguardNotificationVisibilityProvider;
         mKeyguardInteractor = keyguardInteractor;
         mPowerInteractor = powerInteractor;
         mClockPositionAlgorithm = keyguardClockPositionAlgorithm;
@@ -734,6 +821,7 @@ public final class NotificationPanelViewController implements
         mNotificationStackScrollLayoutController = notificationStackScrollLayoutController;
         mKeyguardStatusBarViewComponentFactory = keyguardStatusBarViewComponentFactory;
         mDepthController = notificationShadeDepthController;
+        mContentResolver = contentResolver;
         mFragmentService = fragmentService;
         mStatusBarService = statusBarService;
         mSplitShadeStateController = splitShadeStateController;
@@ -741,8 +829,10 @@ public final class NotificationPanelViewController implements
                 mSplitShadeStateController.shouldUseSplitNotificationShade(mResources);
         mView.setWillNotDraw(!DEBUG_DRAWABLE);
         mShadeHeaderController = shadeHeaderController;
+        mTunerService = tunerService;
         mAnimateBack = predictiveBackAnimateShade();
         mFalsingCollector = falsingCollector;
+        mPowerManager = powerManager;
         mWakeUpCoordinator = coordinator;
         mMainDispatcher = mainDispatcher;
         mAccessibilityManager = accessibilityManager;
@@ -750,6 +840,7 @@ public final class NotificationPanelViewController implements
         setAlpha(255, false /* animate */);
         mCommandQueue = commandQueue;
         mDisplayId = displayId;
+        mHandler = handler;
         mPulseExpansionHandler = pulseExpansionHandler;
         mDozeParameters = dozeParameters;
         mScrimController = scrimController;
@@ -768,6 +859,19 @@ public final class NotificationPanelViewController implements
         quickSettingsController.setFlingQsWithoutClickListener(this::onFlingQsWithoutClick);
         quickSettingsController.setExpansionHeightSetToMaxListener(this::onExpansionHeightSetToMax);
         shadeExpansionStateManager.addStateListener(this::onPanelStateChanged);
+        mDoubleTapGesture = new GestureDetector(context,
+                new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDoubleTap(MotionEvent e) {
+                if (mTripleTapToFreeformEnabled) {
+                    // Wait for triple press otherwise go to sleep
+                    mTripleTapArmed = true;
+                } else if (mDoubleTapToSleepEnabled && mPowerManager != null) {
+                    mPowerManager.goToSleep(e.getEventTime());
+                }
+                return true;
+            }
+        });
         mConversationNotificationManager = conversationNotificationManager;
         mScreenOffAnimationController = screenOffAnimationController;
         mUnlockedScreenOffAnimationController = unlockedScreenOffAnimationController;
@@ -829,6 +933,9 @@ public final class NotificationPanelViewController implements
                     }
                 });
         mAlternateBouncerInteractor = alternateBouncerInteractor;
+        mQsHeaderLayout = mView.requireViewById(R.id.layout_header);
+        mQsHeaderImageView = mView.requireViewById(R.id.qs_header_image_view);
+        mStatusBarHeaderMachine = new StatusBarHeaderMachine(context);
         dumpManager.registerDumpable(this);
     }
 
@@ -1192,6 +1299,16 @@ public final class NotificationPanelViewController implements
         return ClockSize.LARGE;
     }
 
+    private boolean shouldForceSmallClock() {
+        return !isOnAod()
+                // True on small landscape screens
+                && mResources.getBoolean(R.bool.force_small_clock_on_lockscreen) ||
+                (Settings.Secure.getIntForUser(
+                    mContentResolver, Settings.Secure.LOCK_SCREEN_CUSTOM_CLOCK_STYLE, 0, UserHandle.USER_CURRENT) != 0 ||
+                 Settings.System.getIntForUser(
+                    mContentResolver, "lockscreen_widgets_enabled", 0, UserHandle.USER_CURRENT) != 0);
+    }
+
     private void updateKeyguardStatusViewAlignment() {
         boolean shouldBeCentered = shouldKeyguardStatusViewBeCentered();
         mKeyguardUnfoldTransition.ifPresent(t -> t.setStatusViewCentered(shouldBeCentered));
@@ -1224,8 +1341,30 @@ public final class NotificationPanelViewController implements
     }
 
     private boolean hasVisibleNotifications() {
-        return mActiveNotificationsInteractor.getAreAnyNotificationsPresentValue()
-                || mMediaDataManager.hasActiveMedia();
+        return hasNotificationsVisibleOnKeyguard() || mMediaDataManager.hasActiveMedia();
+    }
+
+    /**
+     * Whether any rendered notification would show on the lockscreen, judged synchronously by the
+     * keyguard filter rather than by the rendered list alone. The rendered list is filtered for
+     * the keyguard by an asynchronous pipeline run, so right after unlocking (when the clock
+     * position is recomputed for the next lockscreen) and right after locking it still contains
+     * the silent notifications the lockscreen hides; sizing the clock from it flips the clock to
+     * SMALL for a moment on both edges.
+     */
+    private boolean hasNotificationsVisibleOnKeyguard() {
+        for (PipelineEntry entry : mNotifPipeline.getShadeList()) {
+            ListEntry listEntry = entry.asListEntry();
+            NotificationEntry representative =
+                    listEntry == null ? null : listEntry.getRepresentativeEntry();
+            // Bundles have no representative entry; treat them as visible.
+            if (representative == null
+                    || !mKeyguardNotificationVisibilityProvider
+                            .shouldHideNotificationOnKeyguard(representative)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -1895,6 +2034,17 @@ public final class NotificationPanelViewController implements
         updateHeader();
         updatePanelExpanded();
         updateGestureExclusionRect();
+
+        if (mQsController.isExpandImmediate() && !mQsController.getFullyExpanded()) {
+            mNotificationStackScrollLayoutController.getView().setAlpha(0f);
+        } else {
+            mNotificationStackScrollLayoutController.getView().setAlpha(1f);
+        }
+
+        if (mHeaderImageEnabled) {
+            mView.post(() -> updateHeaderImage());
+        }
+
         if (DEBUG_DRAWABLE) {
             mView.invalidate();
         }
@@ -2998,7 +3148,8 @@ public final class NotificationPanelViewController implements
         return !isDirectionUpwards(x, y);
     }
 
-    private void fling(float vel, boolean expand, boolean expandBecauseOfFalsing) {
+    @Override
+    public void fling(float vel, boolean expand, boolean expandBecauseOfFalsing) {
         fling(vel, expand, 1.0f /* collapseSpeedUpFactor */, expandBecauseOfFalsing);
     }
 
@@ -3093,6 +3244,7 @@ public final class NotificationPanelViewController implements
             }
             mExpandedFraction = Math.min(1f,
                     maxPanelHeight == 0 ? 0 : mExpandedHeight / maxPanelHeight);
+            ScrimUtils.get().setExpandedFraction(mExpandedFraction);
             if (mExpandedFraction > 0f && mExpectingSynthesizedDown) {
                 mExpectingSynthesizedDown = false;
             }
@@ -3499,12 +3651,23 @@ public final class NotificationPanelViewController implements
         @Override
         public void onConfigChanged(Configuration newConfig) {
             updateResources();
+            if (mHeaderImageEnabled) {
+                mView.post(() -> updateHeaderImage());
+            }
         }
 
         @Override
         public void onThemeChanged() {
             debugLog("onThemeChanged");
             reInflateViews();
+        }
+
+        @Override
+        public void onUiModeChanged() {
+            // The header provider's picture can have a light and a dark version: ask again
+            if (mHeaderImageEnabled) {
+                mStatusBarHeaderMachine.updateEnablement();
+            }
         }
 
         @Override
@@ -3531,6 +3694,7 @@ public final class NotificationPanelViewController implements
 
             // TODO: maybe add a listener for barstate
             mBarState = statusBarState;
+            ScrimUtils.get().setBarState(mBarState);
             mQsController.setBarState(statusBarState);
 
             boolean fromShadeToKeyguard = statusBarState == KEYGUARD
@@ -3588,6 +3752,12 @@ public final class NotificationPanelViewController implements
             if (keyguardShowing) {
                 updateDozingVisibilities(false /* animate */);
             }
+            if (fromShadeToKeyguard) {
+                // Size and place the clock for the notifications the lockscreen will show before
+                // it becomes visible, instead of leaving the layout computed while unlocked in
+                // place until the next doze or layout pass repositions it in front of the user.
+                positionClockAndNotifications();
+            }
 
             // The update needs to happen after the headerSlide in above, otherwise the translation
             // would reset
@@ -3632,7 +3802,8 @@ public final class NotificationPanelViewController implements
         positionClockAndNotifications(true /* forceUpdate */);
     }
 
-    private final class ShadeAttachStateChangeListener implements View.OnAttachStateChangeListener {
+    private final class ShadeAttachStateChangeListener implements View.OnAttachStateChangeListener,
+            TunerService.Tunable, StatusBarHeaderMachine.IStatusBarHeaderMachineObserver {
         @Override
         public void onViewAttachedToWindow(View v) {
             mFragmentService.getFragmentHostManager(mView)
@@ -3643,6 +3814,18 @@ public final class NotificationPanelViewController implements
                 mStatusBarStateListener.onStateChanged(mStatusBarStateController.getState(), true);
             }
             mConfigurationController.addCallback(mConfigurationListener);
+
+            mStatusBarHeaderMachine.addObserver(this);
+            mStatusBarHeaderMachine.updateEnablement();
+
+            mTunerService.addTunable(this, DOUBLE_TAP_SLEEP_GESTURE);
+            mTunerService.addTunable(this, STATUS_BAR_TRIPLE_TAP_FREEFORM);
+            mTunerService.addTunable(this, STATUS_BAR_BRIGHTNESS_CONTROL);
+            mTunerService.addTunable(this, STATUS_BAR_BRIGHTNESS_CONTROL_LOCKSCREEN);
+            mTunerService.addTunable(this, STATUS_BAR_CUSTOM_HEADER);
+            mTunerService.addTunable(this, STATUS_BAR_CUSTOM_HEADER_HEIGHT);
+            mTunerService.addTunable(this, STATUS_BAR_CUSTOM_HEADER_SHADOW);
+
             // Theme might have changed between inflating this view and attaching it to the
             // window, so
             // force a call to onThemeChanged
@@ -3653,11 +3836,74 @@ public final class NotificationPanelViewController implements
 
         @Override
         public void onViewDetachedFromWindow(View v) {
+            cancelDeferredDoubleTapSleep();
             mFragmentService.getFragmentHostManager(mView)
                     .removeTagListener(QS.TAG, mQsController.getQsFragmentListener());
             mStatusBarStateController.removeCallback(mStatusBarStateListener);
             mConfigurationController.removeCallback(mConfigurationListener);
+            mStatusBarHeaderMachine.removeObserver(this);
+            mTunerService.removeTunable(this);
             mFalsingManager.removeTapListener(mFalsingTapListener);
+        }
+
+        @Override
+        public void onTuningChanged(String key, String newValue) {
+            switch (key) {
+                case DOUBLE_TAP_SLEEP_GESTURE:
+                    mDoubleTapToSleepEnabled =
+                            TunerService.parseIntegerSwitch(newValue,
+                                mResources.getBoolean(org.lineageos.platform.internal.R.bool.
+                                config_dt2sGestureEnabledByDefault));
+                    break;
+                case STATUS_BAR_TRIPLE_TAP_FREEFORM:
+                    mTripleTapToFreeformEnabled =
+                            TunerService.parseIntegerSwitch(newValue, false);
+                    break;
+                case STATUS_BAR_BRIGHTNESS_CONTROL:
+                    mBrightnessControl =
+                            TunerService.parseIntegerSwitch(newValue, false);
+                    break;
+                case STATUS_BAR_BRIGHTNESS_CONTROL_LOCKSCREEN:
+                    mBrightnessControlLockscreen =
+                            TunerService.parseIntegerSwitch(newValue, false);
+                    break;
+                case STATUS_BAR_CUSTOM_HEADER:
+                    mHeaderImageEnabled =
+                            TunerService.parseIntegerSwitch(newValue, false);
+                    mView.post(() -> updateHeaderImage());
+                    break;
+                case STATUS_BAR_CUSTOM_HEADER_HEIGHT:
+                    mHeaderImageHeight =
+                            TunerService.parseInteger(newValue, 142);
+                    mBottomFadeHeight = (int) Math.round(mHeaderImageHeight * 0.555);
+                    mView.post(() -> updateHeaderImage());
+                    break;
+                case STATUS_BAR_CUSTOM_HEADER_SHADOW:
+                    mHeaderImageShadow =
+                            TunerService.parseInteger(newValue, 0);
+                    mView.post(() -> updateHeaderImage());
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        @Override
+        public void updateHeader(Drawable headerImage, boolean force) {
+            mView.post(() -> doUpdateStatusBarCustomHeader(headerImage, force));
+        }
+
+        @Override
+        public void disableHeader() {
+            mView.post(() -> {
+                mCurrentBackground = null;
+                mQsHeaderImageView.setVisibility(View.GONE);
+            });
+        }
+
+        @Override
+        public void refreshHeader() {
+            mView.post(() -> doUpdateStatusBarCustomHeader(mCurrentBackground, true));
         }
     }
 
@@ -3680,6 +3926,9 @@ public final class NotificationPanelViewController implements
             mQsController.handleShadeLayoutChanged(oldMaxHeight);
             updateExpandedHeight(getExpandedHeight());
             updateHeader();
+            if (mHeaderImageEnabled) {
+                mView.post(() -> updateHeaderImage());
+            }
 
             // If we are running a size change animation, the animation takes care of the height
             // of the container. However, if we are not animating, we always need to make the QS
@@ -3761,6 +4010,99 @@ public final class NotificationPanelViewController implements
     @VisibleForTesting
     StateListener getStatusBarStateListener() {
         return mStatusBarStateListener;
+    }
+
+    /**
+     * Tracks taps on the status bar to detect a triple tap.
+     *
+     * <p>{@link GestureDetector} cannot report a triple tap: {@code onDoubleTap} fires on the
+     * second tap's ACTION_DOWN and the third tap is treated as the start of a new gesture. This
+     * keeps our own streak so the tap that follows a detected double tap can be recognised. When
+     * double tap to sleep is also enabled its sleep action is held back until the double tap
+     * timeout has elapsed, so a third tap can cancel it and open freeform instead.
+     */
+    private void handleTripleTapGesture(MotionEvent event) {
+        final int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            final int slop = ViewConfiguration.get(mView.getContext()).getScaledDoubleTapSlop();
+            final boolean isThirdTap = mTripleTapArmed
+                    && event.getEventTime() - mLastTapUpTime <= TRIPLE_TAP_TIMEOUT_MS
+                    && Math.abs(event.getX() - mLastTapDownX) <= slop
+                    && Math.abs(event.getY() - mLastTapDownY) <= slop;
+            mLastTapDownX = event.getX();
+            mLastTapDownY = event.getY();
+            if (isThirdTap) {
+                mTripleTapArmed = false;
+                cancelDeferredDoubleTapSleep();
+                openCurrentAppInFreeform();
+                return;
+            }
+            mTripleTapArmed = false;
+        } else if (action == MotionEvent.ACTION_UP) {
+            mLastTapUpTime = event.getEventTime();
+            final int slop = ViewConfiguration.get(mView.getContext()).getScaledDoubleTapSlop();
+            final boolean wasTap = Math.abs(event.getX() - mLastTapDownX) <= slop
+                    && Math.abs(event.getY() - mLastTapDownY) <= slop;
+            if (mTripleTapArmed && wasTap && mDoubleTapToSleepEnabled
+                    && mPowerManager != null) {
+                cancelDeferredDoubleTapSleep();
+                mDeferredDoubleTapSleepRunnable = () -> {
+                    mDeferredDoubleTapSleepRunnable = null;
+                    mTripleTapArmed = false;
+                    if (mPowerManager != null) {
+                        mPowerManager.goToSleep(mSystemClock.uptimeMillis());
+                    }
+                };
+                mHandler.postDelayed(mDeferredDoubleTapSleepRunnable, TRIPLE_TAP_TIMEOUT_MS);
+            }
+        } else if (action == MotionEvent.ACTION_CANCEL) {
+            mTripleTapArmed = false;
+        }
+    }
+
+    private void cancelDeferredDoubleTapSleep() {
+        if (mDeferredDoubleTapSleepRunnable != null) {
+            mHandler.removeCallbacks(mDeferredDoubleTapSleepRunnable);
+            mDeferredDoubleTapSleepRunnable = null;
+        }
+    }
+
+    /**
+     * Opens the app currently in the foreground of this display in an LMOFreeform window.
+     *
+     * <p>This mirrors the broadcast used by the PixelLauncherEnhanced module's LMO freeform
+     * variant. Passing the running task id makes LMOFreeform move that existing task into its
+     * freeform display instead of launching a new instance of the activity.
+     */
+    private void openCurrentAppInFreeform() {
+        if (mBarState != StatusBarState.SHADE) {
+            // Only meaningful while unlocked
+            return;
+        }
+        final ActivityManager.RunningTaskInfo task;
+        try {
+            task = ActivityManagerWrapper.getInstance().getRunningTask();
+        } catch (Exception e) {
+            Log.w(TAG, "Could not get the running task for the freeform gesture", e);
+            return;
+        }
+        if (task == null || task.topActivity == null || task.displayId != mDisplayId) {
+            return;
+        }
+        final int activityType = task.getActivityType();
+        if (activityType == WindowConfiguration.ACTIVITY_TYPE_HOME
+                || activityType == WindowConfiguration.ACTIVITY_TYPE_RECENTS
+                || activityType == WindowConfiguration.ACTIVITY_TYPE_DREAM) {
+            // Nothing sensible to put in a freeform window.
+            return;
+        }
+        final Intent intent = new Intent(LMO_FREEFORM_START_ACTION)
+                .setPackage(LMO_FREEFORM_PACKAGE)
+                .putExtra("packageName", task.topActivity.getPackageName())
+                .putExtra("activityName", task.topActivity.getClassName())
+                .putExtra("userId", task.userId)
+                .putExtra("taskId", task.taskId);
+        mView.getContext().sendBroadcastAsUser(intent, UserHandle.CURRENT);
     }
 
     /** Handles MotionEvents for the Shade. */
@@ -3987,10 +4329,25 @@ public final class NotificationPanelViewController implements
                 return false;
             }
 
+            if (!mPulsing && !mDozing) {
+                if (mDoubleTapToSleepEnabled || mTripleTapToFreeformEnabled) {
+                    if (mTripleTapToFreeformEnabled) {
+                        // Run before the detector so the tap that completes a triple tap is not
+                        // seen by it before our own tap streak has been updated.
+                        handleTripleTapGesture(event);
+                    }
+                    mDoubleTapGesture.onTouchEvent(event);
+                }
+            }
+
             // Make sure the next touch won't the blocked after the current ends.
             if (event.getAction() == MotionEvent.ACTION_UP
                     || event.getAction() == MotionEvent.ACTION_CANCEL) {
                 mBlockingExpansionForCurrentTouch = false;
+                if (mBrightnessControl) {
+                    mCentralSurfaces.onBrightnessChanged(true);
+                    mCentralSurfaces.cancelBrightnessControl();
+                }
             }
             // When touch focus transfer happens, ACTION_DOWN->ACTION_UP may happen immediately
             // without any ACTION_MOVE event.
@@ -4002,9 +4359,10 @@ public final class NotificationPanelViewController implements
 
             // If pulse is expanding already, let's give it the touch. There are situations
             // where the panel starts expanding even though we're also pulsing
-            boolean pulseShouldGetTouch = (!mIsExpandingOrCollapsing
+            boolean pulseShouldGetTouch = ((!mIsExpandingOrCollapsing
                     && !mQsController.shouldQuickSettingsIntercept(mDownX, mDownY, 0, event))
-                    || mPulseExpansionHandler.isExpanding();
+                    || mPulseExpansionHandler.isExpanding()
+                    || mPulseExpansionHandler.getSwipeDownWhenForbidden());
             if (pulseShouldGetTouch && mPulseExpansionHandler.onTouchEvent(event)) {
                 // We're expanding all the other ones shouldn't get this anymore
                 mShadeLog.logMotionEvent(event, "onTouch: PulseExpansionHandler handled event");
@@ -4027,8 +4385,25 @@ public final class NotificationPanelViewController implements
                 mShadeLog.d("Touch has same down time as Status Bar long press. Ignoring.");
                 return false;
             }
+            if (mBrightnessControl) {
+                final int actionIndex = event.getActionIndex();
+                final float swipeY = event.getY(actionIndex);
+                if (swipeY < mStatusBarMinHeight &&
+                        (mBarState != KEYGUARD || mBrightnessControlLockscreen)) {
+                    mCentralSurfaces.brightnessControl(event);
+                    final int action = event.getActionMasked();
+                    if (action == MotionEvent.ACTION_UP
+                            || action == MotionEvent.ACTION_CANCEL) {
+                        mCentralSurfaces.onBrightnessChanged(true);
+                    }
+                    return true;
+                }
+            }
             if (!mHeadsUpTouchHelper.isTrackingHeadsUp() && mQsController.handleTouch(
                     event, isFullyCollapsed(), isShadeOrQsHeightAnimationRunning())) {
+                if (mBrightnessControl) {
+                    mCentralSurfaces.cancelBrightnessControl();
+                }
                 if (event.getActionMasked() != MotionEvent.ACTION_MOVE) {
                     mShadeLog.logMotionEvent(event, "onTouch: handleQsTouch handled event");
                 }
@@ -4294,6 +4669,104 @@ public final class NotificationPanelViewController implements
                 return true;
             }
             return super.performAccessibilityAction(host, action, args);
+        }
+    }
+
+    private void doUpdateStatusBarCustomHeader(Drawable drawable, boolean force) {
+        if (drawable != null) {
+            mQsHeaderImageView.setVisibility(View.VISIBLE);
+            mCurrentBackground = drawable;
+            setNotificationPanelHeaderBackground(drawable, force);
+        } else {
+            mCurrentBackground = null;
+            mQsHeaderImageView.setVisibility(View.GONE);
+        }
+        updateHeaderImage();
+    }
+
+    private void updateHeaderImage() {
+        Configuration config = mView.getResources().getConfiguration();
+        float shadeHeaderExpansion = mShadeHeaderController.getShadeExpandedFraction();
+        if (mHeaderImageEnabled && shadeHeaderExpansion > 0f &&
+            config.orientation != Configuration.ORIENTATION_LANDSCAPE &&
+            mCurrentBackground != null && mQsHeaderImageView.getDrawable() != null) {
+
+            if (mQsHeaderLayout.getVisibility() != View.VISIBLE) {
+                int headerImageHeight = (int) TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP,
+                        mHeaderImageHeight,
+                        mView.getResources().getDisplayMetrics());
+
+                ViewGroup.LayoutParams params = mQsHeaderLayout.getLayoutParams();
+                params.height = headerImageHeight;
+                mQsHeaderLayout.setLayoutParams(params);
+
+                mQsHeaderLayout.setFadeSizes(0, 0,
+                        (int) TypedValue.applyDimension(
+                                TypedValue.COMPLEX_UNIT_DIP,
+                                mBottomFadeHeight,
+                                mView.getResources().getDisplayMetrics()),
+                        0);
+
+                mQsHeaderLayout.setVisibility(View.VISIBLE);
+            }
+            if (mShadeHeaderExpansion != shadeHeaderExpansion) {
+                mShadeHeaderExpansion = shadeHeaderExpansion;
+                mQsHeaderImageView.setImageAlpha( (int)
+                    (mShadeHeaderExpansion * (255 - mHeaderImageShadow)));
+            }
+
+            startHeaderAnimIfPossible();
+        } else {
+            mQsHeaderLayout.setVisibility(View.GONE);
+            stopHeaderAnimIfRunning();
+        }
+    }
+
+    private void stopHeaderAnimIfRunning() {
+        Drawable drawable = mQsHeaderImageView.getDrawable();
+        if (drawable instanceof Animatable anim && anim.isRunning()) {
+            anim.stop();
+        }
+        if (drawable != null) {
+            drawable.setVisible(false, false);
+        }
+    }
+
+    private void startHeaderAnimIfPossible() {
+        Drawable drawable = mQsHeaderImageView.getDrawable();
+        if (drawable == null) return;
+
+        // Only animate when we are actually showing it
+        if (mQsHeaderLayout.getVisibility() != View.VISIBLE || mQsHeaderImageView.getVisibility() != View.VISIBLE) {
+            return;
+        }
+
+        drawable.setVisible(true, true);
+        if (drawable instanceof Animatable anim && !anim.isRunning()) {
+            anim.start();
+        }
+    }
+
+    private void setNotificationPanelHeaderBackground(Drawable dw, boolean force) {
+        // Stop previous anim, if any, before swapping
+        stopHeaderAnimIfRunning();
+
+        // Avoid TransitionDrawable if new is animatable, but do not start here
+        if (dw instanceof Animatable) {
+            mQsHeaderImageView.setImageDrawable(dw);
+            return;
+        }
+
+        Drawable current = mQsHeaderImageView.getDrawable();
+        if (current != null && !force && !(current instanceof Animatable)) {
+            Drawable[] layers = new Drawable[]{current, dw};
+            TransitionDrawable transitionDrawable = new TransitionDrawable(layers);
+            transitionDrawable.setCrossFadeEnabled(true);
+            mQsHeaderImageView.setImageDrawable(transitionDrawable);
+            transitionDrawable.startTransition(1000);
+        } else {
+            mQsHeaderImageView.setImageDrawable(dw);
         }
     }
 }

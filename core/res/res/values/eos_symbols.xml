@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-FileCopyrightText: 2026 The ExpressiveOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+
+    <!-- Double tap to sleep -->
+    <java-symbol type="bool" name="config_dt2sGestureEnabledByDefault" />
+
+    <!-- Lock screen rotation -->
+    <java-symbol type="bool" name="config_lockScreenRotationEnabledByDefault" />
+
+    <!-- Fingerprint wake and unlock -->
+    <java-symbol type="bool" name="config_fingerprintWakeAndUnlock" />
+
+    <!-- Advanced restart -->
+    <java-symbol type="array" name="config_restartActionsList" />
+
+</resources>

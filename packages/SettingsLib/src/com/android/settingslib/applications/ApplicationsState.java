@@ -765,6 +765,10 @@ public class ApplicationsState {
                 }
                 return null;
             }
+            if (info.sourceDir == null) {
+                // Avoid NullPointerException for broken uninstalled packages.
+                return null;
+            }
             if (DEBUG) {
                 Log.i(TAG, "Creating AppEntry for " + info.packageName);
             }
@@ -2121,7 +2125,7 @@ public class ApplicationsState {
 
         @Override
         public boolean filterApp(AppEntry entry) {
-            return true;
+            return !hasFlag(entry.info.privateFlags, ApplicationInfo.PRIVATE_FLAG_IS_RESOURCE_OVERLAY);
         }
     };
 

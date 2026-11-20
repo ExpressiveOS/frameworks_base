@@ -126,7 +126,7 @@ interface IStatusBarService
      * These methods are needed for global actions control which the UI is shown in sysui.
      */
     void shutdown();
-    void reboot(boolean safeMode);
+    void reboot(boolean safeMode, String reason);
 
     /** just restarts android without rebooting device. Used for some feature flags. */
     void restart();
@@ -264,4 +264,16 @@ interface IStatusBarService
 
     /** Terminates the started motion cues session */
     void endMotionCuesSession();
+
+    /**
+     * Starts the default assistant app.
+     */
+    void startAssist(in Bundle args);
+
+    /**
+     * Toggle recent apps.
+     */
+    void toggleRecentApps();
+
+    void restartSystemUI();
 }

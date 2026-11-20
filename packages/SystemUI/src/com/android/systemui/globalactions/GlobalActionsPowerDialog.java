@@ -26,6 +26,10 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.ListAdapter;
 
+import androidx.constraintlayout.helper.widget.Flow;
+
+import com.android.systemui.statusbar.BlurUtils;
+
 /**
  * Creates a customized Dialog for displaying the Shut Down and Restart actions.
  */
@@ -34,16 +38,32 @@ public class GlobalActionsPowerDialog {
     /**
      * Create a dialog for displaying Shut Down and Restart actions.
      */
-    public static Dialog create(@NonNull Context context, ListAdapter adapter) {
+    public static Dialog create(@NonNull Context context, ListAdapter adapter,
+            BlurUtils blurUtils) {
         ViewGroup listView = (ViewGroup) LayoutInflater.from(context).inflate(
-                com.android.systemui.res.R.layout.global_actions_power_dialog, null);
+                com.android.systemui.res.R.layout.global_actions_power_dialog_flow, null);
+
+        Flow flow = listView.findViewById(com.android.systemui.res.R.id.power_flow);
 
         for (int i = 0; i < adapter.getCount(); i++) {
             View action = adapter.getView(i, null, listView);
+            action.setId(View.generateViewId());
             listView.addView(action);
+            flow.addView(action);
         }
 
         Resources res = context.getResources();
+
+        int nElementsWrap = res.getInteger(
+                com.android.systemui.res.R.integer.power_menu_lite_max_columns);
+        int nChildren = listView.getChildCount() - 1; // don't count flow element
+
+        // Avoid having just one action on the last row if there are more than 2 columns because
+        // it looks unbalanced. Instead, bring the column size down to balance better.
+        if (nChildren == nElementsWrap + 1 && nElementsWrap > 2) {
+            nElementsWrap -= 1;
+        }
+        flow.setMaxElementsWrap(nElementsWrap);
 
         Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -53,8 +73,19 @@ public class GlobalActionsPowerDialog {
         window.setType(WindowManager.LayoutParams.TYPE_VOLUME_OVERLAY);
         window.setTitle(""); // prevent Talkback from speaking first item name twice
         window.setBackgroundDrawable(res.getDrawable(
-                com.android.systemui.res.R.drawable.control_background, context.getTheme()));
+                com.android.systemui.res.R.drawable.global_actions_lite_background,
+                context.getTheme()));
         window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        if (blurUtils.supportsBlursOnWindows()) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+            int blurBehindRadius = context.getResources()
+                    .getDimensionPixelSize(com.android.systemui.res.R.dimen.max_window_blur_radius);
+            window.getAttributes().setBlurBehindRadius(blurBehindRadius);
+            window.setDimAmount(0.54f);
+        } else {
+            window.setDimAmount(0.88f);
+        }
 
         return dialog;
     }

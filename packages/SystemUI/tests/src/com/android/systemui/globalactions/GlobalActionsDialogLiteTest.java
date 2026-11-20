@@ -55,7 +55,6 @@ import android.view.IWindowManager;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManagerPolicyConstants;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.ImageView;
@@ -82,6 +81,7 @@ import com.android.systemui.broadcast.BroadcastSender;
 import com.android.systemui.colorextraction.SysuiColorExtractor;
 import com.android.systemui.deviceentry.data.repository.FakeDeviceEntryRepository;
 import com.android.systemui.deviceentry.shared.model.DeviceUnlockStatus;
+import com.android.systemui.controls.dagger.ControlsComponent;
 import com.android.systemui.display.data.repository.FakeDisplayWindowPropertiesRepository;
 import com.android.systemui.globalactions.data.repository.FakeGlobalActionsRepository;
 import com.android.systemui.globalactions.domain.interactor.GlobalActionsInteractor;
@@ -151,6 +151,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
     @Mock private UserContextProvider mUserContextProvider;
     @Mock private VibratorHelper mVibratorHelper;
     @Mock private UserLogoutInteractor mLogoutInteractor;
+    @Mock private ControlsComponent mControlsComponent;
     @Mock private PowerManager mPowerManager;
     @Mock private EmergencyAffordanceManager mEmergencyAffordanceManager;
     @Mock private ScreenshotHelper mScreenshotHelper;
@@ -489,30 +490,6 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
                 globalActionsDialogLite.new ScreenshotAction();
         screenshotAction.onPress();
         verifyLogPosted(GlobalActionsEvent.GA_SCREENSHOT_PRESS, 0 /* position */);
-    }
-
-    @Test
-    public void testShouldShowScreenshot() {
-        mContext.getOrCreateTestableResources().addOverride(
-                com.android.internal.R.integer.config_navBarInteractionMode,
-                WindowManagerPolicyConstants.NAV_BAR_MODE_2BUTTON);
-
-        GlobalActionsDialogLite globalActionsDialogLite = createGlobalActionsDialogLite();
-        GlobalActionsDialogLite.ScreenshotAction screenshotAction =
-                globalActionsDialogLite.new ScreenshotAction();
-        assertThat(screenshotAction.shouldShow()).isTrue();
-    }
-
-    @Test
-    public void testShouldNotShowScreenshot() {
-        mContext.getOrCreateTestableResources().addOverride(
-                com.android.internal.R.integer.config_navBarInteractionMode,
-                WindowManagerPolicyConstants.NAV_BAR_MODE_3BUTTON);
-
-        GlobalActionsDialogLite globalActionsDialogLite = createGlobalActionsDialogLite();
-        GlobalActionsDialogLite.ScreenshotAction screenshotAction =
-                globalActionsDialogLite.new ScreenshotAction();
-        assertThat(screenshotAction.shouldShow()).isFalse();
     }
 
     @Test
@@ -1800,6 +1777,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
                 mShadeController,
                 mLogoutInteractor,
                 mInteractor,
+                mControlsComponent,
                 () -> new FakeDisplayWindowPropertiesRepository(mContext),
                 mPowerManager,
                 mBroadcastSender,

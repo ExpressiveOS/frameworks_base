@@ -355,4 +355,9 @@
 
     <!-- Default for Settings.Global.AIRPLANE_MODE_SYNC -->
     <bool name="def_airplane_mode_sync_enabled">true</bool>
+
+    <!-- Default for Settings.Global.TETHER_DUN_REQUIRED -->
+    <integer name="def_tether_dun_required">0</integer>
+
+    <integer name="def_ota_disable_automatic_update">1</integer>
 </resources>

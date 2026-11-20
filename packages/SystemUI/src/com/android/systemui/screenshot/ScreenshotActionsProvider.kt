@@ -21,7 +21,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.UserHandle
 import android.provider.DocumentsContract
+import android.provider.Settings
 import android.util.Log
 import androidx.appcompat.content.res.AppCompatResources
 import com.android.internal.logging.UiEventLogger
@@ -31,7 +33,9 @@ import com.android.systemui.log.DebugLogger.debugLog
 import com.android.systemui.res.R
 import com.android.systemui.screencapture.record.domain.interactor.ScreenCaptureRecordFeaturesInteractor
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_COPY_TAPPED
+import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_DELETE_TAPPED
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_EDIT_TAPPED
+import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_LENS_TAPPED
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_OPEN_TAPPED
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_PREVIEW_TAPPED
 import com.android.systemui.screenshot.ScreenshotEvent.SCREENSHOT_SHARE_TAPPED
@@ -93,6 +97,15 @@ constructor(
     private var result: ScreenshotSavedResult? = null
     private var webUri: Uri? = null
 
+    private val isClipboardOnly: Boolean
+        get() =
+            Settings.System.getIntForUser(
+                context.contentResolver,
+                Settings.System.SCREENSHOT_CLIPBOARD_ONLY,
+                0,
+                UserHandle.USER_CURRENT,
+            ) == 1
+
     init {
         actionsCallback.providePreviewAction(
             PreviewAction(context.resources.getString(R.string.screenshot_edit_description)) {
@@ -100,7 +113,7 @@ constructor(
                 uiEventLogger.log(SCREENSHOT_PREVIEW_TAPPED, 0, request.packageNameString)
                 onDeferrableActionTapped { result ->
                     actionExecutor.startSharedTransition(
-                        actionIntentCreator.createEdit(result.uri),
+                        actionIntentCreator.createView(result.uri),
                         result.user,
                         true,
                     )
@@ -111,7 +124,7 @@ constructor(
         actionsCallback.provideActionButton(
             ActionButtonAppearance(
                 AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_share),
-                context.resources.getString(R.string.screenshot_share_label),
+                null,
                 context.resources.getString(R.string.screenshot_share_description),
             ),
             showDuringEntrance = true,
@@ -134,11 +147,23 @@ constructor(
             }
         }
 
-        if (screenCaptureRecordFeaturesInteractor.isLargeScreenScreencaptureEnabled) {
+        if (isClipboardOnly) {
+            actionsCallback.provideActionButton(
+                ActionButtonAppearance(
+                    AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_save),
+                    null,
+                    context.resources.getString(R.string.screenshot_save_to_storage_label),
+                ),
+                showDuringEntrance = true,
+            ) {
+                debugLog(LogConfig.DEBUG_ACTIONS) { "Save to storage tapped" }
+                actionsCallback.saveToStorage()
+            }
+        } else if (screenCaptureRecordFeaturesInteractor.isLargeScreenScreencaptureEnabled) {
             actionsCallback.provideActionButton(
                 ActionButtonAppearance(
                     AppCompatResources.getDrawable(context, R.drawable.ic_content_copy),
-                    context.resources.getString(R.string.screenshot_copy_label),
+                    null,
                     context.resources.getString(R.string.screenshot_copy_description),
                 ),
                 showDuringEntrance = true,
@@ -155,7 +180,7 @@ constructor(
             actionsCallback.provideActionButton(
                 ActionButtonAppearance(
                     AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_edit),
-                    context.resources.getString(R.string.screenshot_edit_label),
+                    null,
                     context.resources.getString(R.string.screenshot_edit_description),
                 ),
                 showDuringEntrance = true,
@@ -181,7 +206,7 @@ constructor(
             actionsCallback.provideActionButton(
                 ActionButtonAppearance(
                     context.getDrawable(R.drawable.ic_screen_capture_folder),
-                    context.resources.getString(R.string.screenshot_open_in_folder_label),
+                    null,
                     context.resources.getString(R.string.screenshot_open_in_folder_description),
                 ),
                 showDuringEntrance = true,
@@ -198,6 +223,42 @@ constructor(
                 }
             }
         }
+
+        actionsCallback.provideActionButton(
+            ActionButtonAppearance(
+                AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_delete),
+                null,
+                context.resources.getString(R.string.screenshot_delete_description),
+            ),
+            showDuringEntrance = true,
+        ) {
+            debugLog(LogConfig.DEBUG_ACTIONS) { "Delete tapped" }
+            uiEventLogger.log(SCREENSHOT_DELETE_TAPPED, 0, request.packageNameString)
+            onDeferrableActionTapped { result ->
+                actionExecutor.sendPendingIntent(
+                    actionIntentCreator.createDelete(result.uri)
+                )
+            }
+        }
+
+        if (LensScreenshotReceiver.isGSAEnabled(context)) {
+            actionsCallback.provideActionButton(
+                ActionButtonAppearance(
+                    AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_lens),
+                    context.resources.getString(R.string.screenshot_lens_label),
+                    context.resources.getString(R.string.screenshot_lens_label),
+                ),
+                showDuringEntrance = true,
+            ) {
+                debugLog(LogConfig.DEBUG_ACTIONS) { "Lens tapped" }
+                uiEventLogger.log(SCREENSHOT_LENS_TAPPED, 0, request.packageNameString)
+                onDeferrableActionTapped { result ->
+                    actionExecutor.sendPendingIntent(
+                        actionIntentCreator.createLens(result.uri, context, result.user)
+                    )
+                }
+            }
+        }
     }
 
     override fun onScrollChipReady(onClick: ScrollClickCallback) {
@@ -206,7 +267,7 @@ constructor(
             actionsCallback.provideActionButton(
                 ActionButtonAppearance(
                     AppCompatResources.getDrawable(context, R.drawable.ic_screenshot_scroll),
-                    context.resources.getString(R.string.screenshot_scroll_label),
+                    null,
                     context.resources.getString(R.string.screenshot_scroll_label),
                 ),
                 showDuringEntrance = true,
@@ -227,11 +288,11 @@ constructor(
 
     override fun setCompletedScreenshot(result: ScreenshotSavedResult) {
         if (this.result != null) {
-            Log.e(TAG, "Got a second completed screenshot for existing request!")
-            return
+            debugLog(LogConfig.DEBUG_ACTIONS) { "Replacing completed screenshot result" }
         }
         this.result = result
         pendingAction?.also { applicationScope.launch { it.invoke(result) } }
+        pendingAction = null
     }
 
     override fun onAssistContent(assistContent: AssistContent?) {

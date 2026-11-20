@@ -278,9 +278,11 @@ import java.io.StringWriter;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -1149,10 +1151,12 @@ public final class ActiveServices {
             final int allowed = mAm.getAppStartModeLOSP(appUid, appPackageName, appTargetSdkVersion,
                     callingPid, false, false, forcedStandby);
             if (allowed != ActivityManager.APP_START_MODE_NORMAL) {
+		/*
                 Slog.w(TAG, "Background start not allowed: service "
                         + service + " to " + r.shortInstanceName
                         + " from pid=" + callingPid + " uid=" + callingUid
                         + " pkg=" + callingPackage + " startFg?=" + fgRequired);
+		*/
                 if (allowed == ActivityManager.APP_START_MODE_DELAYED || forceSilentAbort) {
                     // In this case we are silently disabling the app, to disrupt as
                     // little as possible existing apps.
@@ -2982,6 +2986,25 @@ public final class ActiveServices {
         final ForegroundServiceTypePolicy policy = ForegroundServiceTypePolicy.getDefaultPolicy();
         final ForegroundServiceTypePolicyInfo policyInfo =
                 policy.getForegroundServiceTypePolicyInfo(type, defaultToType);
+
+        // Whitelist of package names to bypass FGS type validation
+        final Set<String> whitelistPackages = new HashSet<>(Arrays.asList(
+            "com.google.android.as",         // Google Device Personalization services
+            "com.google.android.gms",        // Google Play Services
+            "com.android.vending",           // Google Play Store
+            "com.google.android.gsf",        // Google Services Framework
+            "com.google.android.apps.maps",  // Google Maps
+            "com.google.android.youtube",    // YouTube
+            "com.google.android.apps.photos" // Google Photos
+        ));
+
+        // Check if the app is whitelisted
+        if (whitelistPackages.contains(r.packageName)) {
+            Slog.i(TAG, "Bypassing FGS type validation for whitelisted app: " + r.packageName);
+            return Pair.create(FGS_TYPE_POLICY_CHECK_OK, null);
+        }
+
+        // Perform the regular policy check
         final @ForegroundServicePolicyCheckCode int code = policy.checkForegroundServiceTypePolicy(
                 mAm.mContext, r.packageName, r.getHostProcess().uid, r.getHostProcess().getPid(),
                 r.isFgsAllowedWiu_forStart(), policyInfo);
@@ -5153,8 +5176,10 @@ public final class ActiveServices {
             // ServiceMap so the package visibility doesn't apply to it. We need to filter it.
             if (mAm.getPackageManagerInternal().filterAppAccess(r.packageName, callingUid,
                     userId)) {
-                Slog.w(TAG_SERVICE, "Unable to start service " + service + " U=" + userId
-                        + ": not found");
+                if (DEBUG_SERVICE) {
+                    Slog.w(TAG_SERVICE, "Unable to start service " + service + " U=" + userId
+                            + ": not found");
+                }
                 return null;
             }
             if ((r.serviceInfo.flags & ServiceInfo.FLAG_EXTERNAL_SERVICE) != 0
@@ -5236,8 +5261,10 @@ public final class ActiveServices {
                         resolvedType, flags, userId, callingUid, callingPid);
                 ServiceInfo sInfo = rInfo != null ? rInfo.serviceInfo : null;
                 if (sInfo == null) {
-                    Slog.w(TAG_SERVICE, "Unable to start service " + service + " U=" + userId +
-                          ": not found");
+                    if (DEBUG_SERVICE) {
+                        Slog.w(TAG_SERVICE, "Unable to start service " + service + " U=" + userId
+                                + ": not found");
+                    }
                     return null;
                 }
                 if (instanceName != null

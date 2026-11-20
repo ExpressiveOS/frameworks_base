@@ -339,12 +339,26 @@ public final class AppLockLocalService implements AppLockInternal,
         }
     }
 
+    private long getAppLockTimeoutMs(int userId) {
+        return android.provider.Settings.Secure.getLongForUser(
+                mAmService.mContext.getContentResolver(),
+                "app_lock_timeout",
+                5000L,
+                userId);
+    }
+
     private boolean isLastAuthWithinGracePeriod(String packageName, int userId) {
         final long lastSuccessfulAuth = getLastSuccessfulAuthTimeForLockedPackage(packageName,
                 userId);
-        return lastSuccessfulAuth + DEFAULT_APP_LOCK_GRACE_PERIOD_MS.toMillis()
-                > System.currentTimeMillis()
-                && lastSuccessfulAuth != AppLockLockedState.INVALID_AUTH_TIME_MS;
+        if (lastSuccessfulAuth == AppLockLockedState.INVALID_AUTH_TIME_MS) {
+            return false;
+        }
+        long timeoutMs = getAppLockTimeoutMs(userId);
+        if (timeoutMs == -1) {
+            return true;
+        }
+        long effectiveTimeout = Math.max(timeoutMs, 1000L);
+        return (lastSuccessfulAuth + effectiveTimeout) >= System.currentTimeMillis();
     }
 
     @GuardedBy("mAmService")
@@ -521,9 +535,10 @@ public final class AppLockLocalService implements AppLockInternal,
         state.mLastSentLockedState = locked;
 
         // If we are sending an update that the package is locked, any pending delayed job is now
-        // obsolete.
+        // obsolete and authentication time is reset.
         if (locked) {
             cancelPackageAppLockedJobLocked(packageName, userId);
+            state.mLastAuthTimeSinceDeviceUnlock = AppLockLockedState.INVALID_AUTH_TIME_MS;
         }
 
         return true;
@@ -622,6 +637,11 @@ public final class AppLockLocalService implements AppLockInternal,
             Slog.d(TAG, "handleLockedState for " + packageName + " and user: " + userId);
         }
 
+        long timeoutMs = getAppLockTimeoutMs(userId);
+        if (timeoutMs == -1) {
+            return;
+        }
+
         if (getOrCreateAppLockLockedStateLocked(packageName, userId).mLockedUpdateRunnable
                 != null) {
             if (DEBUG) {
@@ -637,8 +657,7 @@ public final class AppLockLocalService implements AppLockInternal,
 
         getOrCreateAppLockLockedStateLocked(packageName, userId).mLockedUpdateRunnable =
                 setPackageLocked;
-        mInjector.getHandler().postDelayed(setPackageLocked,
-                DEFAULT_APP_LOCK_GRACE_PERIOD_MS.toMillis());
+        mInjector.getHandler().postDelayed(setPackageLocked, timeoutMs);
     }
 
     @Override

@@ -29,6 +29,7 @@
     <protected-broadcast android:name="android.intent.action.SCREEN_OFF" />
     <protected-broadcast android:name="android.intent.action.SCREEN_ON" />
     <protected-broadcast android:name="android.intent.action.USER_PRESENT" />
+    <protected-broadcast android:name="android.intent.action.DISPLAY_STATE_CHANGED" />
     <protected-broadcast android:name="android.intent.action.TIME_SET" />
     <protected-broadcast android:name="android.intent.action.TIME_TICK" />
     <protected-broadcast android:name="android.intent.action.TIMEZONE_CHANGED" />
@@ -525,8 +526,10 @@
     <protected-broadcast android:name="android.intent.action.PRECISE_CALL_STATE" />
     <protected-broadcast android:name="android.intent.action.SUBSCRIPTION_PHONE_STATE" />
     <protected-broadcast android:name="android.intent.action.USER_INFO_CHANGED" />
+    <protected-broadcast android:name="android.intent.action.USER_INFO_CHANGED_BACKGROUND" />
     <protected-broadcast android:name="android.intent.action.USER_UNLOCKED" />
     <protected-broadcast android:name="android.intent.action.WALLPAPER_CHANGED" />
+    <protected-broadcast android:name="android.intent.action.THEME_ENGINE_CHANGED" />
 
     <protected-broadcast android:name="android.app.action.DEVICE_POLICY_MANAGER_STATE_CHANGED" />
     <protected-broadcast android:name="android.app.action.CHOOSE_PRIVATE_KEY_ALIAS" />
@@ -875,6 +878,14 @@
     <protected-broadcast android:name="android.app.action.DYNAMIC_BUNDLE_MODIFIED" />
     <protected-broadcast android:name="android.app.action.BRIDGED_NOTIFICATION_PREFERENCES" />
 
+    <!-- Used for long press power torch feature - automatic turn off on timeout -->
+    <protected-broadcast android:name="com.android.server.policy.PhoneWindowManager.ACTION_TORCH_OFF" />
+
+    <!-- ExpressiveOS additions -->
+
+    <!-- Sent by Settings when the boot animation or its holiday colors change, for SystemUI -->
+    <protected-broadcast android:name="org.expressiveos.intent.action.BOOTANIM_STYLE_CHANGED" />
+
     <!-- ====================================================================== -->
     <!--                          RUNTIME PERMISSIONS                           -->
     <!-- ====================================================================== -->
@@ -983,6 +994,10 @@
         android:protectionLevel="internal|role|knownSigner"
         android:knownCerts="@array/config_setContactsDefaultAccountKnownSigners"
         android:featureFlag="android.provider.new_default_account_api_enabled"/>
+
+    <!-- @hide -->
+    <permission android:name="com.libremobileos.permission.START_FREEFORM"
+                android:protectionLevel="signature|privileged" />
 
     <!-- ====================================================================== -->
     <!-- Permissions for accessing user's calendar                              -->
@@ -10618,6 +10633,8 @@
     <!-- Attribution for Device Policy Manager service. -->
     <attribution android:tag="DevicePolicyManagerService"
         android:label="@string/device_policy_manager_service"/>
+    <!-- Attribution for VCN management service. -->
+    <attribution android:tag="VCN" android:label="@string/vcn_management_service"/>
 
     <application android:process="system"
                  android:persistent="true"

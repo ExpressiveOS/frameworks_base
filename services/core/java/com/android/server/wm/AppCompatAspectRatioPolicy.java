@@ -182,6 +182,12 @@ class AppCompatAspectRatioPolicy {
         if (mTransparentPolicy.isRunning()) {
             return mTransparentPolicy.getInheritedMaxAspectRatio();
         }
+        final float overrideValue = mActivityRecord.mAtmService.overrideMaxAspectRatio(
+                mActivityRecord.packageName,
+                mActivityRecord.info.applicationInfo.targetSdkVersion);
+        if (overrideValue != -1.0f) {
+            return overrideValue;
+        }
         final float maxAspectRatio = mActivityRecord.info.getMaxAspectRatio();
         if (maxAspectRatio == 0 || mActivityRecord.isUniversalResizeable()) {
             return 0;
@@ -324,7 +330,9 @@ class AppCompatAspectRatioPolicy {
         int activityHeight = containingAppHeight;
 
         if (containingRatio - aspectRatioToApply > ASPECT_RATIO_ROUNDING_TOLERANCE) {
-            if (containingAppWidth < containingAppHeight) {
+            if (mActivityRecord.shouldForceLongScreen()) {
+                // Use containingAppWidth/Height for maxActivityWidth/Height when force long screen
+            } else if (containingAppWidth < containingAppHeight) {
                 // Width is the shorter side, so we use that to figure-out what the max. height
                 // should be given the aspect ratio.
                 activityHeight = (int) ((activityWidth * aspectRatioToApply) + 0.5f);
@@ -392,6 +400,10 @@ class AppCompatAspectRatioPolicy {
             top = containingBounds.top;
         }
         outBounds.set(left, top, right, bottom);
+        if (mActivityRecord.shouldForceLongScreen()) {
+            outBounds.set(mActivityRecord.getRequestedOverrideBounds());
+            return true;
+        }
         return true;
     }
 

@@ -87,8 +87,6 @@
 
     <item type="id" name="requires_remeasuring"/>
 
-    <item type="id" name="secondary_home_handle" />
-
     <!-- Whether the icon is from a notification for which targetSdk < L -->
     <item type="id" name="icon_is_pre_L"/>
 
@@ -223,6 +221,7 @@
     <item type="id" name="keyguard_indication_text" />
     <item type="id" name="keyguard_indication_text_bottom" />
     <item type="id" name="keyguard_root_view" />
+    <item type="id" name="ax_dynamic_bar_keyguard_chip" />
     <item type="id" name="keyguard_settings_button" />
     <item type="id" name="nssl_guideline" />
     <item type="id" name="nssl_placeholder" />
@@ -295,6 +294,9 @@
     <item type="id" name="aod_promoted_notification_view_updater_tag" />
     <item type="id" name="aod_promoted_notification_inflation_identity" />
 
+    <!-- id for the composable battery view (see StatusBarRoot.kt) -->
+    <item type="id" name="battery_composable_view" />
+
     <!-- id for the composable battery meter (see UnifiedBattery.kt) -->
     <item type="id" name="battery_meter_composable_view" />
 
@@ -310,4 +312,17 @@
 
     <!-- Identifier for the phishing animated smart action. -->
     <item type="id" name="is_phishing_animated_action" />
+
+    <!-- Custom overlay on lockscreen/doze -->
+    <item type="id" name="custom_overlay_container" />
+
+    <!-- Clock face -->
+    <item type="id" name="original_text_color" />
+    <item type="id" name="original_typeface" />
+    <item type="id" name="original_alpha" />
+
+    <!-- Google smartspace view IDs (view doesn't exist on non-GMS builds) -->
+    <item type="id" name="bc_smartspace_view" />
+    <item type="id" name="smartspace_card_pager" />
+    <item type="id" name="smartspace_page_indicator" />
 </resources>

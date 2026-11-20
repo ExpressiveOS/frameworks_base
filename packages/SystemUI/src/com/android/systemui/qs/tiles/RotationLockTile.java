@@ -49,6 +49,7 @@ import com.android.systemui.qs.logging.QSLogger;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.res.R;
 import com.android.systemui.statusbar.policy.BatteryController;
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.statusbar.policy.RotationLockController;
 import com.android.systemui.statusbar.policy.RotationLockController.RotationLockControllerCallback;
 import com.android.systemui.util.settings.SecureSettings;
@@ -56,12 +57,15 @@ import com.android.systemui.util.settings.SecureSettings;
 import javax.inject.Inject;
 
 /** Quick settings tile: Rotation **/
-public class RotationLockTile extends QSTileImpl<BooleanState> implements
+public class RotationLockTile extends SecureQSTile<BooleanState> implements
         BatteryController.BatteryStateChangeCallback {
 
     public static final String TILE_SPEC = "rotation";
 
     private static final String EMPTY_SECONDARY_STRING = "";
+
+    private static final String ROTATION_SETTINGS =
+            "org.lineageos.lineageparts.DISPLAY_ROTATION";
 
     private final Icon mIcon =
             maybeLoadResourceIcon(com.android.internal.R.drawable.ic_qs_auto_rotate);
@@ -70,6 +74,7 @@ public class RotationLockTile extends QSTileImpl<BooleanState> implements
     private final BatteryController mBatteryController;
     private final UserSettingObserver mSetting;
     private final boolean mAllowRotationResolver;
+    private final boolean mAdvancedRotationSettingsEnabled;
 
     @Inject
     public RotationLockTile(
@@ -85,10 +90,11 @@ public class RotationLockTile extends QSTileImpl<BooleanState> implements
             RotationLockController rotationLockController,
             SensorPrivacyManager privacyManager,
             BatteryController batteryController,
-            SecureSettings secureSettings
+            SecureSettings secureSettings,
+            KeyguardStateController keyguardStateController
     ) {
         super(host, uiEventLogger, backgroundLooper, mainHandler, falsingManager, metricsLogger,
-                statusBarStateController, activityStarter, qsLogger);
+                statusBarStateController, activityStarter, qsLogger, keyguardStateController);
         mController = rotationLockController;
         mController.observe(this, mCallback);
         mPrivacyManager = privacyManager;
@@ -109,6 +115,8 @@ public class RotationLockTile extends QSTileImpl<BooleanState> implements
         mBatteryController.observe(getLifecycle(), this);
         mAllowRotationResolver = mContext.getResources().getBoolean(
                 com.android.internal.R.bool.config_allowRotationResolver);
+        mAdvancedRotationSettingsEnabled = mContext.getResources().getBoolean(
+                org.lineageos.platform.internal.R.bool.config_enableAdvancedRotationSettings);
     }
 
     @Override
@@ -128,11 +136,19 @@ public class RotationLockTile extends QSTileImpl<BooleanState> implements
 
     @Override
     public Intent getLongClickIntent() {
-        return new Intent(Settings.ACTION_AUTO_ROTATE_SETTINGS);
+        if (mAdvancedRotationSettingsEnabled) {
+            return new Intent(ROTATION_SETTINGS);
+        } else {
+            return new Intent(Settings.ACTION_AUTO_ROTATE_SETTINGS);
+        }
     }
 
     @Override
-    protected void handleClick(@Nullable Expandable expandable) {
+    protected void handleClick(@Nullable Expandable expandable, boolean keyguardShowing) {
+        if (checkKeyguard(expandable, keyguardShowing)) {
+            return;
+        }
+
         final boolean newState = !mState.value;
         mController.setRotationLocked(!newState, /* caller= */ "RotationLockTile#handleClick");
         refreshState(newState);

@@ -17,15 +17,21 @@
 package com.android.systemui.statusbar.pipeline.battery.data.repository
 
 import android.content.Context
-import android.provider.Settings
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import android.os.UserHandle
 import com.android.systemui.dagger.SysUISingleton
 import com.android.systemui.dagger.qualifiers.Application
 import com.android.systemui.dagger.qualifiers.Background
 import com.android.systemui.log.table.TableLogBuffer
 import com.android.systemui.log.table.logDiffsForTable
+import com.android.systemui.res.R
 import com.android.systemui.shared.settings.data.repository.SystemSettingsRepository
 import com.android.systemui.statusbar.pipeline.dagger.BatteryTableLog
 import com.android.systemui.statusbar.policy.BatteryController
+import com.android.systemui.statusbar.policy.ConfigurationController
+import com.android.systemui.statusbar.policy.onThemeChanged
 import javax.inject.Inject
 import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.minutes
@@ -41,9 +47,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.suspendCancellableCoroutine
+import lineageos.providers.LineageSettings
 
 /** Repository-style state for battery information. */
 interface BatteryRepository {
@@ -71,10 +79,27 @@ interface BatteryRepository {
     val isStateUnknown: Flow<Boolean>
 
     /**
-     * [Settings.System.SHOW_BATTERY_PERCENT]. A user setting to indicate whether we should show the
-     * battery percentage in the home screen status bar
+     * [LineageSettings.System.STATUS_BAR_BATTERY_STYLE]. A user setting to indicate the battery
+     * style in the home screen status bar
      */
-    val isShowBatteryPercentSettingEnabled: StateFlow<Boolean>
+    val batteryIconStyle: StateFlow<Int>
+
+    /**
+     * [LineageSettings.System.STATUS_BAR_SHOW_BATTERY_PERCENT]. A user setting to indicate whether
+     * we should show the battery percentage in the home screen status bar
+     */
+    val showBatteryPercentMode: StateFlow<Int>
+
+    companion object {
+        const val ICON_STYLE_DEFAULT = 0
+        const val ICON_STYLE_CIRCLE = 1
+        const val ICON_STYLE_TEXT = 2
+        const val ICON_STYLE_CIRCLE_DOTTED = 3
+        const val ICON_STYLE_THEMED = 4
+        const val SHOW_PERCENT_HIDDEN = 0
+        const val SHOW_PERCENT_INSIDE = 1
+        const val SHOW_PERCENT_NEXT_TO = 2
+    }
 
     /**
      * If available, this flow yields a string that describes the approximate time remaining for the
@@ -96,9 +121,23 @@ constructor(
     @Background scope: CoroutineScope,
     @Background bgDispatcher: CoroutineDispatcher,
     private val controller: BatteryController,
+    private val configurationController: ConfigurationController,
     settingsRepository: SystemSettingsRepository,
     @BatteryTableLog tableLog: TableLogBuffer,
 ) : BatteryRepository {
+    private fun readBatteryIconStyle(context: Context): Int {
+        val overlayActive = context.resources.getInteger(
+            R.integer.config_batteryOverrideStyle
+        ) >= 0
+        if (overlayActive) return BatteryRepository.ICON_STYLE_THEMED
+        return LineageSettings.System.getIntForUser(
+            context.contentResolver,
+            LineageSettings.System.STATUS_BAR_BATTERY_STYLE,
+            BatteryRepository.ICON_STYLE_DEFAULT,
+            UserHandle.USER_CURRENT,
+        )
+    }
+
     private val batteryState: StateFlow<BatteryCallbackState> =
         // Never use conflatedCallbackFlow here because that could cause us to drop events.
         // See b/433239990.
@@ -244,22 +283,110 @@ constructor(
             )
             .stateIn(scope, SharingStarted.WhileSubscribed(), batteryState.value.isStateUnknown)
 
-    override val isShowBatteryPercentSettingEnabled = run {
-        val default =
-            context.resources.getBoolean(
-                com.android.internal.R.bool.config_defaultBatteryPercentageSetting
+    private val batteryStyleSettingsFlow: Flow<Int> =
+        callbackFlow {
+            val resolver = context.contentResolver
+            val uri =
+                LineageSettings.System.getUriFor(
+                    LineageSettings.System.STATUS_BAR_BATTERY_STYLE
+                )
+
+            val observer =
+                object : ContentObserver(Handler(Looper.getMainLooper())) {
+                    override fun onChange(selfChange: Boolean) {
+                        trySend(readBatteryIconStyle(context))
+                    }
+                }
+
+            resolver.registerContentObserver(
+                uri,
+                /* notifyForDescendants = */ false,
+                observer,
+                UserHandle.USER_ALL,
             )
-        settingsRepository
-            .boolSetting(name = Settings.System.SHOW_BATTERY_PERCENT, defaultValue = default)
+
+            // Emit current value immediately
+            trySend(readBatteryIconStyle(context))
+
+            awaitClose { resolver.unregisterContentObserver(observer) }
+        }
+
+    override val batteryIconStyle =
+        merge(batteryStyleSettingsFlow, configurationController.onThemeChanged.map { readBatteryIconStyle(context) })
+            .distinctUntilChanged()
+            .flowOn(bgDispatcher)
+            .stateIn(
+                scope = scope,
+                started = SharingStarted.Lazily,
+                initialValue = BatteryRepository.ICON_STYLE_DEFAULT,
+            )
+
+    override val showBatteryPercentMode =
+        callbackFlow {
+                val resolver = context.contentResolver
+                val uris =
+                    listOf(
+                        LineageSettings.System.getUriFor(
+                            LineageSettings.System.STATUS_BAR_BATTERY_STYLE
+                        ),
+                        LineageSettings.System.getUriFor(
+                            LineageSettings.System.STATUS_BAR_SHOW_BATTERY_PERCENT
+                        ),
+                    )
+
+                fun readMode(): Int {
+                    val iconStyle =
+                        LineageSettings.System.getIntForUser(
+                            resolver,
+                            LineageSettings.System.STATUS_BAR_BATTERY_STYLE,
+                            BatteryRepository.ICON_STYLE_DEFAULT,
+                            UserHandle.USER_CURRENT,
+                        )
+                    return if (iconStyle == BatteryRepository.ICON_STYLE_TEXT) {
+                        BatteryRepository.SHOW_PERCENT_NEXT_TO
+                    } else {
+                        LineageSettings.System.getIntForUser(
+                            resolver,
+                            LineageSettings.System.STATUS_BAR_SHOW_BATTERY_PERCENT,
+                            BatteryRepository.SHOW_PERCENT_HIDDEN,
+                            UserHandle.USER_CURRENT,
+                        )
+                    }
+                }
+
+                val observer =
+                    object : ContentObserver(Handler(Looper.getMainLooper())) {
+                        override fun onChange(selfChange: Boolean) {
+                            trySend(readMode())
+                        }
+                    }
+
+                for (uri in uris) {
+                    resolver.registerContentObserver(
+                        uri,
+                        /* notifyForDescendants = */ false,
+                        observer,
+                        UserHandle.USER_ALL,
+                    )
+                }
+
+                // Emit current value immediately
+                trySend(readMode())
+
+                awaitClose { resolver.unregisterContentObserver(observer) }
+            }
             .flowOn(bgDispatcher)
             .distinctUntilChanged()
             .logDiffsForTable(
                 tableLogBuffer = tableLog,
                 columnName = COL_SHOW_PERCENT_SETTING,
-                initialValue = default,
+                initialValue = BatteryRepository.SHOW_PERCENT_HIDDEN,
             )
-            .stateIn(scope, SharingStarted.Lazily, default)
-    }
+            .stateIn(
+                scope = scope,
+                started = SharingStarted.Lazily,
+                initialValue = BatteryRepository.SHOW_PERCENT_HIDDEN,
+            )
 
     /** Get and re-fetch the estimate every 2 minutes while active */
     private val estimate: Flow<String?> = flow {

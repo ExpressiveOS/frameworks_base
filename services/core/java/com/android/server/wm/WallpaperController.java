@@ -71,7 +71,9 @@ class WallpaperController {
     // with the wallpaper.
     private WindowState mWallpaperTarget = null;
 
+    private static final float WALLPAPER_ZOOM_EPSILON = 0.003f;
     private float mLastWallpaperZoomOut = 0;
+    private WindowState mMaxZoomOutWindow = null;
 
     // Whether COMMAND_FREEZE was dispatched.
     private boolean mLastFrozen = false;
@@ -205,6 +207,7 @@ class WallpaperController {
         if (!windowState.mIsWallpaper
                 && Float.compare(windowState.mWallpaperZoomOut, mLastWallpaperZoomOut) > 0) {
             mLastWallpaperZoomOut = windowState.mWallpaperZoomOut;
+            mMaxZoomOutWindow = windowState;
         }
     };
 
@@ -375,11 +378,13 @@ class WallpaperController {
             rawChanged = true;
         }
 
-        if (Float.compare(wallpaperWin.mWallpaperZoomOut, mLastWallpaperZoomOut) != 0) {
-            wallpaperWin.mWallpaperZoomOut = mLastWallpaperZoomOut;
+        // Keep caller requests so they can be restored when wallpaper zoom is enabled again.
+        final float zoomOut = mService.mWallpaperZoomEnabled ? mLastWallpaperZoomOut : 1f;
+        if (Float.compare(wallpaperWin.mWallpaperZoomOut, zoomOut) != 0) {
+            wallpaperWin.mWallpaperZoomOut = zoomOut;
             rawChanged = true;
         }
-        zoom = wallpaperWin.mShouldScaleWallpaper
+        zoom = wallpaperWin.mShouldScaleWallpaper && mService.mWallpaperZoomEnabled
                 ? zoomOutToScale(wallpaperWin.mWallpaperZoomOut) : 1f;
         final float totalZoom = zoom * cropZoom;
         boolean changed = wallpaperWin.setWallpaperOffset(offsetX, offsetY, totalZoom);
@@ -424,13 +429,28 @@ class WallpaperController {
     }
 
     void setWallpaperZoomOut(WindowState window, float zoom) {
-        if (Float.compare(window.mWallpaperZoomOut, zoom) != 0) {
-            window.mWallpaperZoomOut = zoom;
+        if (Math.abs(window.mWallpaperZoomOut - zoom) < WALLPAPER_ZOOM_EPSILON) {
+            return;
+        }
+        final float oldMaxZoom = mLastWallpaperZoomOut;
+        window.mWallpaperZoomOut = zoom;
+
+        if (zoom > mLastWallpaperZoomOut + WALLPAPER_ZOOM_EPSILON) {
+            mLastWallpaperZoomOut = zoom;
+            mMaxZoomOutWindow = window;
+        } else if (window == mMaxZoomOutWindow) {
             computeLastWallpaperZoomOut();
-            for (int i = mWallpaperTokens.size() - 1; i >= 0; i--) {
-                final WallpaperWindowToken token = mWallpaperTokens.get(i);
-                token.updateWallpaperOffset();
-            }
+        }
+
+        if (Math.abs(oldMaxZoom - mLastWallpaperZoomOut) >= WALLPAPER_ZOOM_EPSILON) {
+            updateWallpaperZoom();
+        }
+    }
+
+    void updateWallpaperZoom() {
+        for (int i = mWallpaperTokens.size() - 1; i >= 0; i--) {
+            final WallpaperWindowToken token = mWallpaperTokens.get(i);
+            token.updateWallpaperOffset();
         }
     }
 
@@ -632,7 +652,8 @@ class WallpaperController {
         }
 
         final boolean visibleRequested =
-                mWallpaperTarget != null && mWallpaperTarget.isVisibleRequested();
+                (mWallpaperTarget != null && mWallpaperTarget.isVisibleRequested())
+                || (mDisplayContent.mTransitionController.inTransition() && isWallpaperVisible());
         updateWallpaperTokens(visibleRequested,
                 Flags.aodTransition()
                         ? mDisplayContent.isKeyguardLockedOrAodShowing()
@@ -810,6 +831,7 @@ class WallpaperController {
      */
     private void computeLastWallpaperZoomOut() {
         mLastWallpaperZoomOut = 0;
+        mMaxZoomOutWindow = null;
         mDisplayContent.forAllWindows(mComputeMaxZoomOutFunction, true);
     }
 

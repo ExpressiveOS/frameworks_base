@@ -28,6 +28,7 @@ import com.android.systemui.common.shared.model.ContentDescription
 import com.android.systemui.dagger.qualifiers.Application
 import com.android.systemui.lifecycle.HydratedActivatable
 import com.android.systemui.res.R
+import com.android.systemui.statusbar.pipeline.battery.data.repository.BatteryRepository
 import com.android.systemui.statusbar.pipeline.battery.domain.interactor.BatteryAttributionModel.Charging
 import com.android.systemui.statusbar.pipeline.battery.domain.interactor.BatteryAttributionModel.Defend
 import com.android.systemui.statusbar.pipeline.battery.domain.interactor.BatteryAttributionModel.PowerSave
@@ -37,6 +38,7 @@ import com.android.systemui.statusbar.pipeline.battery.shared.ui.BatteryColors
 import com.android.systemui.statusbar.pipeline.battery.shared.ui.BatteryGlyph
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
+import java.text.NumberFormat
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -57,6 +59,32 @@ sealed class BatteryViewModel(
 
     val isCharging: Boolean by interactor.isCharging.hydratedStateOf(initialValue = false)
 
+    val isBatteryPercentSettingEnabled: Boolean by
+        interactor.showPercentNextToIcon.hydratedStateOf(initialValue = false)
+
+    val isBatteryPercentInsideIconSettingEnabled: Boolean by
+        interactor.showPercentInsideIcon.hydratedStateOf(initialValue = false)
+
+    val textModeAttributionSymbol: String? by
+        combine(interactor.batteryIconStyle, interactor.batteryAttributionType) { style, attr ->
+                if (style != BatteryRepository.ICON_STYLE_TEXT) {
+                    null
+                } else {
+                    when (attr) {
+                        Charging -> TEXT_MODE_BOLT
+
+                        PowerSave -> TEXT_MODE_POWER_SAVE
+
+                        Defend -> TEXT_MODE_DEFEND
+
+                        Unknown -> TEXT_MODE_UNKNOWN
+
+                        else -> null
+                    }
+                }
+            }
+            .hydratedStateOf(traceName = "textModeAttributionSymbol", initialValue = null)
+
     /** A [List<BatteryGlyph>] representation of the current [level] */
     private val levelGlyphs: Flow<List<BatteryGlyph>> =
         interactor.level.map { it?.glyphRepresentation() ?: emptyList() }
@@ -70,10 +98,7 @@ sealed class BatteryViewModel(
             }
         }
 
-    /**
-     * For everything except the BatteryNextToPercentViewModel, this is the glyphs of the battery
-     * percent
-     */
+    /** A [List<BatteryGlyph>] representation of the battery percent. */
     open val glyphList: List<BatteryGlyph> by _glyphList.hydratedStateOf(initialValue = emptyList())
 
     /** The current attribution, if any */
@@ -172,6 +197,9 @@ sealed class BatteryViewModel(
             }
             .hydratedStateOf(initialValue = ContentDescription.Loaded(null))
 
+    val batteryIconStyle: Int by
+        interactor.batteryIconStyle.hydratedStateOf(initialValue = BatteryRepository.ICON_STYLE_DEFAULT)
+
     /** For use in the shade, where we might need to show an estimate */
     val batteryTimeRemainingEstimate: String? by
         interactor.isCharging
@@ -184,6 +212,20 @@ sealed class BatteryViewModel(
             }
             .hydratedStateOf(traceName = "timeRemainingEstimate", initialValue = null)
 
+    val batteryPercent: String? by
+        interactor.level
+            .map { level ->
+                if (level == null) {
+                    null
+                } else {
+                    NumberFormat.getPercentInstance().format(level / 100f)
+                }
+            }
+            .hydratedStateOf(
+                traceName = "batteryPercent",
+                initialValue = null,
+            )
+
     /** Base factory class so implementations can take any kind of view model */
     interface Factory {
         fun create(): BatteryViewModel
@@ -195,7 +237,7 @@ sealed class BatteryViewModel(
     constructor(interactor: BatteryInteractor, @Application context: Context) :
         BatteryViewModel(
             interactor = interactor,
-            shouldShowPercent = interactor.isBatteryPercentSettingEnabled,
+            shouldShowPercent = interactor.showPercentInsideIcon,
             context = context,
         ) {
 
@@ -215,7 +257,7 @@ sealed class BatteryViewModel(
         BatteryViewModel(
             interactor = interactor,
             shouldShowPercent =
-                combine(interactor.isCharging, interactor.isBatteryPercentSettingEnabled) {
+                combine(interactor.isCharging, interactor.showPercentNextToIcon) {
                     charging,
                     settingEnabled ->
                     charging || settingEnabled
@@ -271,6 +313,21 @@ sealed class BatteryViewModel(
 
         /** Resource id used to identify battery composable view in SysUI tests */
         const val TEST_TAG = "battery"
+
+        /**
+         * Characters drawn next to the percentage when the text-only battery style is selected.
+         */
+        // [BatteryGlyph.Bolt] for charging
+        const val TEXT_MODE_BOLT = "\u26A1"
+
+        // [BatteryGlyph.Plus] for power save
+        const val TEXT_MODE_POWER_SAVE = "\u002B"
+
+        // [BatteryGlyph.Defend] when plugged in, charging paused to protect the battery
+        const val TEXT_MODE_DEFEND = "\u1F6E1"
+
+        // [BatteryGlyph.Question] when battery state cannot be determined
+        const val TEXT_MODE_UNKNOWN = "\u003F"
 
         fun Int.glyphRepresentation(): List<BatteryGlyph> = toString().map { it.toGlyph() }
 

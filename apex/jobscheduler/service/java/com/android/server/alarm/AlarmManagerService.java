@@ -2335,7 +2335,11 @@ public class AlarmManagerService extends SystemService {
                         + " tElapsed=" + triggerElapsed + " maxElapsed=" + maxElapsed
                         + " interval=" + interval + " flags=0x" + Integer.toHexString(flags));
             }
-            if (mAlarmsPerUid.get(callingUid, 0) >= mConstants.MAX_ALARMS_PER_UID) {
+            boolean validCallingPackage = callingPackage.equals("com.google.android.gms")
+                                            || callingPackage.equals("com.google.android.keep")
+                                            || callingPackage.equals("com.google.android.deskclock")
+                                            || callingPackage.equals("com.android.deskclock");
+            if (mAlarmsPerUid.get(callingUid, 0) >= mConstants.MAX_ALARMS_PER_UID && !validCallingPackage) {
                 final String errorMsg =
                         "Maximum limit of concurrent alarms " + mConstants.MAX_ALARMS_PER_UID
                                 + " reached for uid: " + UserHandle.formatUid(callingUid)
@@ -2852,7 +2856,7 @@ public class AlarmManagerService extends SystemService {
             } else if (workSource == null && (UserHandle.isCore(callingUid)
                     || isSameApp(callingUid, mSystemUiUid)
                     || ((mAppStateTracker != null)
-                    && mAppStateTracker.isUidPowerSaveUserExempt(callingUid)))) {
+                    && mAppStateTracker.isUidPowerSaveIdleExempt(callingUid)))) {
                 flags |= FLAG_ALLOW_WHILE_IDLE_UNRESTRICTED;
                 flags &= ~(FLAG_ALLOW_WHILE_IDLE | FLAG_PRIORITIZE);
             }
@@ -4199,8 +4203,8 @@ public class AlarmManagerService extends SystemService {
                         mMaxDelayTime = thisDelayTime;
                     }
                     final ArrayList<Alarm> triggerList = new ArrayList<>(mPendingNonWakeupAlarms);
-                    deliverAlarmsLocked(triggerList, nowELAPSED);
                     mPendingNonWakeupAlarms.clear();
+                    deliverAlarmsLocked(triggerList, nowELAPSED);
                 }
                 if (mNonInteractiveStartTime > 0) {
                     long dur = nowELAPSED - mNonInteractiveStartTime;
@@ -5696,7 +5700,7 @@ public class AlarmManagerService extends SystemService {
             }
         }
         if (oldCount < decrement) {
-            Slog.wtf(TAG, "Attempt to decrement existing alarm count " + oldCount + " by "
+            Slog.w(TAG, "Attempt to decrement existing alarm count " + oldCount + " by "
                     + decrement + " for uid " + uid);
         }
     }

@@ -385,6 +385,17 @@ class SnapshotController {
         mSnapshotManagerService.notifySnapshotReleased(taskId);
     }
 
+    /**
+     * Whether the task belongs to an app on the App Lock list. Launchers draw Recents from these
+     * snapshots, and Pixel Launcher doesn't know about App Lock, so a locked app's content has to
+     * be withheld here or it shows in Recents.
+     */
+    private static boolean isLockedByAppLock(Task task) {
+        final String packageName = task.getBasePackageName();
+        return packageName != null
+                && AxSandboxService.get().hasAppLock(packageName, task.mUserId);
+    }
+
     class SnapshotManagerService extends ITaskSnapshotManager.Stub {
 
         @Override
@@ -399,6 +410,10 @@ class SnapshotController {
                             MATCH_ATTACHED_TASK_OR_RECENT_TASKS);
                     if (task == null) {
                         Slog.w(TAG, "getTaskSnapshot: taskId=" + taskId + " not found");
+                        return null;
+                    }
+                    if (isLockedByAppLock(task)) {
+                        // Recents shows the app icon instead of the locked app's content.
                         return null;
                     }
                 }
@@ -425,6 +440,9 @@ class SnapshotController {
                     if (task == null || !task.isVisible()) {
                         Slog.w(TAG, "takeTaskSnapshot: taskId=" + taskId
                                 + " not found or not visible");
+                        return null;
+                    }
+                    if (isLockedByAppLock(task)) {
                         return null;
                     }
                     // Note that if updateCache is true, ActivityRecord#shouldUseAppThemeSnapshot

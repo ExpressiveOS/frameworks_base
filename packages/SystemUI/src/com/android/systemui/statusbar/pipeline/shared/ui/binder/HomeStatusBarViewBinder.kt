@@ -18,25 +18,48 @@ package com.android.systemui.statusbar.pipeline.shared.ui.binder
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.app.WindowConfiguration
+import android.content.ContentResolver
+import android.content.Context
+import android.database.ContentObserver
+import android.graphics.Color
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.UserHandle
+import android.provider.Settings
 import android.view.View
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.android.app.animation.Interpolators
+import com.android.systemui.android.batterybar.BatteryBarController
+import com.android.systemui.android.logo.LogoImage
 import com.android.systemui.clock.ClockModernization
 import com.android.systemui.display.dagger.SystemUIDisplaySubcomponent.PerDisplaySingleton
 import com.android.systemui.lifecycle.repeatWhenAttached
 import com.android.systemui.res.R
 import com.android.systemui.scene.shared.flag.SceneContainerFlag
+import com.android.systemui.shared.system.ActivityManagerWrapper
+import com.android.systemui.shared.system.TaskStackChangeListener
+import com.android.systemui.shared.system.TaskStackChangeListeners
 import com.android.systemui.statusbar.chips.mediaprojection.domain.model.MediaProjectionStopDialogModel
 import com.android.systemui.statusbar.events.shared.model.SystemEventAnimationState
 import com.android.systemui.statusbar.events.shared.model.SystemEventAnimationState.AnimatingIn
 import com.android.systemui.statusbar.events.shared.model.SystemEventAnimationState.AnimatingOut
 import com.android.systemui.statusbar.events.shared.model.SystemEventAnimationState.RunningChipAnim
+import com.android.systemui.statusbar.phone.LyricViewController
 import com.android.systemui.statusbar.pipeline.shared.ui.model.VisibilityModel
 import com.android.systemui.statusbar.pipeline.shared.ui.viewmodel.HomeStatusBarViewModel
+import com.android.systemui.statusbar.phone.ui.StatusBarIconController
+import com.android.systemui.statusbar.policy.Clock
 import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import lineageos.providers.LineageSettings
 
 /**
  * Interface to assist with binding the [CollapsedStatusBarFragment] to [HomeStatusBarViewModel].
@@ -62,6 +85,24 @@ interface HomeStatusBarViewBinder {
 
 @PerDisplaySingleton
 class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinder {
+    private data class ClockState(
+        val autoHide: Boolean,
+        val denyListed: Boolean,
+        val hideForHun: Boolean,
+        val chipStyle: Int,
+        val dynamicIslandEnabled: Boolean = false,
+        val position: Int,
+        val visibilityModel: VisibilityModel,
+        val gradientStartColor: Int = Color.parseColor("#FF6B6B"),
+        val gradientEndColor: Int = Color.parseColor("#4ECDC4"),
+        val gradientAngle: Float = 0f,
+        val gradientMaskText: Boolean = false,
+    )
+
+    private data class Padding(
+        val start: Int, val top: Int, val end: Int, val bottom: Int,
+    )
+
     override fun bind(
         displayId: Int,
         view: View,
@@ -72,16 +113,238 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
     ) {
         // Set some top-level views to gone before we get started
         val systemInfoView = view.requireViewById<View>(R.id.status_bar_end_side_content)
-        val clockView = view.requireViewById<View>(R.id.clock)
+        val leftClock: Clock = view.requireViewById(R.id.clock)
+        val centerClock: Clock? = view.findViewById(R.id.clock_center)
+        val rightClock: Clock? = view.findViewById(R.id.clock_right)
         val notificationIconsArea = view.requireViewById<View>(R.id.notificationIcons)
+        val batteryView = view.findViewById<View>(R.id.battery_composable_view)
+
+        val leftPaddingInit = leftClock.capturePadding()
+        val centerPaddingInit = centerClock?.capturePadding()
+        val rightPaddingInit = rightClock?.capturePadding()
 
         // GONE because this shouldn't take space in the layout
         systemInfoView.hideInitially()
-        clockView.hideInitially()
+        leftClock.hideInitially(state = View.GONE)
+        centerClock?.hideInitially(state = View.GONE)
+        rightClock?.hideInitially(state = View.GONE)
         notificationIconsArea.hideInitially()
+
+        val batteryBar: BatteryBarController = view.requireViewById(R.id.battery_bar)
+        val leftLogo: LogoImage = view.requireViewById(R.id.statusbar_logo)
+
+        val leftSideArea: View =
+            view.requireViewById(R.id.status_bar_start_side_except_heads_up)
+        val centeredArea: View? = view.findViewById(R.id.centered_area)
+        val lyricView =
+            object : LyricViewController(view.context, view) {
+                private var isNotificationIconsVisible = true
+                private var hideForHun = false
+
+                override fun showLyricView(animate: Boolean) {
+                    if (!isNotificationIconsVisible || hideForHun) {
+                        hideLyricView(animate)
+                        return
+                    }
+                    leftSideArea.hide(View.INVISIBLE, animate)
+                    centeredArea?.hide(View.INVISIBLE, animate)
+                    this.view.show(animate)
+                }
+
+                override fun hideLyricView(animate: Boolean) {
+                    this.view.hide(View.INVISIBLE, animate)
+                    // Only restore these views if nothing else needs them hidden right now.
+                    // Otherwise we'd fight the HUN or chip logic for the same region.
+                    if (isNotificationIconsVisible && !hideForHun) {
+                        leftSideArea.show(animate)
+                        centeredArea?.show(animate)
+                    }
+                }
+
+                fun updateConditions(isNotificationIconsVisible: Boolean, hideForHun: Boolean) {
+                    this.isNotificationIconsVisible = isNotificationIconsVisible
+                    this.hideForHun = hideForHun
+                    if (isLyricStarted()) {
+                        showLyricView(true)
+                    } else {
+                        hideLyricView(true)
+                    }
+                }
+            }
+        lyricView.view.hideInitially()
 
         view.repeatWhenAttached {
             repeatOnLifecycle(Lifecycle.State.CREATED) {
+                val context = view.context
+
+                val batteryVisible = MutableStateFlow<Boolean>(true)
+                val clockState =
+                    MutableStateFlow(
+                        ClockState(
+                            autoHide = false,
+                            denyListed = false,
+                            hideForHun = false,
+                            chipStyle = 0,
+                            dynamicIslandEnabled =
+                                context.contentResolver.readDynamicIslandEnabled(),
+                            position = context.contentResolver.readClockPosition(),
+                            visibilityModel = VisibilityModel(View.GONE, true),
+                            gradientStartColor = context.contentResolver.readGradientStartColor(),
+                            gradientEndColor = context.contentResolver.readGradientEndColor(),
+                            gradientAngle = context.contentResolver.readGradientAngle(),
+                            gradientMaskText = context.contentResolver.readGradientMaskText(),
+                        )
+                    )
+
+                val clockAutoHideUri: Uri =
+                    LineageSettings.System.getUriFor(
+                        LineageSettings.System.STATUS_BAR_CLOCK_AUTO_HIDE
+                    )
+                val iconHideListUri: Uri =
+                    Settings.Secure.getUriFor(StatusBarIconController.ICON_HIDE_LIST)
+                val statusBarClockUri: Uri =
+                    LineageSettings.System.getUriFor(LineageSettings.System.STATUS_BAR_CLOCK)
+                val statusBarClockChipUri: Uri =
+                    Settings.System.getUriFor(Settings.System.STATUSBAR_CLOCK_CHIP)
+                val gradientStartColorUri: Uri =
+                    Settings.System.getUriFor(Settings.System.STATUSBAR_CLOCK_CHIP_GRADIENT_START_COLOR)
+                val gradientEndColorUri: Uri =
+                    Settings.System.getUriFor(Settings.System.STATUSBAR_CLOCK_CHIP_GRADIENT_END_COLOR)
+                val gradientAngleUri: Uri =
+                    Settings.System.getUriFor(Settings.System.STATUSBAR_CLOCK_CHIP_GRADIENT_ANGLE)
+                val gradientMaskTextUri: Uri =
+                    Settings.System.getUriFor(Settings.System.STATUSBAR_CLOCK_CHIP_GRADIENT_MASK_TEXT)
+                val dynamicIslandUri: Uri =
+                    Settings.System.getUriFor(Settings.System.STATUS_BAR_SHOW_DYNAMIC_ISLAND)
+
+                val taskStackListener =
+                    object : TaskStackChangeListener {
+                        override fun onTaskStackChanged() {
+                            val autoHide = shouldClockAutoHideForCurrentTask()
+
+                            if (clockState.value.autoHide != autoHide) {
+                                clockState.update { it.copy(autoHide = autoHide) }
+                            }
+                        }
+                    }
+
+                val contentObserver =
+                    object : ContentObserver(Handler(Looper.getMainLooper())) {
+                        override fun onChange(selfChange: Boolean, uri: Uri?) {
+                            batteryVisible.update { current ->
+                                when (uri) {
+                                    iconHideListUri -> {
+                                        !StatusBarIconController.getIconHideList(
+                                                context,
+                                                Settings.Secure.getString(
+                                                    context.contentResolver,
+                                                    StatusBarIconController.ICON_HIDE_LIST,
+                                                ),
+                                            )
+                                            .contains("battery")
+                                    }
+                                    else -> current
+                                }
+                            }
+
+                            clockState.update { current ->
+                                when (uri) {
+                                    clockAutoHideUri -> {
+                                        val enabled =
+                                            context.contentResolver.readClockAutoHide() != 0
+
+                                        if (enabled) {
+                                            TaskStackChangeListeners.getInstance()
+                                                .registerTaskStackListener(taskStackListener)
+                                        } else {
+                                            TaskStackChangeListeners.getInstance()
+                                                .unregisterTaskStackListener(taskStackListener)
+                                        }
+
+                                        current.copy(
+                                            autoHide =
+                                                enabled && shouldClockAutoHideForCurrentTask()
+                                        )
+                                    }
+                                    iconHideListUri ->
+                                        current.copy(
+                                            denyListed =
+                                                StatusBarIconController.getIconHideList(
+                                                        context,
+                                                        Settings.Secure.getString(
+                                                            context.contentResolver,
+                                                            StatusBarIconController.ICON_HIDE_LIST,
+                                                        ),
+                                                    )
+                                                    .contains("clock")
+                                        )
+                                    statusBarClockUri ->
+                                        current.copy(
+                                            position = context.contentResolver.readClockPosition()
+                                        )
+                                    statusBarClockChipUri -> {
+                                        val chipStyle =
+                                            Settings.System.getIntForUser(context.contentResolver,
+                                                Settings.System.STATUSBAR_CLOCK_CHIP, 0,
+                                                UserHandle.USER_CURRENT
+                                            )
+                                        current.copy(
+                                            chipStyle = chipStyle
+                                        )
+                                    }
+                                    gradientStartColorUri ->
+                                        current.copy(
+                                            gradientStartColor =
+                                                context.contentResolver.readGradientStartColor()
+                                        )
+                                    gradientEndColorUri ->
+                                        current.copy(
+                                            gradientEndColor =
+                                                context.contentResolver.readGradientEndColor()
+                                        )
+                                    gradientAngleUri ->
+                                        current.copy(
+                                            gradientAngle =
+                                                context.contentResolver.readGradientAngle()
+                                        )
+                                    gradientMaskTextUri ->
+                                       current.copy(
+                                           gradientMaskText =
+                                               context.contentResolver.readGradientMaskText()
+                                       )
+                                    dynamicIslandUri ->
+                                        current.copy(
+                                            dynamicIslandEnabled =
+                                                context.contentResolver.readDynamicIslandEnabled()
+                                       )
+                                    else -> current
+                                }
+                            }
+                        }
+                    }
+
+                val urisToObserve = listOf(clockAutoHideUri, iconHideListUri, statusBarClockUri,
+                    statusBarClockChipUri, gradientStartColorUri, gradientEndColorUri, gradientAngleUri,
+                    gradientMaskTextUri, dynamicIslandUri)
+                urisToObserve.forEach { uri ->
+                    context.contentResolver.registerContentObserver(
+                        uri,
+                        false,
+                        contentObserver,
+                        UserHandle.USER_ALL,
+                    )
+                    contentObserver.onChange(false, uri)
+                }
+
+                // Ensure cleanup when lifecycle ends
+                val job = coroutineContext[Job]
+                job?.invokeOnCompletion {
+                    runCatching {
+                        context.contentResolver.unregisterContentObserver(contentObserver)
+                        TaskStackChangeListeners.getInstance()
+                            .unregisterTaskStackListener(taskStackListener)
+                    }
+                }
                 listener?.let { listener ->
                     launch {
                         viewModel.isTransitioningFromLockscreenToOccluded.collect {
@@ -141,12 +404,161 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
                 }
 
                 if (!ClockModernization.isEnabled) {
-                    launch { viewModel.isClockVisible.collect { clockView.adjustVisibility(it) } }
+                    launch {
+                        combine(
+                                viewModel.isClockVisible,
+                                viewModel.hideStartSideContentForHeadsUp,
+                            ) { visibilityModel, hideForHun ->
+                                visibilityModel to hideForHun
+                            }
+                            .collect { (visibilityModel, hideForHun) ->
+                                clockState.update { current ->
+                                    current.copy(
+                                        visibilityModel = visibilityModel,
+                                        hideForHun = hideForHun,
+                                    )
+                                }
+                            }
+                    }
+
+                    launch {
+                        batteryVisible.collect { isVisible ->
+                            batteryView.isVisible = isVisible
+                        }
+                    }
+
+                    launch {
+                        var lastChipStyle: Int? = null
+                        var lastClockPosition: Int? = null
+                        var lastGradientStartColor: Int? = null
+                        var lastGradientEndColor: Int? = null
+                        var lastGradientAngle: Float? = null
+                        var lastGradientMaskText: Boolean? = null
+
+                        clockState.collect { state ->
+                            // We only want to hide left clock for HUN
+                            val hunBlocksClock =
+                                state.position == CLOCK_POSITION_LEFT && state.hideForHun
+
+                            // Apply denylist on top of ViewModel visibility
+                            val finalVisibility =
+                                if (
+                                    state.visibilityModel.visibility == View.VISIBLE &&
+                                        !hunBlocksClock &&
+                                        !state.autoHide &&
+                                        !state.denyListed &&
+                                        !(state.position == CLOCK_POSITION_CENTER &&
+                                            state.dynamicIslandEnabled)
+                                ) {
+                                    state.visibilityModel
+                                } else {
+                                    state.visibilityModel.copy(visibility = View.GONE)
+                                }
+
+                            // Pick active clock view
+                            val activeClock: Clock? =
+                                when (state.position) {
+                                    CLOCK_POSITION_CENTER -> centerClock ?: leftClock
+                                    CLOCK_POSITION_RIGHT -> rightClock ?: leftClock
+                                    CLOCK_POSITION_LEFT -> leftClock
+                                    else -> leftClock
+                                }
+
+                            // Hide all clocks first
+                            leftClock.visibility = View.GONE
+                            centerClock?.visibility = View.GONE
+                            rightClock?.visibility = View.GONE
+
+                            // Show only the active one
+                            activeClock?.adjustVisibility(finalVisibility)
+
+                            // Only touch chip UI when needed
+                            val gradientParamsChanged =
+                                state.chipStyle == CHIP_STYLE_CUSTOM_GRADIENT && (
+                                    lastGradientStartColor != state.gradientStartColor ||
+                                    lastGradientEndColor != state.gradientEndColor ||
+                                    lastGradientAngle != state.gradientAngle ||
+                                    lastGradientMaskText != state.gradientMaskText
+                                )
+                            val chipNeedsUpdate = (lastChipStyle != state.chipStyle)
+                                        || (lastClockPosition != state.position)
+                                        || gradientParamsChanged
+                            if (chipNeedsUpdate) {
+                                applyClockChip(
+                                    context = context,
+                                    chipStyle = state.chipStyle,
+                                    activeClock = activeClock,
+                                    leftClock = leftClock,
+                                    centerClock = centerClock,
+                                    rightClock = rightClock,
+                                    leftPaddingInit = leftPaddingInit,
+                                    centerPaddingInit = centerPaddingInit,
+                                    rightPaddingInit = rightPaddingInit,
+                                    gradientStartColor = state.gradientStartColor,
+                                    gradientEndColor = state.gradientEndColor,
+                                    gradientAngle = state.gradientAngle,
+                                    gradientMaskText = state.gradientMaskText,
+                                )
+                                lastChipStyle = state.chipStyle
+                                lastClockPosition = state.position
+                                lastGradientStartColor = state.gradientStartColor
+                                lastGradientEndColor = state.gradientEndColor
+                                lastGradientAngle = state.gradientAngle
+                                lastGradientMaskText = state.gradientMaskText
+                            }
+                        }
+                    }
                 }
 
                 launch {
-                    viewModel.isNotificationIconContainerVisible.collect {
-                        notificationIconsArea.adjustVisibility(it)
+                    viewModel.isNotificationIconContainerVisible.collect { vis ->
+                        notificationIconsArea.adjustVisibility(vis)
+                        batteryBar.adjustVisibility(vis)
+                        leftLogo.adjustVisibility(vis)
+                    }
+                }
+
+                launch {
+                    combine(
+                        viewModel.isNotificationIconContainerVisible,
+                        viewModel.hideStartSideContentForHeadsUp,
+                    ) { isNotifIconsVisible, hideForHun ->
+                        isNotifIconsVisible to hideForHun
+                    }
+                        .collect { (isNotifIconsVisible, hideForHun) ->
+                            lyricView.updateConditions(
+                                isNotificationIconsVisible =
+                                    isNotifIconsVisible.visibility == View.VISIBLE,
+                                hideForHun = hideForHun,
+                            )
+                        }
+                }
+
+                val lyricEnabledUri: Uri =
+                    Settings.Secure.getUriFor(Settings.Secure.STATUS_BAR_SHOW_LYRIC)
+                val lyricContentObserver =
+                    object : ContentObserver(Handler(Looper.getMainLooper())) {
+                        override fun onChange(selfChange: Boolean, uri: Uri?) {
+                            lyricView.setEnabled(
+                                Settings.Secure.getIntForUser(
+                                    context.contentResolver,
+                                    Settings.Secure.STATUS_BAR_SHOW_LYRIC,
+                                    0,
+                                    UserHandle.USER_CURRENT,
+                                ) != 0
+                            )
+                        }
+                    }
+                context.contentResolver.registerContentObserver(
+                    lyricEnabledUri,
+                    false,
+                    lyricContentObserver,
+                    UserHandle.USER_ALL,
+                )
+                lyricContentObserver.onChange(false, lyricEnabledUri)
+                job?.invokeOnCompletion {
+                    runCatching {
+                        context.contentResolver.unregisterContentObserver(lyricContentObserver)
                     }
                 }
 
@@ -179,6 +591,73 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
                 }
             }
         }
+    }
+
+    private fun ContentResolver.readClockAutoHide(): Int {
+        return LineageSettings.System.getIntForUser(
+            this,
+            LineageSettings.System.STATUS_BAR_CLOCK_AUTO_HIDE,
+            0,
+            UserHandle.USER_CURRENT,
+        )
+    }
+
+    private fun ContentResolver.readDynamicIslandEnabled(): Boolean {
+        return Settings.System.getIntForUser(
+            this,
+            Settings.System.STATUS_BAR_SHOW_DYNAMIC_ISLAND,
+            0,
+            UserHandle.USER_CURRENT,
+        ) != 0
+    }
+
+    private fun ContentResolver.readClockPosition(): Int {
+        return LineageSettings.System.getIntForUser(
+            this,
+            LineageSettings.System.STATUS_BAR_CLOCK,
+            CLOCK_POSITION_LEFT,
+            UserHandle.USER_CURRENT,
+        )
+    }
+
+    private fun ContentResolver.readGradientStartColor(): Int =
+        Settings.System.getIntForUser(
+            this,
+            Settings.System.STATUSBAR_CLOCK_CHIP_GRADIENT_START_COLOR,
+            Color.parseColor("#FF6B6B"),
+            UserHandle.USER_CURRENT,
+        )
+
+    private fun ContentResolver.readGradientEndColor(): Int =
+        Settings.System.getIntForUser(
+            this,
+            Settings.System.STATUSBAR_CLOCK_CHIP_GRADIENT_END_COLOR,
+            Color.parseColor("#4ECDC4"),
+            UserHandle.USER_CURRENT,
+        )
+
+    private fun ContentResolver.readGradientAngle(): Float =
+        Settings.System.getIntForUser(
+            this,
+            Settings.System.STATUSBAR_CLOCK_CHIP_GRADIENT_ANGLE,
+            0,
+            UserHandle.USER_CURRENT,
+        ).toFloat()
+
+    private fun ContentResolver.readGradientMaskText(): Boolean =
+        Settings.System.getIntForUser(
+            this,
+            Settings.System.STATUSBAR_CLOCK_CHIP_GRADIENT_MASK_TEXT,
+            0,
+            UserHandle.USER_CURRENT,
+        ) == GRADIENT_TEXT_STYLE_MASK
+
+    private fun shouldClockAutoHideForCurrentTask(): Boolean {
+        return ActivityManagerWrapper.getInstance()
+            .runningTask
+            ?.configuration
+            ?.windowConfiguration
+            ?.activityType == WindowConfiguration.ACTIVITY_TYPE_HOME
     }
 
     private fun SystemEventAnimationState.isAnimatingChip() =
@@ -224,6 +703,150 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
             this.show(model.shouldAnimateChange)
         } else {
             this.hide(model.visibility, model.shouldAnimateChange)
+        }
+    }
+
+    private fun View.capturePadding() = Padding(paddingStart, paddingTop, paddingEnd, paddingBottom)
+
+    private fun dpToPx(context: Context, dp: Int): Int {
+        return (dp * context.resources.displayMetrics.density).toInt()
+    }
+
+    private fun applyClockChip(
+        context: Context,
+        chipStyle: Int,
+        activeClock: Clock?,
+        leftClock: Clock,
+        centerClock: Clock?,
+        rightClock: Clock?,
+        leftPaddingInit: Padding,
+        centerPaddingInit: Padding?,
+        rightPaddingInit: Padding?,
+        gradientStartColor: Int = Color.parseColor("#FF6B6B"),
+        gradientEndColor: Int = Color.parseColor("#4ECDC4"),
+        gradientAngle: Float = 0f,
+        gradientMaskText: Boolean = false,
+    ) {
+        fun reset(clock: Clock?, padding: Padding?) {
+            if (clock == null || padding == null) return
+            clock.setBackgroundResource(0)
+            clock.setPaddingRelative(padding.start, padding.top, padding.end, padding.bottom)
+            clock.setMaskTextMode(false)
+            // Reset text color - Clock will handle it via DarkIconDispatcher
+        }
+
+        fun apply(clock: Clock, style: Int) {
+            val clockBackgrounds = listOf(
+                R.drawable.sb_date_bg1,
+                R.drawable.sb_date_bg2,
+                R.drawable.sb_date_bg3,
+                R.drawable.sb_date_bg4,
+                R.drawable.sb_date_bg5,
+                R.drawable.sb_date_bg6,
+                R.drawable.sb_date_bg7,
+                R.drawable.sb_date_bg8,
+                R.drawable.sb_date_bg9,
+                R.drawable.sb_date_bg10,
+                R.drawable.sb_date_bg11,
+                R.drawable.sb_date_bg12
+            )
+            
+            if (style < 1 || style > clockBackgrounds.size) {
+                clock.setStaticColor(false)
+                return
+            }
+            
+            val chipTopBottomPadding = context.resources.getDimensionPixelSize(
+                R.dimen.status_bar_clock_chip_tb_padding)
+            val chipLeftRightPadding = context.resources.getDimensionPixelSize(
+                R.dimen.status_bar_clock_chip_lr_padding)
+            
+            clock.setBackgroundResource(clockBackgrounds[style - 1])
+            clock.setPadding(
+                chipLeftRightPadding, 
+                chipTopBottomPadding, 
+                chipLeftRightPadding, 
+                chipTopBottomPadding
+            )
+            clock.setTextAlignment(View.TEXT_ALIGNMENT_CENTER)
+            // Set text color for visibility on filled chip backgrounds: white on dark
+            // chips, dark on chips with a light/near-white center (LIGHT_CHIP_STYLES).
+            // Styles 2 and 8 are outline-only (transparent background), so use normal color
+            if (style != 2 && style != 8) {
+                clock.setStaticColor(true)
+                clock.setTextColor(
+                    if (style in LIGHT_CHIP_STYLES) CHIP_TEXT_DARK else Color.WHITE
+                )
+            } else {
+                clock.setStaticColor(false)
+            }
+            // For outline styles (2, 8), let Clock's DarkIconDispatcher handle the color
+        }
+
+        // Always reset first so the previous active clock loses chip when position changes
+        reset(leftClock, leftPaddingInit)
+        reset(centerClock, centerPaddingInit)
+        reset(rightClock, rightPaddingInit)
+
+        if (chipStyle == 0) return
+        val clockForChip = activeClock ?: return
+
+        if (chipStyle == CHIP_STYLE_CUSTOM_GRADIENT) {
+            applyGradient(clockForChip, gradientStartColor, gradientEndColor, gradientAngle, context, maskTextMode = gradientMaskText)
+        } else {
+            apply(clockForChip, chipStyle)
+        }
+    }
+
+    private fun applyGradient(
+        clock: Clock,
+        startColor: Int,
+        endColor: Int,
+        angleDeg: Float,
+        context: Context,
+        maskTextMode: Boolean = false,
+    ) {
+        val chipTopBottomPadding = context.resources.getDimensionPixelSize(
+            R.dimen.status_bar_clock_chip_tb_padding)
+        val chipLeftRightPadding = context.resources.getDimensionPixelSize(
+            R.dimen.status_bar_clock_chip_lr_padding)
+        val cornerPx = try {
+            context.resources.getDimension(R.dimen.chip_corner_radius)
+        } catch (e: Exception) {
+            chipTopBottomPadding * 2f
+        }
+        val existing = clock.background as? ClockChipGradientDrawable
+        if (existing != null) {
+            existing.updateColors(startColor, endColor)
+            existing.updateAngle(angleDeg)
+            if (existing.maskTextMode != maskTextMode) {
+               clock.background = ClockChipGradientDrawable(
+                   startColor = startColor,
+                   endColor = endColor,
+                   angleDeg = angleDeg,
+                   cornerRadiusPx = cornerPx,
+                   maskTextMode = maskTextMode,
+               )
+           }
+        } else {
+            clock.background = ClockChipGradientDrawable(
+                startColor = startColor,
+                endColor = endColor,
+                angleDeg = angleDeg,
+                cornerRadiusPx = cornerPx,
+                maskTextMode = maskTextMode,
+            )
+        }
+        clock.setPadding(chipLeftRightPadding, chipTopBottomPadding,
+            chipLeftRightPadding, chipTopBottomPadding)
+        clock.setTextAlignment(View.TEXT_ALIGNMENT_CENTER)
+        if (maskTextMode) {
+            clock.setStaticColor(true)
+            clock.setTextColor(Color.WHITE)
+            clock.setMaskTextMode(true)
+        } else {
+            clock.setMaskTextMode(false)
+            clock.setStaticColor(false)
         }
     }
 
@@ -289,6 +912,19 @@ class HomeStatusBarViewBinderImpl @Inject constructor() : HomeStatusBarViewBinde
     }
 
     companion object {
+        private const val CHIP_STYLE_CUSTOM_GRADIENT = 13
+
+        // Chip styles (1-based, matches statusbar_clock_chip) with a light/near-white
+        // center that needs dark clock text. Keep in sync with Expressive Studio's
+        // ClockBackgroundChipPreference.
+        private val LIGHT_CHIP_STYLES = setOf(5)
+        private const val CHIP_TEXT_DARK = 0xFF1B1B1F.toInt()
+        private const val GRADIENT_TEXT_STYLE_MASK = 1
+
+        private const val CLOCK_POSITION_RIGHT = 0
+        private const val CLOCK_POSITION_CENTER = 1
+        private const val CLOCK_POSITION_LEFT = 2
+
         /** Animation durations for status bar. Used to be defined in the fragment */
         const val FADE_IN_DURATION = 320
         const val FADE_OUT_DURATION = 160

@@ -17,6 +17,7 @@
 package com.android.systemui.media.controls.ui.view
 
 import android.graphics.Typeface
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -26,6 +27,7 @@ import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.constraintlayout.widget.Barrier
+import androidx.constraintlayout.widget.ConstraintLayout
 import com.android.internal.widget.CachingIconView
 import com.android.systemui.Flags.enableSuggestedDeviceUi
 import com.android.systemui.FontStyles.GSF_BODY_MEDIUM
@@ -44,6 +46,8 @@ private const val TAG = "MediaViewHolder"
 /** Holder class for media player view */
 class MediaViewHolder constructor(itemView: View) {
     val player = itemView as TransitionLayout
+
+    val pulseView = itemView.requireViewById<com.android.systemui.pulse.PulseView>(R.id.media_pulse_view)
 
     // Player information
     val albumView = itemView.requireViewById<ImageView>(R.id.album_art)
@@ -71,8 +75,9 @@ class MediaViewHolder constructor(itemView: View) {
         itemView.findViewById<ProgressBar>(R.id.device_suggestion_progressbar)
     val deviceSuggestionButton = itemView.findViewById<View>(R.id.device_suggestion_button)
 
-    // Seekbar views
-    val seekBar = itemView.requireViewById<SeekBar>(R.id.media_progress_bar)
+    // Seekbar views - dynamically replaced based on settings
+    var seekBar: SeekBar = itemView.requireViewById(R.id.media_progress_bar)
+        private set
     // These views are only shown while the user is actively scrubbing
     val scrubbingElapsedTimeView: TextView =
         itemView.requireViewById(R.id.media_scrubbing_elapsed_time)
@@ -95,6 +100,66 @@ class MediaViewHolder constructor(itemView: View) {
     // Pagination
     val pageLeft = itemView.requireViewById<ImageButton>(R.id.page_left)
     val pageRight = itemView.requireViewById<ImageButton>(R.id.page_right)
+    
+    init {
+        replaceSeekBarIfNeeded()
+    }
+
+    private fun replaceSeekBarIfNeeded() {
+        val waveformEnabled = Settings.System.getInt(
+            player.context.contentResolver,
+            Settings.System.MEDIA_WAVEFORM_SEEKBAR,
+            0
+        ) == 1
+
+        if (waveformEnabled && seekBar !is WaveformSeekBar) {
+            val parent = seekBar.parent as ViewGroup
+            val layoutParams = seekBar.layoutParams
+            val index = parent.indexOfChild(seekBar)
+            
+            val oldProgress = seekBar.progress
+            val oldMax = seekBar.max
+            val oldEnabled = seekBar.isEnabled
+            val oldId = seekBar.id
+            
+            parent.removeView(seekBar)
+            
+            val waveformSeekBar = WaveformSeekBar(player.context).apply {
+                id = oldId
+                this.layoutParams = layoutParams
+                progress = oldProgress
+                max = oldMax
+                isEnabled = oldEnabled
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
+            }
+            
+            parent.addView(waveformSeekBar, index)
+            seekBar = waveformSeekBar
+        } else if (!waveformEnabled && seekBar is WaveformSeekBar) {
+            val parent = seekBar.parent as ViewGroup
+            val layoutParams = seekBar.layoutParams
+            val index = parent.indexOfChild(seekBar)
+            
+            val oldProgress = seekBar.progress
+            val oldMax = seekBar.max
+            val oldEnabled = seekBar.isEnabled
+            val oldId = seekBar.id
+            
+            parent.removeView(seekBar)
+            
+            val defaultSeekBar = SeekBar(player.context).apply {
+                id = oldId
+                this.layoutParams = layoutParams
+                progress = oldProgress
+                max = oldMax
+                isEnabled = oldEnabled
+                layoutDirection = View.LAYOUT_DIRECTION_LTR
+            }
+            
+            parent.addView(defaultSeekBar, index)
+            seekBar = defaultSeekBar
+        }
+    }
 
     fun getAction(id: Int): ImageButton {
         return when (id) {
@@ -205,6 +270,7 @@ class MediaViewHolder constructor(itemView: View) {
                 R.id.turbulence_noise_view,
                 R.id.loading_effect_view,
                 R.id.touch_ripple_view,
+                R.id.media_pulse_view,
             )
 
         val headlineSmallTF: Typeface = Typeface.create(GSF_HEADLINE_SMALL, Typeface.NORMAL)

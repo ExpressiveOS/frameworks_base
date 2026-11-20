@@ -309,6 +309,7 @@ public class SecureSettings {
         Settings.Secure.ON_DEVICE_INFERENCE_UNBIND_TIMEOUT_MS,
         Settings.Secure.ON_DEVICE_INTELLIGENCE_IDLE_TIMEOUT_MS,
         Settings.Secure.FIRST_ON_DEVICE_MODELS_DOWNLOADED_TIME,
+        Settings.Secure.TETHERING_ALLOW_VPN_UPSTREAMS,
         Settings.Secure.CONTENT_SAFETY_IDLE_TIMEOUT_MS,
         Settings.Secure.CONTENT_SAFETY_UNBIND_TIMEOUT_MS,
         Settings.Secure.CONTENT_SAFETY_SANDBOXED_UNBIND_TIMEOUT_MS,
@@ -348,5 +349,10 @@ public class SecureSettings {
         Settings.Secure.LIGHT_ANIMATION_FAVORITE_CALLS_ENABLED,
         Settings.Secure.IME_SWITCHER_BUTTON_IN_NAVBAR_ENABLED,
         Settings.Secure.RAISE_TRIGGER_DEFAULT_ASSISTANT,
+        // ExpressiveOS additions
+        Settings.Secure.DOZE_DOUBLE_TAP_GESTURE_VIBRATE,
+        Settings.Secure.DOZE_TAP_GESTURE_VIBRATE,
+        Settings.Secure.DOZE_PICK_UP_GESTURE_VIBRATE,
+        Settings.Secure.VPN_ENFORCE_DNS,
     };
 }

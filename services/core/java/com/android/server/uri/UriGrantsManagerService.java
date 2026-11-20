@@ -818,33 +818,40 @@ public class UriGrantsManagerService extends IUriGrantsManager.Stub implements
             Intent intent, int contentUserHint, int mode, int callingUid,
             @RequiredContentUriPermission Integer requireContentUriPermissionFromCaller,
             Integer requestHashCode) {
-        try {
-            final Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri.class);
-            if (uri != null) {
-                final GrantUri grantUri = GrantUri.resolve(contentUserHint, uri, mode);
-                enforceRequireContentUriPermissionFromCallerUnlocked(
-                        requireContentUriPermissionFromCaller, grantUri, callingUid,
-                        requestHashCode);
-            }
-        } catch (BadParcelableException e) {
-            Slog.w(TAG, "Failed to unparcel an URI in EXTRA_STREAM, skipping"
-                    + " requireContentUriPermissionFromCaller: " + e);
-        }
-
-        try {
-            final ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM,
-                    Uri.class);
-            if (uris != null) {
-                for (int i = uris.size() - 1; i >= 0; i--) {
-                    final GrantUri grantUri = GrantUri.resolve(contentUserHint, uris.get(i), mode);
+        final boolean multipleStreamsFirst = Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            final boolean readMultipleStreams =
+                    attempt == 0 ? multipleStreamsFirst : !multipleStreamsFirst;
+            try {
+                if (readMultipleStreams) {
+                    final ArrayList<Uri> uris = intent.getParcelableArrayListExtra(
+                            Intent.EXTRA_STREAM, Uri.class);
+                    if (uris == null) {
+                        continue;
+                    }
+                    for (int i = uris.size() - 1; i >= 0; i--) {
+                        final GrantUri grantUri =
+                                GrantUri.resolve(contentUserHint, uris.get(i), mode);
+                        enforceRequireContentUriPermissionFromCallerUnlocked(
+                                requireContentUriPermissionFromCaller, grantUri, callingUid,
+                                requestHashCode);
+                    }
+                } else {
+                    final Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri.class);
+                    if (uri == null) {
+                        continue;
+                    }
+                    final GrantUri grantUri = GrantUri.resolve(contentUserHint, uri, mode);
                     enforceRequireContentUriPermissionFromCallerUnlocked(
                             requireContentUriPermissionFromCaller, grantUri, callingUid,
                             requestHashCode);
                 }
+                return;
+            } catch (BadParcelableException e) {
+                Slog.w(TAG, "Failed to unparcel "
+                        + (readMultipleStreams ? "an ArrayList of URIs" : "an URI")
+                        + " in EXTRA_STREAM, skipping requireContentUriPermissionFromCaller: " + e);
             }
-        } catch (BadParcelableException e) {
-            Slog.w(TAG, "Failed to unparcel an ArrayList of URIs in EXTRA_STREAM, skipping"
-                    + " requireContentUriPermissionFromCaller: " + e);
         }
     }
 
@@ -1350,7 +1357,8 @@ public class UriGrantsManagerService extends IUriGrantsManager.Stub implements
         final int callingAppId = UserHandle.getAppId(callingUid);
         if ((callingAppId == SYSTEM_UID) || (callingAppId == ROOT_UID)) {
             if ("com.android.settings.files".equals(grantUri.uri.getAuthority())
-                    || "com.android.settings.module_licenses".equals(grantUri.uri.getAuthority())) {
+                    || "com.android.settings.module_licenses".equals(grantUri.uri.getAuthority())
+                    || "com.android.axion.sandbox.vault".equals(grantUri.uri.getAuthority())) {
                 // Exempted authority for
                 // 1. cropping user photos and sharing a generated license html
                 //    file in Settings app

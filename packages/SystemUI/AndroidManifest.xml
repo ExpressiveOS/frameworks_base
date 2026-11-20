@@ -98,6 +98,12 @@
     <uses-permission android:name="android.permission.OBSERVE_SENSOR_PRIVACY" />
     <uses-permission android:name="android.permission.ACCESS_AMBIENT_CONTEXT_EVENT" />
 
+    <!-- Ambient indication (Now Playing) -->
+    <permission
+        android:name="com.google.android.ambientindication.permission.AMBIENT_INDICATION"
+        android:protectionLevel="signature|privileged" />
+    <uses-permission android:name="com.google.android.ambientindication.permission.AMBIENT_INDICATION" />
+
     <!-- ActivityManager -->
     <uses-permission android:name="android.permission.REAL_GET_TASKS" />
     <uses-permission android:name="android.permission.GET_DETAILED_TASKS" />
@@ -212,6 +218,9 @@
     <permission android:name="android.permission.CUSTOMIZE_SYSTEM_UI"
         android:protectionLevel="signature|privileged" />
 
+    <permission android:name="com.android.systemui.permission.SCREEN_RECORDING"
+            android:protectionLevel="signature" />
+
     <!-- Adding Quick Settings tiles -->
     <uses-permission android:name="android.permission.BIND_QUICK_SETTINGS_TILE" />
 
@@ -246,6 +255,8 @@
     <uses-permission android:name="android.permission.GET_RUNTIME_PERMISSIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_SENSITIVE_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
 
     <!-- role holder APIs -->
     <uses-permission android:name="android.permission.MANAGE_ROLE_HOLDERS" />
@@ -426,11 +437,28 @@
     <uses-permission android:name="android.permission.REPORT_UI_LATENCY_STATS"
         android:featureFlag="com.android.server.ui_latency_stats.ui_latency_stats_service" />
 
+    <!-- DataSwitch tile -->
+    <uses-permission android:name="android.permission.WRITE_APN_SETTINGS" />
+
+    <!-- OnTheGo -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+    <!-- OmniJaws -->
+    <uses-permission android:name="org.omnirom.omnijaws.READ_WEATHER" />
+
+    <!-- Triple-tap freeform (NotificationPanelViewController) sends LMOFreeform's START_FREEFORM
+         broadcast, whose receiver requires this permission. -->
+    <uses-permission android:name="com.libremobileos.permission.START_FREEFORM" />
+
+    <!-- Kill button in notification guts -->
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
+
     <protected-broadcast android:name="com.android.settingslib.action.REGISTER_SLICE_RECEIVER" />
     <protected-broadcast android:name="com.android.settingslib.action.UNREGISTER_SLICE_RECEIVER" />
     <protected-broadcast android:name="com.android.settings.flashlight.action.FLASHLIGHT_CHANGED" />
     <protected-broadcast android:name="com.android.systemui.action.LAUNCH_SYSTEM_MEDIA_OUTPUT_DIALOG" />
     <protected-broadcast android:name="com.android.systemui.STARTED" />
+    <protected-broadcast android:name="com.android.systemui.doze.pulse" />
 
     <application
         android:name=".application.impl.SystemUIApplicationImpl"
@@ -460,6 +488,13 @@
         <service android:name="SystemUIService"
             android:exported="true"
         />
+        <service
+            android:name=".ax.AxPlatformBinderService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.systemui.action.AX_PLATFORM" />
+            </intent-filter>
+        </service>
         <service android:name=".wallet.controller.WalletContextualLocationsService"
             android:exported="true"
             />
@@ -470,6 +505,10 @@
              android:permission="com.android.systemui.permission.SELF"
         />
 
+        <service
+            android:name="com.google.android.systemui.power.batteryevent.domain.BatteryEventService"
+            android:exported="true" />
+
         <!-- On user switch, this service is started to ensure that the associated SystemUI
              process for the current user is started. See the resource
              "config_systemUIServiceComponentsPerUser".
@@ -478,12 +517,11 @@
             android:exported="false"
             android:permission="com.android.systemui.permission.SELF" />
 
-        <!-- started from PhoneWindowManager
-             TODO: Should have an android:permission attribute -->
+        <!-- started from PhoneWindowManager -->
         <service android:name=".screenshot.TakeScreenshotService"
             android:permission="com.android.systemui.permission.SELF"
             android:process=":screenshot"
-            android:exported="false" />
+            android:exported="true" />
 
         <!-- Called from PhoneWindowManager -->
         <receiver android:name=".screenshot.ScreenshotServiceErrorReceiver"
@@ -585,7 +623,13 @@
             android:exported="false" />
 
         <service android:name=".screenrecord.RecordingService"
-                 android:foregroundServiceType="systemExempted"/>
+            android:foregroundServiceType="systemExempted"
+            android:exported="true"
+            android:permission="com.android.systemui.permission.SCREEN_RECORDING">
+            <intent-filter>
+                <action android:name="com.android.systemui.screenrecord.RecordingService" />
+            </intent-filter>
+        </service>
 
         <service android:name=".recordissue.IssueRecordingService"
                  android:foregroundServiceType="systemExempted"/>
@@ -593,12 +637,29 @@
         <service android:name=".recordissue.IssueRecordingServiceLegacy"
                 android:foregroundServiceType="systemExempted"/>
 
+        <service
+            android:name=".expressiveos.onthego.OnTheGoService"
+            android:foregroundServiceType="camera"
+            android:exported="false" />
+
         <receiver android:name=".SysuiRestartReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.android.systemui.action.RESTART" />
 
                 <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <service android:name="com.android.systemui.CPUInfoService"
+                android:exported="false" />
+
+        <service android:name="com.android.systemui.FPSInfoService"
+                android:exported="false" />
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 
@@ -616,10 +677,24 @@
             </meta-data>
         </service>
 
+        <service
+            android:name="com.android.systemui.lockglymps.LockGlympsService"
+            android:enabled="true"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.android.systemui.lockglymps.LockGlympsBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <activity android:name=".tuner.TunerActivity"
                   android:enabled="false"
                   android:icon="@drawable/tuner"
-                  android:theme="@style/TunerSettings"
+                  android:theme="@style/Theme.SubSettingsBase.Expressive"
                   android:label="@string/system_ui_tuner"
                   android:process=":tuner"
                   android:exported="true">
@@ -636,7 +711,7 @@
         <activity-alias android:name=".DemoMode"
                   android:targetActivity=".tuner.TunerActivity"
                   android:icon="@drawable/tuner"
-                  android:theme="@style/TunerSettings"
+                  android:theme="@style/Theme.SubSettingsBase.Expressive"
                   android:label="@string/demo_mode"
                   android:process=":tuner"
                   android:exported="true">
@@ -645,6 +720,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity-alias>
+
+        <!-- Callback for deleting screenshot notification -->
+        <receiver android:name=".screenshot.DeleteScreenshotReceiver"
+            android:exported="false" />
+
+        <!-- Callback for Google Lens screenshot notification -->
+        <receiver android:name=".screenshot.LensScreenshotReceiver"
+            android:exported="false" />
 
         <!-- Callback for invoking a smart action from the screenshot notification. -->
         <receiver android:name=".screenshot.SmartActionsReceiver"

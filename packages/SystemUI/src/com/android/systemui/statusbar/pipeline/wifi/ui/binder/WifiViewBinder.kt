@@ -28,9 +28,11 @@ import com.android.systemui.common.ui.binder.IconViewBinder
 import com.android.systemui.lifecycle.repeatWhenAttached
 import com.android.systemui.res.R
 import com.android.systemui.statusbar.StatusBarIconView
+import com.android.systemui.statusbar.connectivity.ThemeIconController
 import com.android.systemui.statusbar.StatusBarIconView.STATE_HIDDEN
 import com.android.systemui.statusbar.pipeline.shared.ui.binder.ModernStatusBarViewBinding
 import com.android.systemui.statusbar.pipeline.shared.ui.binder.ModernStatusBarViewVisibilityHelper
+import com.android.systemui.statusbar.pipeline.wifi.ui.model.VoWifiIcon
 import com.android.systemui.statusbar.pipeline.wifi.ui.model.WifiIcon
 import com.android.systemui.statusbar.pipeline.wifi.ui.viewmodel.LocationBasedWifiViewModel
 import kotlinx.coroutines.InternalCoroutinesApi
@@ -58,6 +60,8 @@ object WifiViewBinder {
         val activityInView = view.requireViewById<ImageView>(R.id.wifi_in)
         val activityOutView = view.requireViewById<ImageView>(R.id.wifi_out)
         val activityContainerView = view.requireViewById<View>(R.id.inout_container)
+        val voWifiView = view.requireViewById<ImageView>(R.id.vowifi)
+        val wifiStandardView = view.requireViewById<ImageView>(R.id.wifi_standard)
 
         view.isVisible = true
         iconView.isVisible = true
@@ -93,11 +97,37 @@ object WifiViewBinder {
                 }
 
                 launch {
-                    viewModel.wifiIcon.collect { wifiIcon ->
-                        view.isVisible = wifiIcon is WifiIcon.Visible
-                        if (wifiIcon is WifiIcon.Visible) {
-                            IconViewBinder.bind(wifiIcon.icon, iconView)
+                    var lastWifiRes = 0
+
+                    val refreshCallback = Runnable {
+                        if (lastWifiRes == 0) return@Runnable
+                        val themed = ThemeIconController
+                            .getThemedWifiIcon(view.context, lastWifiRes)
+                        if (themed != null) {
+                            iconView.setImageDrawable(themed)
+                        } else {
+                            iconView.setImageResource(lastWifiRes)
                         }
+                        groupView.invalidate()
+                    }
+                    ThemeIconController.registerRefreshCallback(refreshCallback)
+
+                    try {
+                        viewModel.wifiIcon.collect { wifiIcon ->
+                            view.isVisible = wifiIcon is WifiIcon.Visible
+                            if (wifiIcon is WifiIcon.Visible) {
+                                lastWifiRes = wifiIcon.res
+                                val themedDrawable = ThemeIconController
+                                    .getThemedWifiIcon(view.context, wifiIcon.res)
+                                if (themedDrawable != null) {
+                                    iconView.setImageDrawable(themedDrawable)
+                                } else {
+                                    IconViewBinder.bind(wifiIcon.icon, iconView)
+                                }
+                            }
+                        }
+                    } finally {
+                        ThemeIconController.unregisterRefreshCallback(refreshCallback)
                     }
                 }
 
@@ -107,6 +137,8 @@ object WifiViewBinder {
                         iconView.imageTintList = tintList
                         activityInView.imageTintList = tintList
                         activityOutView.imageTintList = tintList
+                        voWifiView.imageTintList = tintList
+                        wifiStandardView.imageTintList = tintList
                         dotView.setDecorColor(tint)
                     }
                 }
@@ -128,6 +160,15 @@ object WifiViewBinder {
                 launch {
                     viewModel.isActivityContainerVisible.distinctUntilChanged().collect { visible ->
                         activityContainerView.isVisible = visible
+                    }
+                }
+
+                launch {
+                    viewModel.voWifiIcon.distinctUntilChanged().collect { voWifiIcon ->
+                        voWifiView.isVisible = voWifiIcon is VoWifiIcon.Visible
+                        if (voWifiIcon is VoWifiIcon.Visible) {
+                            IconViewBinder.bind(voWifiIcon.icon, voWifiView)
+                        }
                     }
                 }
 

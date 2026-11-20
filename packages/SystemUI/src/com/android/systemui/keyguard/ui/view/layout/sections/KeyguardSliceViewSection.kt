@@ -35,6 +35,7 @@ import com.android.systemui.keyguard.ui.viewmodel.AodBurnInViewModel
 import com.android.systemui.keyguard.ui.viewmodel.KeyguardSmartspaceViewModel
 import com.android.systemui.plugins.ActivityStarter
 import com.android.systemui.plugins.keyguard.ui.clocks.ClockViewIds
+import com.android.systemui.power.domain.interactor.PowerInteractor
 import com.android.systemui.res.R
 import com.android.systemui.settings.DisplayTracker
 import com.android.systemui.shade.ShadeDisplayAware
@@ -56,6 +57,7 @@ constructor(
     val dumpManager: DumpManager,
     val displayTracker: DisplayTracker,
     val keyguardInteractor: KeyguardInteractor,
+    val powerInteractor: PowerInteractor,
     val aodBurnInViewModel: AodBurnInViewModel,
     val keyguardSmartspaceViewModel: KeyguardSmartspaceViewModel,
 ) : KeyguardSection() {
@@ -80,6 +82,8 @@ constructor(
                 configurationController,
                 dumpManager,
                 displayTracker,
+                keyguardInteractor,
+                powerInteractor,
             )
         controller.setupUri(null)
         controller.init()
@@ -124,17 +128,23 @@ constructor(
                 ConstraintSet.BOTTOM,
             )
 
-            createBarrier(
-                R.id.smart_space_barrier_bottom,
-                Barrier.BOTTOM,
-                0,
-                *intArrayOf(R.id.keyguard_slice_view),
-            )
+            if (!smartspaceController.isOmniWeatherEnabled) {
+                createBarrier(
+                    R.id.smart_space_barrier_bottom,
+                    Barrier.BOTTOM,
+                    0,
+                    *intArrayOf(R.id.keyguard_slice_view),
+                )
+            } else {
+                createBarrier(
+                    R.id.keyguard_weather_area,
+                    Barrier.BOTTOM,
+                    0,
+                    *intArrayOf(R.id.keyguard_slice_view),
+                )
+            }
         }
     }
 
-    override fun removeViews(constraintLayout: ConstraintLayout) {
-        if (smartspaceController.isEnabled) return
-        constraintLayout.removeView(R.id.keyguard_slice_view)
-    }
+    override fun removeViews(constraintLayout: ConstraintLayout) {}
 }

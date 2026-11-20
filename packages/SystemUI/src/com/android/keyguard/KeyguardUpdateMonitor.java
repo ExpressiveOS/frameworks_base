@@ -94,6 +94,8 @@ import android.os.RemoteException;
 import android.os.Trace;
 import android.os.UserHandle;
 import android.os.UserManager;
+import android.pocket.IPocketCallback;
+import android.pocket.PocketManager;
 import android.provider.Settings;
 import android.service.dreams.IDreamManager;
 import android.telephony.CarrierConfigManager;
@@ -165,6 +167,7 @@ import com.android.systemui.shade.ShadeDisplayAware;
 import com.android.systemui.shared.system.TaskStackChangeListener;
 import com.android.systemui.shared.system.TaskStackChangeListeners;
 import com.android.systemui.statusbar.StatusBarState;
+import com.android.systemui.statusbar.phone.DozeParameters;
 import com.android.systemui.statusbar.phone.KeyguardBypassController;
 import com.android.systemui.statusbar.policy.DevicePostureController;
 import com.android.systemui.statusbar.policy.DevicePostureController.DevicePostureInt;
@@ -172,6 +175,7 @@ import com.android.systemui.telephony.TelephonyListenerManager;
 import com.android.systemui.user.domain.interactor.SelectedUserInteractor;
 import com.android.systemui.util.Assert;
 import com.android.systemui.util.kotlin.JavaAdapter;
+import com.android.systemui.util.ScrimUtils;
 
 import dalvik.annotation.optimization.NeverCompile;
 
@@ -240,6 +244,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
     private static final int MSG_KEYGUARD_DISMISS_ANIMATION_FINISHED = 346;
     private static final int MSG_SERVICE_PROVIDERS_UPDATED = 347;
     private static final int MSG_BIOMETRIC_ENROLLMENT_STATE_CHANGED = 348;
+
+    // Additional messages should be 600+
+    private static final int MSG_POCKET_STATE_CHANGED = 600;
 
     /** Biometric authentication state: Not listening. */
     @VisibleForTesting
@@ -324,6 +331,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
         }
     };
     private final FaceWakeUpTriggersConfig mFaceWakeUpTriggersConfig;
+    private final Provider<DozeParameters> mDozeParameters;
 
     private final Object mSimDataLockObject = new Object();
     HashMap<Integer, SimData> mSimDatasBySlotId = new HashMap<>();
@@ -449,6 +457,26 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
     }
 
     private final Handler mHandler;
+    private PocketManager mPocketManager;
+    private boolean mIsDeviceInPocket;
+    private final IPocketCallback mPocketCallback = new IPocketCallback.Stub() {
+        @Override
+        public void onStateChanged(boolean isDeviceInPocket, int reason) {
+            boolean wasInPocket = mIsDeviceInPocket;
+            if (reason == PocketManager.REASON_SENSOR) {
+                mIsDeviceInPocket = isDeviceInPocket;
+            } else {
+                mIsDeviceInPocket = false;
+            }
+            if (wasInPocket != mIsDeviceInPocket) {
+                mHandler.sendEmptyMessage(MSG_POCKET_STATE_CHANGED);
+            }
+        }
+    };
+
+    public boolean isPocketLockVisible(){
+        return mPocketManager.isPocketLockVisible();
+    }
 
     private final IBiometricEnabledOnKeyguardCallback mBiometricEnabledCallback =
             new IBiometricEnabledOnKeyguardCallback.Stub() {
@@ -2119,6 +2147,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
             }
         }
         Trace.endSection();
+
+        ScrimUtils.get().onStartedWakingUp();
     }
 
     protected void handleStartedGoingToSleep(int arg1) {
@@ -2131,23 +2161,26 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
                 cb.onStartedGoingToSleep(arg1);
             }
         }
-        mGoingToSleep = true;
         // Resetting assistant visibility state as the device is going to sleep now.
         // TaskStackChangeListener gets triggered a little late when we transition to AoD,
         // which results in face auth running once on AoD.
         mAssistantVisible = false;
-        mLogger.d("Started going to sleep, mGoingToSleep=true, mAssistantVisible=false");
+        mLogger.d("Started going to sleep, mAssistantVisible=false");
         updateFingerprintListeningState(BIOMETRIC_ACTION_UPDATE);
     }
 
     protected void handleFinishedGoingToSleep(int arg1) {
         Assert.isMainThread();
-        mGoingToSleep = false;
         for (int i = 0; i < mCallbacks.size(); i++) {
             KeyguardUpdateMonitorCallback cb = mCallbacks.get(i).get();
             if (cb != null) {
                 cb.onFinishedGoingToSleep(arg1);
             }
+        }
+        final int userId = mSelectedUserInteractor.getSelectedUserId();
+        final boolean canFpUnlock = isUnlockWithFingerprintPossible(userId);
+        if (canFpUnlock && mDozeParameters.get().getAlwaysOn()) {
+            mGoingToSleep = false;
         }
         updateFingerprintListeningState(BIOMETRIC_ACTION_UPDATE);
     }
@@ -2155,6 +2188,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
     private void handleScreenTurnedOff() {
         Assert.isMainThread();
         mHardwareFingerprintUnavailableRetryCount = 0;
+        mGoingToSleep = false;
+        ScrimUtils.get().onScreenTurnedOff();
+        updateFingerprintListeningState(BIOMETRIC_ACTION_UPDATE);
     }
 
     private void handleDreamingStateChanged(int dreamStart) {
@@ -2267,7 +2303,8 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
             Provider<CommunalSceneInteractor> communalSceneInteractor,
             Provider<KeyguardServiceShowLockscreenInteractor>
                     keyguardServiceShowLockscreenInteractor,
-            Provider<DeviceUnlockedInteractor> deviceUnlockedInteractor) {
+            Provider<DeviceUnlockedInteractor> deviceUnlockedInteractor,
+            Provider<DozeParameters> dozeParameters) {
         mContext = context;
         mSubscriptionManager = subscriptionManager;
         mUserTracker = userTracker;
@@ -2322,6 +2359,12 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
         mCommunalSceneInteractor = communalSceneInteractor;
         mKeyguardServiceShowLockscreenInteractor = keyguardServiceShowLockscreenInteractor;
         mDeviceUnlockedInteractor = deviceUnlockedInteractor;
+
+        mPocketManager = (PocketManager) context.getSystemService(Context.POCKET_SERVICE);
+        if (mPocketManager != null) {
+            mPocketManager.addCallback(mPocketCallback);
+        }
+        mDozeParameters = dozeParameters;
 
         mHandler = new Handler(mainLooper) {
             @Override
@@ -2427,6 +2470,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
                     case MSG_BIOMETRIC_ENROLLMENT_STATE_CHANGED:
                         notifyAboutEnrollmentChange(msg.arg1);
                         break;
+                    case MSG_POCKET_STATE_CHANGED:
+                        updateFingerprintListeningState(BIOMETRIC_ACTION_UPDATE);
+                        break;
                     default:
                         super.handleMessage(msg);
                         break;
@@ -2480,8 +2526,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
             }
             // Don't override if a valid battery status update has come in
             final BatteryStatus status = new BatteryStatus(BATTERY_STATUS_UNKNOWN,
-                    /* level= */ level, /* plugged= */ 0, CHARGING_POLICY_DEFAULT,
-                    /* maxChargingWattage= */0, /* present= */true);
+                    /* level= */ level, /* plugged= */
+		    0, CHARGING_POLICY_DEFAULT, /* maxChargingWattage= */0.0f, /* present= */true,
+                    0.0f, 0.0f, 0.0f, false);
             mMainExecutor.execute(() -> {
                 if (mBatteryStatus == null) {
                     handleBatteryUpdate(status);
@@ -2753,6 +2800,7 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
         public void onUserChanged(int newUser, Context userContext) {
             mHandler.sendMessage(mHandler.obtainMessage(MSG_USER_SWITCH_COMPLETE,
                     newUser, 0));
+            ScrimUtils.get().onUserChanged();
         }
     };
 
@@ -2806,6 +2854,12 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
                     return;
                 }
             }
+            // Calling #startListeningForFingerprint while in BIOMETRIC_STATE_RUNNING is wrong
+            // because starting the new detect/authenticate will trigger an error on the existing
+            // detect/authenticate and #handleFingerprintError will set the cancel signal to null
+            // and state to BIOMETRIC_STATE_STOPPED. Upstream's implementation is caught by their
+            // own bug catcher, mLogger.logUnexpectedFpCancellationSignalState().
+            stopListeningForFingerprint();
             startListeningForFingerprint(runDetect);
         }
     }
@@ -3145,9 +3199,15 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
         final boolean shouldListenSecureLockDeviceState = !secureLockDevice()
                 || !mIsSecureLockDeviceEnabled || mSecureLockDeviceListeningForBiometrics;
 
+        final boolean shouldListenFpsState = isUdfps
+                || mFingerprintInteractiveToAuthProvider == null
+                || !mFingerprintInteractiveToAuthProvider.isEnabled(user)
+                || (isDeviceInteractive() && !mGoingToSleep);
+
         boolean shouldListen = shouldListenKeyguardState && shouldListenUserState
                 && shouldListenBouncerState && shouldListenUdfpsState && !mBiometricPromptShowing
-                && shouldListenSecureLockDeviceState;
+                && shouldListenSecureLockDeviceState && shouldListenFpsState && !mIsDeviceInPocket
+                && (!mGoingToSleep || !isUdfps);
         logListenerModelData(
                 new KeyguardFingerprintListenModel(
                     System.currentTimeMillis(),
@@ -3189,7 +3249,6 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
     public boolean shouldListenForFace() {
         return getFaceAuthInteractor() != null && getFaceAuthInteractor().canFaceAuthRun();
     }
-
 
     private void logListenerModelData(@NonNull KeyguardListenModel model) {
         mLogger.logKeyguardListenerModel(model);
@@ -3794,13 +3853,27 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
             return true;
         }
 
-        // change in charging current while plugged in
-        if (nowPluggedIn && current.maxChargingWattage != old.maxChargingWattage) {
+        // change in charging measurements while plugged in
+        if (nowPluggedIn &&
+              (current.maxChargingWattage != old.maxChargingWattage ||
+               current.maxChargingCurrent != old.maxChargingCurrent ||
+               current.maxChargingVoltage != old.maxChargingVoltage ||
+               current.batteryVoltageMillivolts != old.batteryVoltageMillivolts)) {
+            return true;
+        }
+
+        // change in OEM charging while plugged in
+        if (nowPluggedIn && current.oemChargeStatus != old.oemChargeStatus) {
             return true;
         }
 
         // change in battery is present or not
         if (old.present != current.present) {
+            return true;
+        }
+
+        // change in battery temperature
+        if (old.temperature != current.temperature) {
             return true;
         }
 
@@ -4124,11 +4197,15 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener, CoreSt
     public void dispatchStartedWakingUp(@PowerManager.WakeReason int pmWakeReason) {
         synchronized (this) {
             mDeviceInteractive = true;
+            mGoingToSleep = false;
         }
         mHandler.sendMessage(mHandler.obtainMessage(MSG_STARTED_WAKING_UP, pmWakeReason, 0));
     }
 
     public void dispatchStartedGoingToSleep(int why) {
+        synchronized (this) {
+            mGoingToSleep = true;
+        }
         mHandler.sendMessage(mHandler.obtainMessage(MSG_STARTED_GOING_TO_SLEEP, why, 0));
     }
 

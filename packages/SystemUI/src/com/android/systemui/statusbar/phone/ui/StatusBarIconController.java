@@ -84,6 +84,9 @@ public interface StatusBarIconController {
      */
     void setNewWifiIcon();
 
+    /** */
+    void setNetworkTraffic(String slot);
+
     /**
      * Notify this class that there is a new set of mobile icons to display, keyed off of this list
      * of subIds. The icons will be added and bound to the mobile data pipeline via
@@ -106,6 +109,8 @@ public interface StatusBarIconController {
     /** Reads the default hide list from config value unless hideListStr is provided. */
     static ArraySet<String> getIconHideList(Context context, String hideListStr) {
         ArraySet<String> ret = new ArraySet<>();
+        if (context == null)
+            return ret; // not ready yet
         String[] hideList = hideListStr == null
                 ? context.getResources().getStringArray(R.array.config_statusBarIconsToExclude)
                 : hideListStr.split(",");

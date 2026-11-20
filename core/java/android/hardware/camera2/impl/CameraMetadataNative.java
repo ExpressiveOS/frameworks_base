@@ -605,36 +605,40 @@ public class CameraMetadataNative implements Parcelable {
     }
 
     private <T> T getBase(Key<T> key) {
-        int tag, nativeType;
-        byte[] values = null;
-        synchronized (this) {
-            if (key.hasTag()) {
-                tag = key.getTag();
-            } else {
-                tag = nativeGetTagFromKeyLocal(mMetadataPtr, key.getName());
-                key.cacheTag(tag);
-            }
-            values = readValues(tag);
-            if (values == null) {
-                // If the key returns null, use the fallback key if exists.
-                // This is to support old key names for the newly published keys.
-                if (key.mFallbackName == null) {
-                    return null;
+        try {
+            int tag, nativeType;
+            byte[] values = null;
+            synchronized (this) {
+                if (key.hasTag()) {
+                    tag = key.getTag();
+                } else {
+                    tag = nativeGetTagFromKeyLocal(mMetadataPtr, key.getName());
+                    key.cacheTag(tag);
                 }
-                tag = nativeGetTagFromKeyLocal(mMetadataPtr, key.mFallbackName);
                 values = readValues(tag);
                 if (values == null) {
-                    return null;
+                    // If the key returns null, use the fallback key if exists.
+                    // This is to support old key names for the newly published keys.
+                    if (key.mFallbackName == null) {
+                        return null;
+                    }
+                    tag = nativeGetTagFromKeyLocal(mMetadataPtr, key.mFallbackName);
+                    values = readValues(tag);
+                    if (values == null) {
+                        return null;
+                    }
                 }
-            }
 
-            nativeType = nativeGetTypeFromTagLocal(mMetadataPtr, tag);
+                nativeType = nativeGetTypeFromTagLocal(mMetadataPtr, tag);
+            }
+            // This block of code doesn't need to be synchronized since we aren't writing or reading
+            // from the metadata buffer for this instance of CameraMetadataNative.
+            Marshaler<T> marshaler = getMarshalerForKey(key, nativeType);
+            ByteBuffer buffer = ByteBuffer.wrap(values).order(ByteOrder.nativeOrder());
+            return marshaler.unmarshal(buffer);
+        } catch (Exception e) {
+                return null;
         }
-        // This block of code doesn't need to be synchronized since we aren't writing or reading
-        // from the metadata buffer for this instance of CameraMetadataNative.
-        Marshaler<T> marshaler = getMarshalerForKey(key, nativeType);
-        ByteBuffer buffer = ByteBuffer.wrap(values).order(ByteOrder.nativeOrder());
-        return marshaler.unmarshal(buffer);
     }
 
     // Use Command pattern here to avoid lots of expensive if/equals checks in get for overridden
@@ -1990,30 +1994,34 @@ public class CameraMetadataNative implements Parcelable {
     // we expect the metadata's properties such as vendor id etc to
     // stay the same and as a result the whole method should be synchronized for safety.
     private synchronized <T> void setBase(Key<T> key, T value) {
-        int tag, nativeType;
-        if (key.hasTag()) {
-            tag = key.getTag();
-        } else {
-            tag = nativeGetTagFromKeyLocal(mMetadataPtr, key.getName());
-            key.cacheTag(tag);
+        try {
+            int tag, nativeType;
+            if (key.hasTag()) {
+                tag = key.getTag();
+            } else {
+                tag = nativeGetTagFromKeyLocal(mMetadataPtr, key.getName());
+                key.cacheTag(tag);
+            }
+            if (value == null) {
+                // Erase the entry
+                writeValues(tag, /*src*/null);
+                return;
+            } // else update the entry to a new value
+
+            nativeType = nativeGetTypeFromTagLocal(mMetadataPtr, tag);
+            Marshaler<T> marshaler = getMarshalerForKey(key, nativeType);
+            int size = marshaler.calculateMarshalSize(value);
+
+            // TODO: Optimization. Cache the byte[] and reuse if the size is big enough.
+            byte[] values = new byte[size];
+
+            ByteBuffer buffer = ByteBuffer.wrap(values).order(ByteOrder.nativeOrder());
+            marshaler.marshal(value, buffer);
+
+            writeValues(tag, values);
+        } catch (Exception e) {
+                // Do nothing
         }
-        if (value == null) {
-            // Erase the entry
-            writeValues(tag, /*src*/null);
-            return;
-        } // else update the entry to a new value
-
-        nativeType = nativeGetTypeFromTagLocal(mMetadataPtr, tag);
-        Marshaler<T> marshaler = getMarshalerForKey(key, nativeType);
-        int size = marshaler.calculateMarshalSize(value);
-
-        // TODO: Optimization. Cache the byte[] and reuse if the size is big enough.
-        byte[] values = new byte[size];
-
-        ByteBuffer buffer = ByteBuffer.wrap(values).order(ByteOrder.nativeOrder());
-        marshaler.marshal(value, buffer);
-
-        writeValues(tag, values);
     }
 
     // Use Command pattern here to avoid lots of expensive if/equals checks in get for overridden

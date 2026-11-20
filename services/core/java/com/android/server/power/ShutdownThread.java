@@ -31,6 +31,7 @@ import android.content.IIntentReceiver;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManagerInternal;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.os.FileUtils;
 import android.os.Handler;
@@ -97,6 +98,7 @@ public final class ShutdownThread extends Thread {
     private static boolean sIsStarted = false;
 
     private static boolean mReboot;
+    private static boolean mRebootCustom;
     private static boolean mRebootSafeMode;
     private static boolean mRebootHasProgressBar;
     private static String mReason;
@@ -163,6 +165,7 @@ public final class ShutdownThread extends Thread {
      */
     public static void shutdown(final Context context, String reason, boolean confirm) {
         mReboot = false;
+        mRebootCustom = false;
         mRebootSafeMode = false;
         mReason = reason;
         shutdownInner(context, confirm);
@@ -196,6 +199,11 @@ public final class ShutdownThread extends Thread {
                         ? com.android.internal.R.string.shutdown_confirm_question
                         : com.android.internal.R.string.shutdown_confirm);
 
+        boolean isNightMode = (context.getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        int themeResId = isNightMode ? android.R.style.Theme_DeviceDefault_Dialog_Alert :
+                android.R.style.Theme_DeviceDefault_Light_Dialog_Alert;
+
         if (DEBUG) {
             Log.d(TAG, "Notifying thread to start shutdown longPressBehavior=" + longPressBehavior);
         }
@@ -205,7 +213,7 @@ public final class ShutdownThread extends Thread {
             if (sConfirmDialog != null) {
                 sConfirmDialog.dismiss();
             }
-            sConfirmDialog = new AlertDialog.Builder(context)
+            sConfirmDialog = new AlertDialog.Builder(context, themeResId)
                     .setTitle(mRebootSafeMode
                             ? com.android.internal.R.string.reboot_safemode_title
                             : com.android.internal.R.string.power_off)
@@ -290,6 +298,26 @@ public final class ShutdownThread extends Thread {
      */
     public static void reboot(final Context context, String reason, boolean confirm) {
         mReboot = true;
+        mRebootCustom = false;
+        mRebootSafeMode = false;
+        mRebootHasProgressBar = false;
+        mReason = reason;
+        shutdownInner(context, confirm);
+    }
+
+    /**
+     * Request a clean shutdown, waiting for subsystems to clean up their
+     * state etc.  Must be called from a Looper thread in which its UI
+     * is shown.
+     *
+     * @param context Context used to display the shutdown progress dialog. This must be a context
+     *                suitable for displaying UI (aka Themable).
+     * @param reason code to pass to the kernel (e.g. "recovery", "bootloader"), or null.
+     * @param confirm true if user confirmation is needed before shutting down.
+     */
+    public static void rebootCustom(final Context context, String reason, boolean confirm) {
+        mReboot = true;
+        mRebootCustom = true;
         mRebootSafeMode = false;
         mRebootHasProgressBar = false;
         mReason = reason;
@@ -311,6 +339,7 @@ public final class ShutdownThread extends Thread {
         }
 
         mReboot = true;
+        mRebootCustom = false;
         mRebootSafeMode = true;
         mRebootHasProgressBar = false;
         mReason = null;
@@ -383,7 +412,7 @@ public final class ShutdownThread extends Thread {
                 pd.setTitle(context.getText(com.android.internal.R.string.power_off));
                 pd.setMessage(context.getText(com.android.internal.R.string.shutdown_progress));
                 pd.setIndeterminate(true);
-            } else if (showSysuiReboot()) {
+            } else if (mRebootCustom && showSysuiReboot()) {
                 return null;
             } else {
                 // Factory reset path. Set the dialog message accordingly.
@@ -414,7 +443,7 @@ public final class ShutdownThread extends Thread {
         try {
             StatusBarManagerInternal service = LocalServices.getService(
                     StatusBarManagerInternal.class);
-            if (service.showShutdownUi(mReboot, mReason)) {
+            if (service.showShutdownUi(mReboot, mReason, mRebootCustom)) {
                 // Sysui will handle shutdown UI.
                 if (DEBUG) {
                     Log.d(TAG, "SysUI handling shutdown UI");

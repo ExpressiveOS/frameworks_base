@@ -542,7 +542,7 @@ constructor(
     }
 
     private fun getTitleText(): String {
-        return internetDetailsContentController.getDialogTitleText().toString()
+        return internetDetailsContentController.getDialogTitleText(canConfigMobileData).toString()
     }
 
     private fun getSubtitleText(): String {
@@ -1303,6 +1303,10 @@ constructor(
             }
 
             override fun onCarrierNetworkChange(active: Boolean) {
+                updateContent(shouldUpdateMobileNetwork = true)
+            }
+
+            override fun onHotspotChanged() {
                 updateContent(shouldUpdateMobileNetwork = true)
             }
 

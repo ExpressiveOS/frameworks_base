@@ -1453,6 +1453,11 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         // Make sure the package runs under the caller uid.
         mSecurityPolicy.enforceCallFromPackage(callingPackage);
 
+        if (!isUserRunningAndUnlocked(userId)) {
+            Slog.w(TAG, "stopListening() should not be called for locked user " + userId);
+            return;
+        }
+
         synchronized (mLock) {
             ensureGroupStateLoadedLocked(userId, /* enforceUserUnlockingOrUnlocked */ false);
 
@@ -1534,6 +1539,11 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         final int userId = UserHandle.getCallingUserId();
 
         mSecurityPolicy.enforceCallFromPackage(callingPackage);
+
+        if (!isUserRunningAndUnlocked(userId)) {
+            Slog.w(TAG, "setAppWidgetHidden() should not be called for locked user " + userId);
+            return;
+        }
 
         synchronized (mLock) {
             ensureGroupStateLoadedLocked(userId, /* enforceUserUnlockingOrUnlocked */false);
@@ -1728,7 +1738,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
 
             final ActivityOptions options =
                     ActivityOptions.makeBasic().setPendingIntentCreatorBackgroundActivityStartMode(
-                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_DENIED);
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
 
             // All right, create the sender.
             final long identity = Binder.clearCallingIdentity();
@@ -3154,16 +3164,23 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
                 || (widget.views == null)) {
             return;
         }
+        boolean isExemptLauncher = com.android.internal.util.expressiveos.PixelPropsUtils
+                .isSystemLauncher(Binder.getCallingUid());
         long bitmapCacheMemoryUsage = widget.views.estimateMemoryUsage();
         long totalMemoryUsage = bitmapCacheMemoryUsage + widget.views.estimateIconMemoryUsage();
         int targetSdk = getWidgetTargetSdkLocked(widget);
         long memoryUsage =
                 (targetSdk > 37) ? totalMemoryUsage : bitmapCacheMemoryUsage;
         if (memoryUsage > mMaxWidgetBitmapMemory) {
-            widget.views = null;
-            throw new IllegalArgumentException("RemoteViews for widget update exceeds"
-                    + " maximum bitmap memory usage (used: " + memoryUsage
-                    + ", max: " + mMaxWidgetBitmapMemory + ")");
+            if (isExemptLauncher) {
+                Slog.i(TAG, "Bypassing memory usage limit for whitelisted launcher (used: "
+                        + memoryUsage + ", max: " + mMaxWidgetBitmapMemory + ")");
+            } else {
+                widget.views = null;
+                throw new IllegalArgumentException("RemoteViews for widget update exceeds"
+                        + " maximum bitmap memory usage (used: " + memoryUsage
+                        + ", max: " + mMaxWidgetBitmapMemory + ")");
+            }
         } else if (targetSdk <= 37 && totalMemoryUsage > mMaxWidgetBitmapMemory) {
             Slog.w(TAG, "RemoteViews for widget update exceeds maximum Bitmap and Icon "
                     + "memory usage (used: " + totalMemoryUsage + ", max: "
@@ -4191,21 +4208,20 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
             // provide widgets.
             flags |= PackageManager.MATCH_DEBUG_TRIAGED_MISSING;
 
-            // Widget hosts that are non-crypto aware may be hosting widgets
-            // from a profile that is still locked, so let them see those
-            // widgets.
-            if (isProfileWithUnlockedParent(userId)) {
-                flags |= PackageManager.MATCH_DIRECT_BOOT_AWARE
-                        | PackageManager.MATCH_DIRECT_BOOT_UNAWARE;
-            }
+            // Match receivers regardless of the user's lock state.
+            flags |= PackageManager.MATCH_DIRECT_BOOT_AWARE
+                    | PackageManager.MATCH_DIRECT_BOOT_UNAWARE;
 
             // Widgets referencing shared libraries need to have their
             // dependencies loaded.
             flags |= PackageManager.GET_SHARED_LIBRARY_FILES;
 
-            return mPackageManager.queryIntentReceivers(intent,
+            List<ResolveInfo> receivers = mPackageManager.queryIntentReceivers(intent,
                     intent.resolveTypeIfNeeded(mContext.getContentResolver()),
                     flags, userId).getList();
+            Slog.i(TAG, "queryIntentReceivers for user " + userId + " found: "
+                    + receivers.size() + " receivers.");
+            return receivers;
         } catch (RemoteException re) {
             Slog.w(TAG, "Failed to query intent receivers for user " + userId, re);
             return null;
@@ -4238,6 +4254,7 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
             Trace.traceEnd(Trace.TRACE_TAG_ACTIVITY_MANAGER);
 
             final int N = mProviders.size();
+            Slog.i(TAG, "handleUserUnlocked: " + userId + " mProviders size: " + N);
             for (int i = 0; i < N; i++) {
                 Provider provider = mProviders.get(i);
 
@@ -5262,17 +5279,6 @@ class AppWidgetServiceImpl extends IAppWidgetService.Stub implements WidgetBacku
         return false;
     }
 
-    private boolean isProfileWithUnlockedParent(int userId) {
-        UserInfo userInfo = mUserManager.getUserInfo(userId);
-        if (userInfo != null && userInfo.isProfile()) {
-            UserInfo parentInfo = mUserManager.getProfileParent(userId);
-            if (parentInfo != null
-                    && mUserManager.isUserUnlockingOrUnlocked(parentInfo.getUserHandle())) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     /**
      * Note an app widget is tapped on. If a app widget is tapped, the underlying app is treated as

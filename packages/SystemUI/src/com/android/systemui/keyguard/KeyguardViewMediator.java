@@ -89,6 +89,7 @@ import android.provider.Settings;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.uilatencystats.UiLatencyStatsManager;
+import android.util.DisplayUtils;
 import android.util.Log;
 import android.util.Slog;
 import android.util.SparseBooleanArray;
@@ -127,6 +128,7 @@ import com.android.internal.policy.IKeyguardService;
 import com.android.internal.policy.IKeyguardStateCallback;
 import com.android.internal.policy.ScreenDecorationsUtils;
 import com.android.internal.statusbar.IStatusBarService;
+import com.android.internal.util.ArrayUtils;
 import com.android.internal.util.LatencyTracker;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.keyguard.KeyguardConstants;
@@ -175,6 +177,7 @@ import com.android.systemui.shared.system.QuickStepContract;
 import com.android.systemui.statusbar.CommandQueue;
 import com.android.systemui.statusbar.NotificationShadeDepthController;
 import com.android.systemui.statusbar.NotificationShadeWindowController;
+import com.android.systemui.statusbar.NTForbiddenSwipeDownQSController;
 import com.android.systemui.statusbar.SysuiStatusBarStateController;
 import com.android.systemui.statusbar.phone.BiometricUnlockController;
 import com.android.systemui.statusbar.phone.CentralSurfaces;
@@ -1748,8 +1751,11 @@ public class KeyguardViewMediator implements CoreStartable,
         mScrimControllerLazy = scrimControllerLazy;
         mActivityTaskManagerService = activityTaskManagerService;
 
-        mPowerButtonY = context.getResources().getDimensionPixelSize(
-                R.dimen.physical_power_button_center_screen_location_y);
+        final float scaleFactor = DisplayUtils.getScaleFactor(mContext);
+        int positionY = (int) (scaleFactor * mContext.getResources().getDimensionPixelSize(
+                R.dimen.physical_power_button_center_screen_location_y));
+
+        mPowerButtonY = positionY;
         mWindowCornerRadius = ScreenDecorationsUtils.getWindowCornerRadius(context);
 
         mDreamOpenAnimationDuration = (int) DREAMING_ANIMATION_DURATION_MS;
@@ -1969,14 +1975,24 @@ public class KeyguardViewMediator implements CoreStartable,
 
         mUpdateMonitor.dispatchStartedGoingToSleep(offReason);
 
-        // Reset keyguard going away state, so we can start listening for fingerprint. We
-        // explicitly DO NOT want to call
-        // mKeyguardViewControllerLazy.get().setKeyguardGoingAwayState(false)
-        // here, since that will mess with the device lock state.
-        mKeyguardStateController.notifyKeyguardGoingAway(false);
-        mUpdateMonitor.dispatchKeyguardGoingAway(false);
+        // Prevent keyguard going away conflicts during lock operations
+        boolean isLockingOperation = mShowing || mKeyguardStateController.isKeyguardGoingAway() || mPendingLock;
+
+        // Only dispatch keyguard going away if:
+        // 1. UDFPS is not configured (original logic)
+        // 2. Not currently in a locking operation
+        if (!isUdfpsConfigured() || (!mUpdateMonitor.isUdfpsEnrolled() && !isLockingOperation)) {
+            mKeyguardStateController.notifyKeyguardGoingAway(false);
+            mUpdateMonitor.dispatchKeyguardGoingAway(false);
+        }
 
         notifyStartedGoingToSleep();
+    }
+
+    private boolean isUdfpsConfigured() {
+        int[] udfpsProps = mContext.getResources().getIntArray(
+            com.android.internal.R.array.config_udfps_sensor_props);
+        return !ArrayUtils.isEmpty(udfpsProps);
     }
 
     /**
@@ -2763,7 +2779,8 @@ public class KeyguardViewMediator implements CoreStartable,
         Trace.beginSection("KeyguardViewMediator#showKeyguard acquiring mShowKeyguardWakeLock");
         if (DEBUG) Log.d(TAG, "showKeyguard");
         // ensure we stay awake until we are finished displaying the keyguard
-        mShowKeyguardWakeLock.acquire();
+        if (mShowKeyguardWakeLock != null)
+            mShowKeyguardWakeLock.acquire();
         mLastShowRequest++;
         Message msg = mHandler.obtainMessage(SHOW, options);
         // Treat these messages with priority - This call can originate from #doKeyguardTimeout,
@@ -3293,7 +3310,9 @@ public class KeyguardViewMediator implements CoreStartable,
             userActivity();
             mUpdateMonitor.setKeyguardGoingAway(false);
             mKeyguardViewControllerLazy.get().setKeyguardGoingAwayState(false);
-            mShowKeyguardWakeLock.release();
+            if (mShowKeyguardWakeLock != null)
+                mShowKeyguardWakeLock.release();
+
         }
         mKeyguardDisplayManager.show();
 
@@ -3729,7 +3748,9 @@ public class KeyguardViewMediator implements CoreStartable,
         // only play "unlock" noises if not on a call (since the incall UI
         // disables the keyguard)
         if (TelephonyManager.EXTRA_STATE_IDLE.equals(mPhoneState)) {
-            playSounds(false);
+            if (mShowing && mDeviceInteractive) {
+                playSounds(false);
+            }
         }
 
         if (!ENABLE_NEW_KEYGUARD_SHELL_TRANSITIONS) {
@@ -4033,6 +4054,10 @@ public class KeyguardViewMediator implements CoreStartable,
             if (mPowerGestureIntercepted && mOccluded && isSecure()
                     && mUpdateMonitor.isFaceEnabledAndEnrolled()) {
                 flags |= StatusBarManager.DISABLE_RECENT;
+            }
+
+            if (NTForbiddenSwipeDownQSController.get(mContext).getForbiddenSwipeDownQS() && this.mOccluded) {
+                flags |= StatusBarManager.DISABLE_EXPAND;
             }
 
             if (DEBUG) {

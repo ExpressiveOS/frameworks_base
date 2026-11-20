@@ -19,7 +19,6 @@ package com.android.systemui.shared.rotation;
 import static android.content.pm.PackageManager.FEATURE_PC;
 import static android.view.Display.DEFAULT_DISPLAY;
 
-import static com.android.internal.view.RotationPolicy.NATURAL_ROTATION;
 import static com.android.systemui.shared.system.QuickStepContract.isGesturalMode;
 
 import android.animation.Animator;
@@ -36,11 +35,14 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.ContentObserver;
 import android.graphics.drawable.AnimatedVectorDrawable;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.RemoteException;
 import android.os.SystemProperties;
+import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.HapticFeedbackConstants;
@@ -61,6 +63,7 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.logging.UiEvent;
 import com.android.internal.logging.UiEventLogger;
 import com.android.internal.logging.UiEventLoggerImpl;
+import com.android.internal.view.RotationPolicy;
 import com.android.systemui.rotation.RotationPolicyWrapper;
 import com.android.systemui.shared.recents.utilities.Utilities;
 import com.android.systemui.shared.recents.utilities.ViewRippler;
@@ -122,6 +125,7 @@ public class RotationButtonController {
     private boolean mSkipOverrideUserLockPrefsOnce;
     private final int mLightIconColor;
     private final int mDarkIconColor;
+    private boolean mButtonEnabled = true;
 
     @DrawableRes
     private final int mIconCcwStart0ResId;
@@ -233,6 +237,21 @@ public class RotationButtonController {
         mRotationPolicyWrapper = rotationPolicyWrapper;
 
         mBgExecutor = context.getMainExecutor();
+
+        mButtonEnabled = Settings.System.getIntForUser(mContext.getContentResolver(),
+            Settings.System.ENABLE_ROTATION_BUTTON, 1, UserHandle.USER_CURRENT) == 1;
+        mContext.getContentResolver().registerContentObserver(
+            Settings.System.getUriFor(Settings.System.ENABLE_ROTATION_BUTTON), false,
+            new ContentObserver(mUiHandler) {
+                @Override
+                public void onChange(boolean selfChange, Uri uri) {
+                    if (uri.getLastPathSegment().equals(Settings.System.ENABLE_ROTATION_BUTTON)) {
+                        mButtonEnabled = Settings.System.getIntForUser(mContext.getContentResolver(),
+                            Settings.System.ENABLE_ROTATION_BUTTON, 1, UserHandle.USER_CURRENT) == 1;
+                    }
+                }
+            }
+        );
     }
 
     public void setRotationButton(RotationButton rotationButton,
@@ -485,7 +504,7 @@ public class RotationButtonController {
 
         int windowRotation = mWindowRotationProvider.get();
 
-        if (!mRotationButton.acceptRotationProposal()) {
+        if (!mButtonEnabled || !mRotationButton.acceptRotationProposal()) {
             return;
         }
 
@@ -711,7 +730,7 @@ public class RotationButtonController {
         }
         // Only override user prefs when returning to the natural rotation (normally portrait).
         // Don't let apps that force landscape or 180 alter user lock.
-        return rotation == NATURAL_ROTATION;
+        return rotation == RotationPolicy.getNaturalRotation();
     }
 
     private void rescheduleRotationTimeout(final boolean reasonHover) {

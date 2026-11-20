@@ -245,6 +245,12 @@ constructor(
                     sharedR.id.date_smartspace_view_large,
                     ConstraintSet.CHAIN_PACKED,
                 )
+                // Reset the bias a previous clock may have pushed to the start: the constraint
+                // set is cloned from the live views, so a stale left bias (e.g. from the Words
+                // clock) would otherwise stick when switching back to a centred clock. Clocks
+                // that want the row left-aligned re-apply their bias after this in their own
+                // applyConstraints.
+                setHorizontalBias(sharedR.id.date_smartspace_view_large, 0.5f)
             } else {
                 if (dateWeatherBelowSmallClock || !dateWeatherBelowLargeClock) {
                     connect(
@@ -284,30 +290,13 @@ constructor(
 
             if (dateWeatherBelowSmallClock || !dateWeatherBelowLargeClock) {
                 createBarrier(
-                    R.id.smart_space_barrier_bottom,
-                    Barrier.BOTTOM,
-                    0,
-                    *intArrayOf(sharedR.id.bc_smartspace_view, sharedR.id.date_smartspace_view),
-                )
-                createBarrier(
                     R.id.smart_space_barrier_top,
                     Barrier.TOP,
                     0,
                     *intArrayOf(sharedR.id.bc_smartspace_view, sharedR.id.date_smartspace_view),
                 )
             } else {
-                createBarrier(
-                    R.id.smart_space_barrier_bottom,
-                    Barrier.BOTTOM,
-                    0,
-                    sharedR.id.bc_smartspace_view,
-                )
-                createBarrier(
-                    R.id.smart_space_barrier_top,
-                    Barrier.TOP,
-                    0,
-                    sharedR.id.bc_smartspace_view,
-                )
+                createBarrier(R.id.smart_space_barrier_top, Barrier.TOP, 0, sharedR.id.bc_smartspace_view)
             }
         }
         updateVisibility(constraintSet, isLargeClockVisible)

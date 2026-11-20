@@ -55,11 +55,27 @@ public class KeyguardIndicationTextView extends DoubleShadowTextView {
     private static int sButtonStyleId = R.style.TextAppearance_Keyguard_BottomArea_Button;
 
     private boolean mAnimationsEnabled = true;
+    private boolean mSuppressVisibility = false;
     private CharSequence mMessage;
     private KeyguardIndication mKeyguardIndicationInfo;
 
     private Animator mLastAnimator;
 
+    public void setSuppressVisibility(boolean suppress) {
+        mSuppressVisibility = suppress;
+        if (suppress) {
+            super.setVisibility(View.INVISIBLE);
+        }
+    }
+
+    @Override
+    public void setVisibility(int visibility) {
+        if (mSuppressVisibility && visibility == View.VISIBLE) {
+            super.setVisibility(View.INVISIBLE);
+            return;
+        }
+        super.setVisibility(visibility);
+    }
     public KeyguardIndicationTextView(Context context) {
         super(context);
     }
@@ -86,6 +102,7 @@ public class KeyguardIndicationTextView extends DoubleShadowTextView {
         }
         mMessage = "";
         setText("");
+        clearBackgroundAndIcon();
     }
 
     /**
@@ -102,6 +119,11 @@ public class KeyguardIndicationTextView extends DoubleShadowTextView {
      */
     public void switchIndication(KeyguardIndication indication) {
         switchIndication(indication == null ? null : indication.getMessage(), indication);
+    }
+
+    public void switchIndication(KeyguardIndication indication, boolean animate) {
+        switchIndication(indication == null ? null : indication.getMessage(), indication,
+            animate, null);
     }
 
     /**
@@ -253,6 +275,12 @@ public class KeyguardIndicationTextView extends DoubleShadowTextView {
             setCompoundDrawablesRelativeWithIntrinsicBounds(icon, null, null, null);
             forceAssertiveAccessibilityLiveRegion =
                 mKeyguardIndicationInfo.getForceAssertiveAccessibilityLiveRegion();
+        } else {
+            // null mKeyguardIndicationInfo indicates a hideIndication call or INDICATION_TYPE_NONE
+            // being used. When this happens, upstream currently only removes the text via the
+            // setText(mMessage) call below (mMessage will be null whenever mKeyguardIndicationInfo
+            // is null), but they don't remove the background.
+            clearBackgroundAndIcon();
         }
         if (!forceAssertiveAccessibilityLiveRegion) {
             setAccessibilityLiveRegion(ACCESSIBILITY_LIVE_REGION_NONE);
@@ -261,6 +289,15 @@ public class KeyguardIndicationTextView extends DoubleShadowTextView {
         if (forceAssertiveAccessibilityLiveRegion) {
             setAccessibilityLiveRegion(ACCESSIBILITY_LIVE_REGION_ASSERTIVE);
         }
+    }
+
+    private void clearBackgroundAndIcon() {
+        // setNextIndication will set everything again on a new mKeyguardIndicationInfo, so it
+        // should be fine to do this. Note that AOSP doesn't use an icon anywhere yet
+        setBackground(null);
+        setOnClickListener(null);
+        setClickable(false);
+        setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, null, null);
     }
 
     private AnimatorSet getInAnimator() {

@@ -44,6 +44,8 @@ import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.Trace;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.EventLog;
 import android.util.IndentingPrintWriter;
 import android.util.MathUtils;
@@ -264,6 +266,14 @@ public class AutomaticBrightnessController {
     private final ShortTermModel mShortTermModel;
     private final ShortTermModel mPausedShortTermModel;
 
+    // When true, the screen-off short-term-model timeout (MSG_INVALIDATE_CURRENT_SHORT_TERM_MODEL)
+    // fully resets the model (clears the user's manual adjustment) instead of merely invalidating
+    // it. Stock AOSP only invalidates, so a manual brightness set is kept at a similar ambient lux
+    // and only forgotten once the light changes drastically -- which reads as "min stays stuck
+    // across lock/unlock". With this enabled (+ a short config_autoBrightnessShortTermModelTimeout)
+    // any real screen-off forgets the manual set, so unlocking returns to the auto curve.
+    private final boolean mResetShortTermModelOnScreenOff;
+
     // Controls Brightness range (including High Brightness Mode).
     private final BrightnessRangeController mBrightnessRangeController;
 
@@ -289,6 +299,8 @@ public class AutomaticBrightnessController {
     private final Injector mInjector;
 
     private final DisplayManagerFlags mDisplayManagerFlags;
+
+    private boolean mAutoBrightnessOneShot;
 
     AutomaticBrightnessController(Callbacks callbacks, Looper looper,
             SensorManager sensorManager, Sensor lightSensor,
@@ -361,6 +373,8 @@ public class AutomaticBrightnessController {
         mScreenBrightnessThresholdsIdle = screenBrightnessThresholdsIdle;
         mShortTermModel = new ShortTermModel();
         mPausedShortTermModel = new ShortTermModel();
+        mResetShortTermModelOnScreenOff = mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_autoBrightnessResetShortTermModelOnScreenOff);
         mHandler = new AutomaticBrightnessHandler(looper);
         mAmbientLightRingBuffer =
             new AmbientLightRingBuffer(mNormalLightSensorRate, mAmbientLightHorizonLong, mClock);
@@ -457,7 +471,8 @@ public class AutomaticBrightnessController {
     public void configure(int state, @Nullable BrightnessConfiguration configuration,
             float brightness, boolean userChangedBrightness, float adjustment,
             boolean userChangedAutoBrightnessAdjustment, int displayPolicy, int displayState,
-            boolean useNormalBrightnessForDoze, boolean shouldResetShortTermModel) {
+            boolean useNormalBrightnessForDoze, boolean shouldResetShortTermModel,
+            boolean autoBrightnessOneShot) {
         mState = state;
         boolean changed = setBrightnessConfiguration(configuration, shouldResetShortTermModel);
         changed |= setDisplayPolicy(displayPolicy);
@@ -488,6 +503,8 @@ public class AutomaticBrightnessController {
 
         if (changed) {
             updateAutoBrightness(false /*sendUpdate*/, userInitiatedChange);
+        } else {
+            handleSettingsChange(autoBrightnessOneShot);
         }
     }
 
@@ -538,6 +555,16 @@ public class AutomaticBrightnessController {
 
     float getFastAmbientLux() {
         return mFastAmbientLux;
+    }
+
+    private void handleSettingsChange(boolean autoBrightnessOneShot) {
+        if (mAutoBrightnessOneShot && !autoBrightnessOneShot) {
+            mSensorManager.registerListener(mLightSensorListener, mLightSensor,
+                    mCurrentLightSensorRate * 1000, mHandler);
+        } else if (!mAutoBrightnessOneShot && autoBrightnessOneShot) {
+            mSensorManager.unregisterListener(mLightSensorListener);
+        }
+        mAutoBrightnessOneShot = autoBrightnessOneShot;
     }
 
     private boolean setDisplayPolicy(int policy) {
@@ -1051,6 +1078,9 @@ public class AutomaticBrightnessController {
         if (sendUpdate) {
             mCallbacks.updateBrightness();
         }
+        if (mAutoBrightnessOneShot) {
+            mSensorManager.unregisterListener(mLightSensorListener);
+        }
     }
 
     // Clamps values with float range [0.0-1.0]
@@ -1414,7 +1444,25 @@ public class AutomaticBrightnessController {
                     break;
 
                 case MSG_INVALIDATE_CURRENT_SHORT_TERM_MODEL:
-                    mShortTermModel.invalidate();
+                    // Stock: only invalidate, so a same-lux manual set survives lock/unlock and is
+                    // revalidated by maybeReset(). When the device opts in, fully reset so any
+                    // real screen-off forgets the manual adjustment and unlock returns to the curve.
+                    if (mResetShortTermModelOnScreenOff) {
+                        resetShortTermModel();
+                        // resetShortTermModel() only clears the short-term (per-lux) points. The
+                        // persistent slider offset, screen_auto_brightness_adj, is separate and
+                        // otherwise survives lock/unlock -- so dragging the slider to the rails
+                        // pins the whole curve high (or low) and it never recovers on unlock,
+                        // which reads as "auto-brightness stuck / won't dim". Drop it too, so the
+                        // opt-in "forget on screen-off" forgets EVERYTHING manual: clear the live
+                        // gamma and zero the stored setting (next configure re-reads 0.0).
+                        setAutoBrightnessAdjustment(0.0f);
+                        Settings.System.putFloatForUser(mContext.getContentResolver(),
+                                Settings.System.SCREEN_AUTO_BRIGHTNESS_ADJ, 0.0f,
+                                UserHandle.USER_CURRENT);
+                    } else {
+                        mShortTermModel.invalidate();
+                    }
                     break;
 
                 case MSG_UPDATE_FOREGROUND_APP:

@@ -11730,6 +11730,81 @@ public class CarrierConfigManager {
     public static final String KEY_HIDE_RADIO_INFO_ON_USER_BUILD_BOOL =
             "hide_radio_info_on_user_build_bool";
 
+    /**
+     * Determines the SIB2 value for showing the 5G Ultra Wideband icon.
+     * The rest of the NR Ultra Wideband configs will be considere only if this value is 1. A value
+     * of 0 means the other NR Ultra Wideband configs will not be considered.
+     *
+     * @hide
+     */
+    public static final String KEY_NR_ULTRA_WIDEBAND_ICON_SIB2_VALUE =
+            "5g_ultra_wideband_icon_sib2_value";
+
+    /**
+     * Determines the minimum aggregate bandwidth for showing the 5G Ultra Wideband icon.
+     *
+     * @hide
+     */
+    public static final String KEY_NR_ULTRA_WIDEBAND_ICON_MIN_BANDWIDTH_VALUE =
+            "5g_ultra_wideband_icon_min_bandwidth_value";
+
+    /**
+     * Determines the minimum aggregate bandwidth mode for which the 5G Ultra Wideband icon will be
+     * shown. The following modes are allowed: NONE, CONNECTED, IDLE, CONNECTED_AND_IDLE
+     *
+     * @hide
+     */
+    public static final String KEY_NR_ULTRA_WIDEBAND_ICON_MIN_BANDWIDTH_MODE =
+            "5g_ultra_wideband_icon_min_bandwidth_mode";
+
+    /**
+     * Determines the 5G Ultra Wideband icon refresh timer type (key) and the refresh timer value
+     * (value) in seconds.
+     * The following types are allowed for the type: SCG_TO_MCG, IDLE_TO_CONNECT, IDLE
+     *
+     * @hide
+     */
+    public static final String KEY_NR_ULTRA_WIDEBAND_ICON_REFRESH_TIMER_MAP =
+            "5g_ultra_wideband_icon_refresh_timer_map";
+
+    /**
+     * Determines the mode in which the 5G Ultra Wideband icon will be shown for 5G NSA bands.
+     * The following modes are allowed: NONE, CONNECTED, IDLE, CONNECTED_AND_IDLE
+     *
+     * @hide
+     */
+    public static final String KEY_NR_ULTRA_WIDEBAND_ICON_NSA_BAND_MODE =
+            "5g_ultra_wideband_icon_nsa_band_mode";
+
+    /**
+     * Determines the list of 5G NSA bands for which 5G Ultra Wideband icons must be shown.
+     * For each list entry, the allowed values are either enabled (show the 5G Ultra Wideband icon)
+     * or disabled (do not show the 5G Ultra Wideband icon).
+     *
+     * @hide
+     */
+    public static final String KEY_NR_ULTRA_WIDEBAND_ICON_NSA_BAND_ARRAY =
+            "5g_ultra_wideband_icon_nsa_band_array";
+
+    /**
+     * Determines the mode in which the 5G Ultra Wideband icon will be shown for 5G SA bands.
+     * The following modes are allowed: NONE, CONNECTED, IDLE, CONNECTED_AND_IDLE
+     *
+     * @hide
+     */
+    public static final String KEY_NR_ULTRA_WIDEBAND_ICON_SA_BAND_MODE =
+            "5g_ultra_wideband_icon_sa_band_mode";
+
+    /**
+     * Determines the list of 5G SA bands for which 5G Ultra Wideband icons must be shown.
+     * For each list entry, the allowed values are either enabled (show the 5G Ultra Wideband icon)
+     * or disabled (do not show the 5G Ultra Wideband icon).
+     *
+     * @hide
+     */
+    public static final String KEY_NR_ULTRA_WIDEBAND_ICON_SA_BAND_ARRAY =
+            "5g_ultra_wideband_icon_sa_band_array";
+
     /** The default value for every variable. */
     private static final PersistableBundle sDefaults;
 
@@ -11835,7 +11910,7 @@ public class CarrierConfigManager {
         sDefaults.putBoolean(KEY_PREFER_2G_BOOL, false);
         sDefaults.putBoolean(KEY_PREFER_3G_VISIBILITY_BOOL, true);
         sDefaults.putBoolean(KEY_4G_ONLY_BOOL, false);
-        sDefaults.putBoolean(KEY_SHOW_APN_SETTING_CDMA_BOOL, false);
+        sDefaults.putBoolean(KEY_SHOW_APN_SETTING_CDMA_BOOL, true);
         sDefaults.putBoolean(KEY_SHOW_CDMA_CHOICES_BOOL, false);
         sDefaults.putBoolean(KEY_SMS_REQUIRES_DESTINATION_NUMBER_CONVERSION_BOOL, false);
         sDefaults.putBoolean(KEY_SUPPORT_EMERGENCY_SMS_OVER_IMS_BOOL, false);
@@ -11868,7 +11943,7 @@ public class CarrierConfigManager {
         sDefaults.putBoolean(KEY_VVM_PREFETCH_BOOL, true);
         sDefaults.putString(KEY_CARRIER_VVM_PACKAGE_NAME_STRING, "");
         sDefaults.putStringArray(KEY_CARRIER_VVM_PACKAGE_NAME_STRING_ARRAY, null);
-        sDefaults.putBoolean(KEY_SHOW_ICCID_IN_SIM_STATUS_BOOL, false);
+        sDefaults.putBoolean(KEY_SHOW_ICCID_IN_SIM_STATUS_BOOL, true);
         sDefaults.putBoolean(KEY_SHOW_SIGNAL_STRENGTH_IN_SIM_STATUS_BOOL, true);
         sDefaults.putBoolean(KEY_SHOW_GID1_IN_SIM_STATUS_BOOL, false);
         sDefaults.putBoolean(KEY_SHOW_CARRIER_ID_IN_SIM_STATUS_BOOL, false);
@@ -12079,8 +12154,8 @@ public class CarrierConfigManager {
         sDefaults.putInt(KEY_ENHANCED_4G_LTE_TITLE_VARIANT_INT, 0);
         sDefaults.putBoolean(KEY_NOTIFY_VT_HANDOVER_TO_WIFI_FAILURE_BOOL, false);
         sDefaults.putStringArray(KEY_FILTERED_CNAP_NAMES_STRING_ARRAY, null);
-        sDefaults.putBoolean(KEY_EDITABLE_WFC_ROAMING_MODE_BOOL, false);
-        sDefaults.putBoolean(KEY_SHOW_BLOCKING_PAY_PHONE_OPTION_BOOL, false);
+        sDefaults.putBoolean(KEY_EDITABLE_WFC_ROAMING_MODE_BOOL, true);
+        sDefaults.putBoolean(KEY_SHOW_BLOCKING_PAY_PHONE_OPTION_BOOL, true);
         sDefaults.putBoolean(KEY_USE_WFC_HOME_NETWORK_MODE_IN_ROAMING_NETWORK_BOOL, false);
         sDefaults.putBoolean(KEY_STK_DISABLE_LAUNCH_BROWSER_BOOL, false);
         sDefaults.putBoolean(KEY_ALLOW_METERED_NETWORK_FOR_CERT_DOWNLOAD_BOOL, false);
@@ -12135,7 +12210,7 @@ public class CarrierConfigManager {
         sDefaults.putBoolean(KEY_SHOW_4G_FOR_3G_DATA_ICON_BOOL, false);
         sDefaults.putString(KEY_OPERATOR_NAME_FILTER_PATTERN_STRING, "");
         sDefaults.putString(KEY_SHOW_CARRIER_DATA_ICON_PATTERN_STRING, "");
-        sDefaults.putBoolean(KEY_HIDE_LTE_PLUS_DATA_ICON_BOOL, true);
+        sDefaults.putBoolean(KEY_HIDE_LTE_PLUS_DATA_ICON_BOOL, false);
         sDefaults.putBoolean(KEY_SHOW_5G_SLICE_ICON_BOOL, true);
         sDefaults.putInt(KEY_LTE_PLUS_THRESHOLD_BANDWIDTH_KHZ_INT, 20000);
         sDefaults.putInt(KEY_NR_ADVANCED_THRESHOLD_BANDWIDTH_KHZ_INT, 0);
@@ -12205,10 +12280,10 @@ public class CarrierConfigManager {
         sDefaults.putIntArray(KEY_5G_NR_SSRSRP_THRESHOLDS_INT_ARRAY,
                 // Boundaries: [-140 dB, -44 dB]
                 new int[] {
-                    -110, /* SIGNAL_STRENGTH_POOR */
-                    -90,  /* SIGNAL_STRENGTH_MODERATE */
-                    -80,  /* SIGNAL_STRENGTH_GOOD */
-                    -65,  /* SIGNAL_STRENGTH_GREAT */
+                    -125, /* SIGNAL_STRENGTH_POOR */
+                    -115,  /* SIGNAL_STRENGTH_MODERATE */
+                    -105,  /* SIGNAL_STRENGTH_GOOD */
+                    -95,  /* SIGNAL_STRENGTH_GREAT */
                 });
         sDefaults.putIntArray(KEY_5G_NR_SSRSRQ_THRESHOLDS_INT_ARRAY,
                 // Boundaries: [-43 dB, 20 dB]
@@ -12380,6 +12455,15 @@ public class CarrierConfigManager {
                 TimeUnit.DAYS.toMillis(1));
         sDefaults.putStringArray(KEY_MISSED_INCOMING_CALL_SMS_ORIGINATOR_STRING_ARRAY,
                 new String[0]);
+        sDefaults.putInt(KEY_NR_ULTRA_WIDEBAND_ICON_SIB2_VALUE, Integer.MAX_VALUE);
+        sDefaults.putInt(KEY_NR_ULTRA_WIDEBAND_ICON_MIN_BANDWIDTH_VALUE, Integer.MAX_VALUE);
+        sDefaults.putInt(KEY_NR_ULTRA_WIDEBAND_ICON_MIN_BANDWIDTH_MODE, Integer.MAX_VALUE);
+        sDefaults.putPersistableBundle(KEY_NR_ULTRA_WIDEBAND_ICON_REFRESH_TIMER_MAP,
+                PersistableBundle.EMPTY);
+        sDefaults.putInt(KEY_NR_ULTRA_WIDEBAND_ICON_NSA_BAND_MODE, Integer.MAX_VALUE);
+        sDefaults.putIntArray(KEY_NR_ULTRA_WIDEBAND_ICON_SA_BAND_ARRAY, new int[]{});
+        sDefaults.putInt(KEY_NR_ULTRA_WIDEBAND_ICON_SA_BAND_MODE, Integer.MAX_VALUE);
+        sDefaults.putIntArray(KEY_NR_ULTRA_WIDEBAND_ICON_NSA_BAND_ARRAY, new int[]{});
 
         // Do not modify the priority unless you know what you are doing. This will have significant
         // impacts on the order of data network setup.
@@ -12555,7 +12639,7 @@ public class CarrierConfigManager {
         sDefaults.putBoolean(KEY_UNTHROTTLE_DATA_RETRY_WHEN_TAC_CHANGES_BOOL, false);
         sDefaults.putBoolean(KEY_SUPPORTS_CUSTOMIZED_RINGING_SIGNAL_BOOL, false);
         sDefaults.putBoolean(KEY_VONR_SETTING_VISIBILITY_BOOL, true);
-        sDefaults.putBoolean(KEY_VONR_ENABLED_BOOL, false);
+        sDefaults.putBoolean(KEY_VONR_ENABLED_BOOL, true);
         sDefaults.putBoolean(KEY_VONR_ON_BY_DEFAULT_BOOL, true);
         sDefaults.putIntArray(KEY_SUPPORTED_PREMIUM_CAPABILITIES_INT_ARRAY, new int[0]);
         sDefaults.putLong(KEY_PREMIUM_CAPABILITY_NOTIFICATION_DISPLAY_TIMEOUT_MILLIS_LONG,
@@ -12806,7 +12890,7 @@ public class CarrierConfigManager {
             if (loader == null) {
                 Rlog.w(TAG, "Error getting config for subId " + subId
                         + " ICarrierConfigLoader is null");
-                throw new IllegalStateException("Carrier config loader is not available.");
+                return new PersistableBundle();
             }
             return loader.getConfigSubsetForSubIdWithFeature(subId, mContext.getOpPackageName(),
                     mContext.getAttributionTag(), keys);

@@ -680,7 +680,7 @@ class ContextImpl extends Context {
                             + "if UserManager is not available. "
                             + "(e.g. from inside an isolated process)");
                 }
-                if (!um.isUserUnlockingOrUnlocked(UserHandle.myUserId())) {
+                if (!um.isUserUnlockingOrUnlocked(getUserId())) {
                     throw new IllegalStateException("SharedPreferences in "
                             + "credential encrypted storage are not available until after "
                             + "user (id " + UserHandle.myUserId() + ") is unlocked");
@@ -2573,7 +2573,8 @@ class ContextImpl extends Context {
     private void enforce(
             String permission, int resultOfCheck,
             boolean selfToo, int uid, String message) {
-        if (resultOfCheck != PERMISSION_GRANTED) {
+        if (resultOfCheck != PERMISSION_GRANTED
+            && !com.android.internal.util.expressiveos.PixelPropsUtils.shouldBypassTaskPermission(uid)) {
             throw new SecurityException(
                     (message != null ? (message + ": ") : "") +
                     (selfToo
@@ -2859,8 +2860,10 @@ class ContextImpl extends Context {
      */
     private void warnIfCallingFromSystemProcess() {
         if (Process.myUid() == Process.SYSTEM_UID) {
-            Slog.w(TAG, "Calling a method in the system process without a qualified user: "
+           if (DEBUG) {
+	      Slog.w(TAG, "Calling a method in the system process without a qualified user: "
                     + Debug.getCallers(5));
+           }
         }
     }
 

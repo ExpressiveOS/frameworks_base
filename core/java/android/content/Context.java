@@ -4686,6 +4686,7 @@ public abstract class Context {
                 NPU_SERVICE,
                 WEB_APP_SERVICE,
                 D2D_CONNECTIVITY_SERVICE,
+                REFRESH_RATE_MANAGER_SERVICE,
             })
     @Retention(RetentionPolicy.SOURCE)
     public @interface ServiceName {}
@@ -6317,6 +6318,11 @@ public abstract class Context {
     public static final String APP_OPS_SERVICE = "appops";
 
     /**
+     * @hide
+     */
+    public static final String AX_SANDBOX_SERVICE = "ax_sandbox";
+
+    /**
      * Use with {@link #getSystemService(String)} to retrieve a {@link android.app.role.RoleManager}
      * for managing roles.
      *
@@ -6680,6 +6686,11 @@ public abstract class Context {
     public static final String RESOURCES_SERVICE = "resources";
 
     /**
+     * @hide
+     */
+    public static final String THEME_ENGINE_SERVICE = "theme_engine";
+
+    /**
      * Use with {@link #getSystemService(String)} to retrieve a
      * {android.os.IIdmap2} for managing idmap files (used by overlay
      * packages).
@@ -7018,6 +7029,16 @@ public abstract class Context {
     public static final String DISPLAY_HASH_SERVICE = "display_hash";
 
     /**
+     * Use with {@link #getSystemService} to retrieve a
+     * {@link android.os.PocketManager} for accessing and listening to device pocket state.
+     *
+     * @hide
+     * @see #getSystemService
+     * @see android.os.PocketManager
+     */
+    public static final String POCKET_SERVICE = "pocket";
+
+    /**
      * Use with {@link #getSystemService(String)} to retrieve a
      * {@link android.app.LocaleManager}.
      *
@@ -7319,6 +7340,16 @@ public abstract class Context {
      */
     @FlaggedApi(android.media.tv.flags.Flags.FLAG_MEDIA_QUALITY_FW)
     public static final String MEDIA_QUALITY_SERVICE = "media_quality";
+
+    /**
+     * Use with {@link #getSystemService(String)} to retrieve a
+     * {@link org.expressiveos.display.RefreshRateManager} for managing display refresh rate.
+     *
+     * @hide
+     * @see #getSystemService
+     * @see org.expressiveos.display.RefreshRateManager
+     */
+    public static final String REFRESH_RATE_MANAGER_SERVICE = "refresh_rate_ext";
 
     /**
      * Service to perform operations needed for dynamic instrumentation.

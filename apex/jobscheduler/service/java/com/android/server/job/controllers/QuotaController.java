@@ -1787,7 +1787,7 @@ public final class QuotaController extends StateController {
     }
 
     private class UidConstraintUpdater implements Consumer<JobStatus> {
-        private final SparseArrayMap<String, Integer> mToScheduleStartAlarms =
+        private final SparseArrayMap<String, Boolean> mQuotaAlarmNeeded =
                 new SparseArrayMap<>();
         public final ArraySet<JobStatus> changedJobs = new ArraySet<>();
         long mUpdateTimeElapsed = 0;
@@ -1799,6 +1799,14 @@ public final class QuotaController extends StateController {
 
         @Override
         public void accept(JobStatus jobStatus) {
+            final int userId = jobStatus.getSourceUserId();
+            final String packageName = jobStatus.getSourcePackageName();
+            final ArraySet<JobStatus> jobs = mTrackedJobs.get(userId, packageName);
+            // JobStore can contain jobs before the controllers start tracking them.
+            if (jobs == null || !jobs.contains(jobStatus)) {
+                return;
+            }
+
             final boolean isWithinEJQuota;
             if (jobStatus.isRequestedExpeditedJob()) {
                 isWithinEJQuota = isWithinEJQuotaLocked(jobStatus);
@@ -1813,32 +1821,31 @@ public final class QuotaController extends StateController {
                 changedJobs.add(jobStatus);
             }
 
-            final int userId = jobStatus.getSourceUserId();
-            final String packageName = jobStatus.getSourcePackageName();
-            final int realStandbyBucket = jobStatus.getStandbyBucket();
-            if (isWithinEJQuota
-                    && isWithinQuotaLocked(userId, packageName, realStandbyBucket)) {
-                // TODO(141645789): we probably shouldn't cancel the alarm until we've verified
-                // that all jobs for the userId-package are within quota.
-                mInQuotaAlarmQueue.removeAlarmForKey(UserPackage.of(userId, packageName));
-            } else {
-                mToScheduleStartAlarms.add(userId, packageName, realStandbyBucket);
-            }
+            final boolean needsAlarm =
+                    (jobStatus.isRequestedExpeditedJob() && !isWithinEJQuota)
+                    || !isWithinQuotaLocked(userId, packageName, jobStatus.getStandbyBucket());
+            mQuotaAlarmNeeded.add(userId, packageName,
+                    mQuotaAlarmNeeded.getOrDefault(userId, packageName, false) || needsAlarm);
         }
 
         void postProcess() {
-            for (int u = 0; u < mToScheduleStartAlarms.numMaps(); ++u) {
-                final int userId = mToScheduleStartAlarms.keyAt(u);
-                for (int p = 0; p < mToScheduleStartAlarms.numElementsForKey(userId); ++p) {
-                    final String packageName = mToScheduleStartAlarms.keyAt(u, p);
-                    final int standbyBucket = mToScheduleStartAlarms.get(userId, packageName);
-                    maybeScheduleStartAlarmLocked(userId, packageName, standbyBucket);
+            for (int u = 0; u < mQuotaAlarmNeeded.numMaps(); ++u) {
+                final int userId = mQuotaAlarmNeeded.keyAt(u);
+                for (int p = 0; p < mQuotaAlarmNeeded.numElementsForKey(userId); ++p) {
+                    final String packageName = mQuotaAlarmNeeded.keyAt(u, p);
+                    if (mQuotaAlarmNeeded.get(userId, packageName)) {
+                        final ArraySet<JobStatus> jobs = mTrackedJobs.get(userId, packageName);
+                        maybeScheduleStartAlarmLocked(userId, packageName,
+                                jobs.valueAt(0).getStandbyBucket());
+                    } else {
+                        mInQuotaAlarmQueue.removeAlarmForKey(UserPackage.of(userId, packageName));
+                    }
                 }
             }
         }
 
         void reset() {
-            mToScheduleStartAlarms.clear();
+            mQuotaAlarmNeeded.clear();
         }
     }
 
@@ -1917,9 +1924,15 @@ public final class QuotaController extends StateController {
             }
             inRegularQuotaTimeElapsed = inQuotaTimeElapsed;
         }
-        if (remainingEJQuota <= 0) {
+        final int ejStandbyBucket =
+                getEJDebitsLocked(userId, packageName).getStandbyBucketLocked();
+        if (inRegularQuota && ejStandbyBucket == NEVER_INDEX) {
+            mInQuotaAlarmQueue.removeAlarmForKey(UserPackage.of(userId, packageName));
+            return;
+        }
+        if (remainingEJQuota <= 0 && ejStandbyBucket != NEVER_INDEX) {
             final long limitMs =
-                    getEJLimitMsLocked(userId, packageName, standbyBucket) - mQuotaBufferMs;
+                    getEJLimitMsLocked(userId, packageName, ejStandbyBucket) - mQuotaBufferMs;
             long sumMs = 0;
             final Timer ejTimer = mEJPkgTimers.get(userId, packageName);
             if (ejTimer != null && ejTimer.isActive()) {
@@ -1942,9 +1955,6 @@ public final class QuotaController extends StateController {
                     }
                 }
             } else if ((ejTimer == null || !ejTimer.isActive()) && inRegularQuota) {
-                // In some strange cases, an app may end be in the NEVER bucket but could have run
-                // some regular jobs. This results in no EJ timing sessions and QC having a bad
-                // time.
                 Slog.wtf(TAG, packageToString(userId, packageName)
                         + " has 0 EJ quota without running anything");
                 return;

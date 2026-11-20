@@ -18,6 +18,8 @@
 package com.android.systemui.keyguard.ui.view.layout.sections
 
 import android.content.Context
+import android.os.UserHandle
+import android.provider.Settings
 import android.view.View
 import androidx.constraintlayout.widget.Barrier
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -109,6 +111,11 @@ constructor(
     ): ConstraintSet {
         // Add constraint between rootView and clockContainer
         applyDefaultConstraints(constraintSet)
+        // Reset the date/weather row horizontal bias before the clock re-applies its own. The
+        // Words clock left-aligns the row (bias 0); without this, that bias would stick when
+        // switching back to a centred clock, since this section (unlike SmartspaceSection) is
+        // re-applied on every clock change. Clocks that want it left re-set their bias below.
+        constraintSet.setHorizontalBias(sharedR.id.date_smartspace_view_large, 0.5f)
         getNonTargetClockFace(clock).applyConstraints(constraintSet)
         getTargetClockFace(clock).applyConstraints(constraintSet)
 
@@ -118,6 +125,19 @@ constructor(
             setVisibility(getNonTargetClockFace(clock).views, GONE)
             setAlpha(getTargetClockFace(clock).views, 1F)
             setAlpha(getNonTargetClockFace(clock).views, 0F)
+
+            // Hide small clock when custom clock is enabled by setting alpha to 0
+            val isCustomClockEnabled = Settings.Secure.getIntForUser(
+                    context.contentResolver,
+                    Settings.Secure.LOCK_SCREEN_CUSTOM_CLOCK_STYLE,
+                    0,
+                    UserHandle.USER_CURRENT
+            ) != 0
+            
+            if (isCustomClockEnabled) {
+                setAlpha(ClockViewIds.LOCKSCREEN_CLOCK_VIEW_SMALL, 0F)
+                setAlpha(ClockViewIds.LOCKSCREEN_CLOCK_VIEW_LARGE, 0F)
+            }
 
             if (!keyguardClockViewModel.isLargeClockVisible.value) {
                 if (keyguardClockViewModel.shouldDateWeatherBeBelowSmallClock.value) {
@@ -136,19 +156,73 @@ constructor(
                     )
                 }
             } else {
-                if (aodBurnInViewModel.movement.value.scaleClockOnly) {
-                    setScaleX(
-                        getTargetClockFace(clock).views,
-                        aodBurnInViewModel.movement.value.scale,
-                    )
-                    setScaleY(
-                        getTargetClockFace(clock).views,
-                        aodBurnInViewModel.movement.value.scale,
-                    )
-                }
+                // Clocks that only translate in AOD are never scaled; reset explicitly, since the
+                // constraint set is cloned from the views and would carry a stale scale along.
+                val movement = aodBurnInViewModel.movement.value
+                val scale = if (movement.scaleClockOnly) movement.scale else 1F
+                setScaleX(getTargetClockFace(clock).views, scale)
+                setScaleY(getTargetClockFace(clock).views, scale)
+            }
+            createUnifiedBarrierAndNotificationConstraints(this)
+        }
+    }
+
+    private fun createUnifiedBarrierAndNotificationConstraints(constraintSet: ConstraintSet) {
+        constraintSet.apply {
+            val isCustomClockEnabled = Settings.Secure.getIntForUser(
+                context.contentResolver,
+                Settings.Secure.LOCK_SCREEN_CUSTOM_CLOCK_STYLE,
+                0,
+                UserHandle.USER_CURRENT
+            ) != 0
+
+            val potentialBarrierViews = if (isCustomClockEnabled) {
+                listOf(
+                    R.id.clock_ls,
+                    R.id.aod_ls,
+                    R.id.keyguard_slice_view,
+                    R.id.keyguard_weather,
+                    R.id.default_weather_image,
+                    R.id.default_weather_text,
+                    R.id.keyguard_info_widgets,
+                    R.id.keyguard_widgets,
+                )
+            } else {
+                listOf(
+                    ClockViewIds.LOCKSCREEN_CLOCK_VIEW_SMALL,
+                    R.id.lockscreen_clock_view,
+                    sharedR.id.bc_smartspace_view,
+                    sharedR.id.date_smartspace_view,
+                    R.id.aod_ls,
+                    R.id.keyguard_slice_view,
+                    R.id.keyguard_weather,
+                    R.id.default_weather_image,
+                    R.id.default_weather_text,
+                    R.id.keyguard_info_widgets,
+                    R.id.keyguard_widgets,
+                )
+            }
+
+            val barrierViews = potentialBarrierViews
+                .filter { constraintSet.getConstraint(it) != null }
+                .toIntArray()
+
+            if (barrierViews.isNotEmpty()) {
+                createBarrier(R.id.smart_space_barrier_bottom, Barrier.BOTTOM, 0, *barrierViews)
+            }
+
+            if (constraintSet.getConstraint(R.id.left_aligned_notification_icon_container) != null) {
+                connect(
+                    R.id.left_aligned_notification_icon_container,
+                    TOP,
+                    R.id.smart_space_barrier_bottom,
+                    BOTTOM,
+                    context.resources.getDimensionPixelSize(R.dimen.below_clock_padding_start_icons),
+                )
             }
         }
     }
+
 
     private fun getTargetClockFace(clock: ClockController): ClockFaceLayout =
         if (keyguardClockViewModel.isLargeClockVisible.value) clock.largeClock.layout

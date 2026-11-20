@@ -37,7 +37,7 @@ constructor(
     activityManager: ActivityManager,
     private val scrollCaptureClient: ScrollCaptureClient,
     private val scrollCaptureController: ScrollCaptureController,
-    private val longScreenshotHolder: LongScreenshotData,
+    val longScreenshotHolder: LongScreenshotData,
     private val logger: UiEventLogger,
     @param:Main private val mainExecutor: Executor,
 ) {
@@ -101,6 +101,7 @@ constructor(
                                     response.packageName,
                                 )
                             }
+                            longScreenshotHolder.setNeedsMagnification(true)
                             longScreenshotHolder.setLongScreenshot(it)
                             longScreenshotHolder.setTransitionDestinationCallback {
                                 destinationRect: Rect,
@@ -113,6 +114,26 @@ constructor(
                     mainExecutor,
                 )
             }
+    }
+
+    fun executeBatchScrollCapture(
+        longScreenshot: ScrollCaptureController.LongScreenshot,
+        onCaptureComplete: Runnable,
+        transition: ScrollTransitionReady,
+    ) {
+        // Clear the reference to prevent close() on reset
+        lastScrollCaptureResponse = null
+        longScreenshotFuture?.cancel(true)
+        mainExecutor.execute {
+            longScreenshotHolder.setNeedsMagnification(false)
+            longScreenshotHolder.setLongScreenshot(longScreenshot)
+            longScreenshotHolder.setTransitionDestinationCallback {
+                destinationRect: Rect,
+                onTransitionEnd: Runnable ->
+                transition.onTransitionReady(destinationRect, onTransitionEnd, longScreenshot)
+            }
+            onCaptureComplete.run()
+        }
     }
 
     fun close() {

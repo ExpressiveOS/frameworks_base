@@ -18,6 +18,7 @@ package com.android.internal.os;
 import static com.android.internal.os.KernelCpuProcStringReader.asLongs;
 
 import android.annotation.Nullable;
+import android.os.Build;
 import android.os.StrictMode;
 import android.util.IntArray;
 import android.util.Slog;
@@ -27,6 +28,7 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.os.KernelCpuProcStringReader.ProcFileIterator;
 import com.android.internal.os.KernelCpuUidBpfMapReader.BpfMapIterator;
 
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.CharBuffer;
@@ -296,6 +298,11 @@ public abstract class KernelCpuUidTimeReader<T> {
             removeUidsFromKernelModule(startUid, endUid);
         }
 
+         public boolean fileExists(String fileName) {
+             final File file = new File(fileName);
+            return file.exists();
+         }
+    
         /**
          * Removes UIDs in a given range from the kernel module and internal accounting data. Only
          * {@link BatteryStatsImpl} and its child processes should call this, as the change on
@@ -306,6 +313,7 @@ public abstract class KernelCpuUidTimeReader<T> {
          * @param endUid   the last uid to remove
          */
         private void removeUidsFromKernelModule(int startUid, int endUid) {
+            if (!fileExists(REMOVE_UID_PROC_FILE)) return;
             Slog.d(mTag, "Removing uids " + startUid + "-" + endUid);
             final int oldMask = StrictMode.allowThreadDiskWritesMask();
             try (FileWriter writer = new FileWriter(REMOVE_UID_PROC_FILE)) {
@@ -452,7 +460,7 @@ public abstract class KernelCpuUidTimeReader<T> {
                 // Unit is 10ms.
                 mDeltaTimes[i] = mCurTimes[i] - lastTimes[i];
                 if (mDeltaTimes[i] < 0) {
-                    Slog.e(mTag, "Negative delta from freq time for uid: " + uid
+                    if (DEBUG) Slog.e(mTag, "Negative delta from freq time for uid: " + uid
                             + ", delta: " + mDeltaTimes[i]);
                     return;
                 }
@@ -485,7 +493,11 @@ public abstract class KernelCpuUidTimeReader<T> {
                 CharBuffer buf;
                 while ((buf = iter.nextLine()) != null) {
                     if (asLongs(buf, mBuffer) != mBuffer.length) {
-                        Slog.wtf(mTag, "Invalid line: " + buf.toString());
+                        if (Build.IS_ENG) {
+                            Slog.wtf(mTag, "Invalid line: " + buf.toString());
+                        } else {
+                            Slog.w(mTag, "Invalid line: " + buf.toString());
+                        }
                         continue;
                     }
                     processUidDelta(cb);
@@ -628,7 +640,7 @@ public abstract class KernelCpuUidTimeReader<T> {
                         cb.onUidCpuTime(uid, delta);
                     }
                 } else if (delta < 0) {
-                    Slog.e(mTag, "Negative delta from active time for uid: " + uid
+                    if (DEBUG) Slog.e(mTag, "Negative delta from active time for uid: " + uid
                             + ", delta: " + delta);
                 }
             }

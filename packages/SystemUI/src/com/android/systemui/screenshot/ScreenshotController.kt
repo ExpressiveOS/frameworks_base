@@ -17,19 +17,27 @@ package com.android.systemui.screenshot
 
 import android.animation.Animator
 import android.app.ActivityOptions
+import android.app.StatusBarManager
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Insets
 import android.graphics.Rect
+import android.media.AudioManager
 import android.net.Uri
+import android.os.PersistableBundle
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.util.Log
@@ -37,9 +45,11 @@ import android.view.Display
 import android.view.ScrollCaptureResponse
 import android.view.ViewRootImpl.ActivityConfigCallback
 import android.view.WindowManager.TAKE_SCREENSHOT_PROVIDED_IMAGE
+import android.view.WindowManager.TAKE_SCREENSHOT_SELECTED_REGION
 import android.widget.Toast
 import android.window.WindowContext
 import androidx.core.animation.doOnEnd
+import androidx.core.content.FileProvider
 import com.android.internal.logging.UiEventLogger
 import com.android.settingslib.applications.InterestingConfigChanges
 import com.android.systemui.broadcast.BroadcastDispatcher
@@ -48,12 +58,15 @@ import com.android.systemui.clipboardoverlay.ClipboardOverlayController
 import com.android.systemui.dagger.qualifiers.Main
 import com.android.systemui.res.R
 import com.android.systemui.screenshot.ScreenshotShelfViewProxy.ScreenshotViewCallback
+import com.android.systemui.screenshot.scroll.ScrollCaptureController.BitmapScreenshot
 import com.android.systemui.screenshot.scroll.ScrollCaptureController.LongScreenshot
 import com.android.systemui.screenshot.scroll.ScrollCaptureExecutor
 import com.android.systemui.util.Assert
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
+import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
@@ -79,6 +92,8 @@ internal constructor(
     private val screenshotHandler: TimeoutHandler,
     private val broadcastSender: BroadcastSender,
     private val broadcastDispatcher: BroadcastDispatcher,
+    private val packageManager: PackageManager,
+    private val statusBarManager: StatusBarManager,
     private val userManager: UserManager,
     private val assistContentRequester: AssistContentRequester,
     private val messageContainerController: MessageContainerController,
@@ -99,10 +114,11 @@ internal constructor(
     private val currentRequestCallbacks: MutableList<TakeScreenshotService.RequestCallback> =
         mutableListOf()
 
-    private var screenBitmap: Bitmap? = null
     private var screenshotTakenInPortrait = false
     private var screenshotAnimation: Animator? = null
     private var packageName = ""
+    private var packageLabel = ""
+    private var pendingScreenshotData: ScreenshotData? = null
 
     /** Tracks config changes that require re-creating UI */
     private val configChanges =
@@ -115,11 +131,17 @@ internal constructor(
                 ActivityInfo.CONFIG_ASSETS_PATHS
         )
 
+    private val audioManager: AudioManager
+    private val vibrator: Vibrator?
+
     init {
         screenshotHandler.defaultTimeoutMillis = SCREENSHOT_CORNER_DEFAULT_TIMEOUT_MILLIS
 
         window = screenshotWindowFactory.create(display)
         context = window.getContext()
+
+        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator?
 
         viewProxy = viewProxyFactory.getProxy(window, display.displayId)
 
@@ -134,7 +156,10 @@ internal constructor(
         reloadAssets()
 
         actionExecutor = actionExecutorFactory.create(window.window, viewProxy) { finishDismiss() }
-        actionsController = screenshotActionsControllerFactory.getController(actionExecutor)
+        actionsController =
+            screenshotActionsControllerFactory.getController(actionExecutor) { onResult ->
+                saveCurrentScreenshotToStorage(onResult)
+            }
 
         copyBroadcastReceiver =
             object : BroadcastReceiver() {
@@ -162,6 +187,18 @@ internal constructor(
         Assert.isMainThread()
         screenshotHandler.resetTimeout()
 
+        packageLabel = runCatching {
+            val info = packageManager.getApplicationInfo(screenshot.packageNameString, 0)
+            info.loadLabel(packageManager).toString()
+        }.getOrDefault("")
+        scrollCaptureExecutor.longScreenshotHolder.foregroundAppName = packageLabel
+
+        if (screenshot.type == TAKE_SCREENSHOT_SELECTED_REGION) {
+            startPartialScreenshotActivity(Process.myUserHandle())
+            finisher.accept(null)
+            return
+        }
+
         val currentBitmap = screenshot.bitmap
         if (currentBitmap == null) {
             Log.e(TAG, "handleScreenshot: Screenshot bitmap was null")
@@ -170,9 +207,9 @@ internal constructor(
             return
         }
 
-        screenBitmap = currentBitmap
         val oldPackageName = packageName
         packageName = screenshot.packageNameString
+        pendingScreenshotData = screenshot
 
         if (!isUserSetupComplete(Process.myUserHandle())) {
             Log.w(TAG, "User setup not complete, displaying toast only")
@@ -294,8 +331,11 @@ internal constructor(
 
     // Any cleanup needed when the service is being destroyed.
     override fun onDestroy() {
+        screenshotAnimation?.cancel()
+        screenshotAnimation = null
         removeWindow()
         screenshotSoundController.releaseScreenshotSoundAsync()
+        scrollCaptureExecutor.close()
         releaseContext()
         bgExecutor.shutdown()
         screenshotHandler.cancelTimeout()
@@ -305,7 +345,9 @@ internal constructor(
 
     /** Release the constructed window context. */
     private fun releaseContext() {
-        broadcastDispatcher.unregisterReceiver(copyBroadcastReceiver)
+        try {
+            broadcastDispatcher.unregisterReceiver(copyBroadcastReceiver)
+        } catch (t: Throwable) { }
         context.release()
     }
 
@@ -330,8 +372,7 @@ internal constructor(
                 }
 
                 override fun onTouchOutside() {
-                    // TODO(159460485): Remove this when focus is handled properly in the system
-                    window.setFocusable(false)
+                    viewProxy.requestDismissal(ScreenshotEvent.SCREENSHOT_DISMISSED_OTHER)
                 }
             }
 
@@ -391,6 +432,23 @@ internal constructor(
         }
     }
 
+    private fun startPartialScreenshotActivity(owner: UserHandle) {
+        scrollCaptureExecutor.executeBatchScrollCapture(
+            BitmapScreenshot(context, imageCapture.captureDisplay(display.displayId, null)),
+            {
+                val intent = actionIntentCreator.createLongScreenshotIntent(owner, Uri.EMPTY)
+                val options = ActivityOptions.makeBasic()
+                options.setLaunchDisplayId(context.displayId)
+                context.startActivity(intent, options.toBundle())
+
+                statusBarManager.collapsePanels()
+            },
+            { _: Rect, onTransitionEnd: Runnable, _: LongScreenshot ->
+                onTransitionEnd.run()
+            },
+        )
+    }
+
     private fun onScrollButtonClicked(
         owner: UserHandle,
         response: ScrollCaptureResponse,
@@ -446,13 +504,45 @@ internal constructor(
         viewProxy.stopInputListening()
     }
 
+    private fun playScreenshotSound() {
+        var playSound = false
+        var playHaptic = false
+        when (audioManager.ringerMode) {
+            AudioManager.RINGER_MODE_SILENT -> {
+                // do nothing
+            }
+            AudioManager.RINGER_MODE_VIBRATE -> {
+                playHaptic = true
+            }
+            AudioManager.RINGER_MODE_NORMAL -> {
+                // in this case we want to play sound even if not forced on
+                playSound = true
+                playHaptic = true
+            }
+        }
+        if (playSound && Settings.System.getIntForUser(
+                context.contentResolver,
+                Settings.System.SCREENSHOT_SHUTTER_SOUND,
+                1,
+                UserHandle.USER_CURRENT
+            ) == 1
+        ) {
+            screenshotSoundController.playScreenshotSoundAsync()
+        }
+        if (playHaptic) {
+            vibrator?.takeIf { it.hasVibrator() }?.vibrate(
+                VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
+            )
+        }
+    }
+
     /**
      * Save the bitmap but don't show the normal screenshot UI.. just a toast (or notification on
      * failure).
      */
     private fun saveScreenshotAndToast(screenshot: ScreenshotData, finisher: Consumer<Uri?>) {
         // Play the shutter sound to notify that we've taken a screenshot
-        screenshotSoundController.playScreenshotSoundAsync()
+        playScreenshotSound()
 
         saveScreenshotInBackground(screenshot, UUID.randomUUID(), finisher) {
             result: ImageExporter.Result ->
@@ -479,9 +569,12 @@ internal constructor(
 
         screenshotAnimation =
             viewProxy.createScreenshotDropInAnimation(screenRect, showFlash).apply {
-                doOnEnd { onAnimationComplete?.run() }
+                doOnEnd {
+                    onAnimationComplete?.run()
+                    screenshotAnimation = null
+                }
                 // Play the shutter sound to notify that we've taken a screenshot
-                screenshotSoundController.playScreenshotSoundAsync()
+                playScreenshotSound()
                 if (LogConfig.DEBUG_ANIM) {
                     Log.d(TAG, "starting post-screenshot animation")
                 }
@@ -492,6 +585,9 @@ internal constructor(
     /** Reset screenshot view and then call onCompleteRunnable */
     private fun finishDismiss() {
         Log.d(TAG, "finishDismiss")
+        pendingScreenshotData = null
+        screenshotAnimation?.cancel()
+        screenshotAnimation = null
         actionsController.endScreenshotSession()
         scrollCaptureExecutor.close()
         currentRequestCallbacks.forEach { it.onFinish() }
@@ -507,6 +603,96 @@ internal constructor(
         finisher: Consumer<Uri?>,
         onResult: Consumer<ImageExporter.Result>,
     ) {
+        if (isClipboardOnly()) {
+            copyScreenshotToClipboard(screenshot, requestId, finisher, onResult)
+            return
+        }
+        exportToStorage(screenshot, requestId, finisher, onResult)
+    }
+
+    private fun isClipboardOnly(): Boolean {
+        return Settings.System.getIntForUser(
+            context.contentResolver,
+            Settings.System.SCREENSHOT_CLIPBOARD_ONLY,
+            0,
+            UserHandle.USER_CURRENT,
+        ) == 1
+    }
+
+    private fun copyScreenshotToClipboard(
+        screenshot: ScreenshotData,
+        requestId: UUID,
+        finisher: Consumer<Uri?>,
+        onResult: Consumer<ImageExporter.Result>,
+    ) {
+        val bitmap = screenshot.bitmap
+        if (bitmap == null) {
+            Log.e(TAG, "copyScreenshotToClipboard: Screenshot bitmap was null")
+            finisher.accept(null)
+            return
+        }
+        bgExecutor.execute {
+            try {
+                val cacheDir = File(context.cacheDir, SCREENSHOT_CACHE_DIR)
+                cacheDir.mkdirs()
+                cacheDir.listFiles()?.forEach { it.delete() }
+                val file = File(cacheDir, "screenshot_${System.currentTimeMillis()}.png")
+                FileOutputStream(file).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+                val uri = FileProvider.getUriForFile(context, FILE_PROVIDER_AUTHORITY, file)
+                val clipData = ClipData.newUri(context.contentResolver, "Screenshot", uri)
+                clipData.description.extras =
+                    PersistableBundle().apply {
+                        putBoolean(EXTRA_SUPPRESS_CLIPBOARD_OVERLAY, true)
+                    }
+                val clipboardManager =
+                    context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboardManager.setPrimaryClip(clipData)
+                mainExecutor.execute {
+                    onResult.accept(
+                        ImageExporter.Result().apply {
+                            this.uri = uri
+                            this.requestId = requestId
+                            this.fileName = file.name
+                            this.timestamp = System.currentTimeMillis()
+                            this.format = Bitmap.CompressFormat.PNG
+                        }
+                    )
+                    finisher.accept(uri)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to copy screenshot to clipboard", e)
+                mainExecutor.execute { finisher.accept(null) }
+            }
+        }
+    }
+
+    private fun saveCurrentScreenshotToStorage(onResult: Consumer<ScreenshotSavedResult?>) {
+        val screenshot = pendingScreenshotData
+        if (screenshot?.bitmap == null) {
+            Log.e(TAG, "saveCurrentScreenshotToStorage: no pending screenshot bitmap")
+            onResult.accept(null)
+            return
+        }
+        exportToStorage(screenshot, UUID.randomUUID(), Consumer {}) { result ->
+            if (result.uri != null) {
+                Toast.makeText(context, R.string.screenshot_saved_title, Toast.LENGTH_SHORT).show()
+                onResult.accept(
+                    ScreenshotSavedResult(result.uri, screenshot.userHandle, result.timestamp)
+                )
+            } else {
+                onResult.accept(null)
+            }
+        }
+    }
+
+    private fun exportToStorage(
+        screenshot: ScreenshotData,
+        requestId: UUID,
+        finisher: Consumer<Uri?>,
+        onResult: Consumer<ImageExporter.Result>,
+    ) {
         val future =
             imageExporter.export(
                 bgExecutor,
@@ -515,6 +701,7 @@ internal constructor(
                 screenshot.userHandle,
                 display.displayId,
                 screenshot.customSaveUri,
+                packageLabel,
             )
         future.addListener(
             {
@@ -556,9 +743,7 @@ internal constructor(
                     finisher.accept(result.uri)
                 } catch (e: Exception) {
                     Log.d(TAG, "Failed to store screenshot", e)
-                    if (LogConfig.DEBUG_CALLBACK) {
-                        Log.d(TAG, "calling back with uri: null")
-                    }
+                    logScreenshotResultStatus(null, screenshot.userHandle)
                     finisher.accept(null)
                 }
             },
@@ -587,13 +772,6 @@ internal constructor(
         ) == 1
     }
 
-    private val fullScreenRect: Rect
-        get() {
-            val displayMetrics = DisplayMetrics()
-            display.getRealMetrics(displayMetrics)
-            return Rect(0, 0, displayMetrics.widthPixels, displayMetrics.heightPixels)
-        }
-
     /** Injectable factory to create screenshot controller instances for a specific display. */
     @AssistedFactory
     interface Factory : InteractiveScreenshotHandler.Factory {
@@ -611,7 +789,13 @@ internal constructor(
         // From WizardManagerHelper.java
         private const val SETTINGS_SECURE_USER_SETUP_COMPLETE = "user_setup_complete"
 
-        const val SCREENSHOT_CORNER_DEFAULT_TIMEOUT_MILLIS: Int = 6000
+        private const val SCREENSHOT_CACHE_DIR = "screenshot"
+        private const val FILE_PROVIDER_AUTHORITY = "com.android.systemui.fileprovider"
+
+        private const val EXTRA_SUPPRESS_CLIPBOARD_OVERLAY =
+            "com.android.systemui.SUPPRESS_CLIPBOARD_OVERLAY"
+
+        const val SCREENSHOT_CORNER_DEFAULT_TIMEOUT_MILLIS: Int = 3000
 
         /** Does the aspect ratio of the bitmap with insets removed match the bounds. */
         private fun aspectRatiosMatch(

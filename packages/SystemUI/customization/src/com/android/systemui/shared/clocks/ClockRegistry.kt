@@ -60,8 +60,9 @@ private val KNOWN_PLUGINS: Map<String, List<ClockMetadata>> =
             listOf(ClockMetadata("DIGITAL_CLOCK_CALLIGRAPHY")),
         "com.android.systemui.clocks.flex" to listOf(ClockMetadata("DIGITAL_CLOCK_FLEX")),
         "com.android.systemui.clocks.growth" to listOf(ClockMetadata("DIGITAL_CLOCK_GROWTH")),
-        "com.android.systemui.clocks.handwritten" to
-            listOf(ClockMetadata("DIGITAL_CLOCK_HANDWRITTEN")),
+        // The Words clock ships under the stock handwritten package id so that Google's
+        // Wallpaper & style picker, which only allows the stock clock packages, can load it.
+        "com.android.systemui.clocks.handwritten" to listOf(ClockMetadata("DIGITAL_CLOCK_WORDS")),
         "com.android.systemui.clocks.inflate" to listOf(ClockMetadata("DIGITAL_CLOCK_INFLATE")),
         "com.android.systemui.clocks.metro" to listOf(ClockMetadata("DIGITAL_CLOCK_METRO")),
         "com.android.systemui.clocks.numoverlap" to
@@ -195,6 +196,7 @@ open class ClockRegistry(
                 plugin.initialize(clockBuffers)
 
                 var isClockListChanged = false
+                plugin ?: return
                 for (clock in plugin.getClocks()) {
                     val id = clock.clockId
                     val info =
@@ -232,6 +234,7 @@ open class ClockRegistry(
                 plugin: ClockProviderPlugin,
                 manager: PluginLifecycleManager<ClockProviderPlugin>,
             ) {
+                plugin ?: return
                 for (clock in plugin.getClocks()) {
                     val id = clock.clockId
                     val info = availableClocks[id]
@@ -325,6 +328,17 @@ open class ClockRegistry(
     var isRegistered: Boolean = false
         private set
 
+    private fun parseClockSettingsOrNull(raw: String?): ClockSettings? {
+        if (raw.isNullOrBlank()) return null
+        if (raw.equals("null", ignoreCase = true)) return null
+
+        return try {
+            ClockSettings.fromJson(JSONObject(raw))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     @OpenForTesting
     open fun querySettings() {
         assert.isNotMainThread()
@@ -343,7 +357,7 @@ open class ClockRegistry(
                             Settings.Secure.LOCK_SCREEN_CUSTOM_CLOCK_FACE,
                         )
                     }
-                json?.let { ClockSettings.fromJson(JSONObject(it)) }
+                parseClockSettingsOrNull(json)
             } catch (ex: Exception) {
                 logger.e("Failed to parse clock settings", ex)
                 null

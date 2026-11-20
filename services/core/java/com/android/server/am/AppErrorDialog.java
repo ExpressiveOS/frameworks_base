@@ -18,6 +18,8 @@ package com.android.server.am;
 
 import static android.app.ActivityTaskManager.INVALID_TASK_ID;
 
+import android.content.ClipboardManager;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.res.Resources;
 import android.os.Build;
@@ -31,6 +33,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListener {
 
@@ -40,6 +43,7 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
     private final AppErrorResult mResult;
     private final ProcessRecord mProc;
     private final boolean mIsRestartable;
+    private String mPaste;
 
     static int CANT_SHOW = -1;
     static int BACKGROUND_USER = -2;
@@ -57,6 +61,10 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
     // 5-minute timeout, then we automatically dismiss the crash dialog
     static final long DISMISS_TIMEOUT = 1000 * 60 * 5;
 
+    // Crash logs can be huge and a clip of a few hundred KB can fail to cross binder
+    // when it is read back, so only the first 100k chars of the log are copied
+    private static final int MAX_COPY_LENGTH = 100_000;
+
     public AppErrorDialog(Context context, ActivityManagerService service, Data data) {
         super(context);
         Resources res = context.getResources();
@@ -69,6 +77,7 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
         mIsRestartable = (data.taskId != INVALID_TASK_ID || data.isRestartableForService)
                 && Settings.Global.getInt(context.getContentResolver(),
                 Settings.Global.SHOW_RESTART_IN_CRASH_DIALOG, 0) != 0;
+        mPaste = data.paste;
         BidiFormatter bidi = BidiFormatter.getInstance();
 
         CharSequence name;
@@ -121,6 +130,8 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
         final TextView report = findViewById(com.android.internal.R.id.aerr_report);
         report.setOnClickListener(this);
         report.setVisibility(hasReceiver ? View.VISIBLE : View.GONE);
+        final TextView copy = findViewById(com.android.internal.R.id.aerr_copy);
+        copy.setOnClickListener(this);
         final TextView close = findViewById(com.android.internal.R.id.aerr_close);
         close.setOnClickListener(this);
         final TextView appInfo = findViewById(com.android.internal.R.id.aerr_app_info);
@@ -185,6 +196,10 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
             case com.android.internal.R.id.aerr_report:
                 mHandler.obtainMessage(FORCE_QUIT_AND_REPORT).sendToTarget();
                 break;
+            case com.android.internal.R.id.aerr_copy:
+                copyCrashLog();
+                mHandler.obtainMessage(FORCE_QUIT).sendToTarget();
+                break;
             case com.android.internal.R.id.aerr_close:
                 mHandler.obtainMessage(FORCE_QUIT).sendToTarget();
                 break;
@@ -199,11 +214,27 @@ final class AppErrorDialog extends BaseErrorDialog implements View.OnClickListen
         }
     }
 
+    private void copyCrashLog() {
+        if (mPaste == null) {
+            return;
+        }
+        final String log = mPaste.length() > MAX_COPY_LENGTH
+                ? mPaste.substring(0, MAX_COPY_LENGTH) : mPaste;
+
+        // Copy the log text itself to the clipboard, nothing is uploaded
+        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(ClipData.newPlainText("Crash log", log));
+
+        // Show toast
+        Toast.makeText(getContext(), com.android.internal.R.string.url_copy_success, Toast.LENGTH_LONG).show();
+    }
+
     static class Data {
         AppErrorResult result;
         int taskId;
         boolean repeating;
         ProcessRecord proc;
         boolean isRestartableForService;
+        String paste;
     }
 }

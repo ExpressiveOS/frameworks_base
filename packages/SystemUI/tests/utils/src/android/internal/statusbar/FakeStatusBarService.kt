@@ -338,7 +338,7 @@ class FakeStatusBarService : IStatusBarService.Stub() {
 
     override fun shutdown() {}
 
-    override fun reboot(safeMode: Boolean) {}
+    override fun reboot(safeMode: Boolean, reason: String) {}
 
     override fun restart() {}
 
@@ -456,6 +456,8 @@ class FakeStatusBarService : IStatusBarService.Stub() {
     ) {}
 
     override fun endMotionCuesSession() {}
+
+    override fun startAssist(args: Bundle) {}
 
     companion object {
         const val DEFAULT_DISPLAY_ID = Display.DEFAULT_DISPLAY

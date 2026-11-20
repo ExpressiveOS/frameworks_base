@@ -17,7 +17,6 @@
 package com.android.systemui.statusbar;
 
 import static com.android.keyguard.BouncerPanelExpansionCalculator.aboutToShowBouncerProgress;
-import static com.android.systemui.Flags.notificationRowTransparency;
 import static com.android.systemui.Flags.physicalNotificationMovement;
 import static com.android.systemui.util.ColorUtilKt.hexColorString;
 
@@ -173,6 +172,7 @@ public class NotificationShelf extends ActivatableNotificationView {
         if (!mShowNotificationShelf) {
             setVisibility(GONE);
         }
+        updateIfNeeded();
     }
 
     @Override
@@ -298,6 +298,7 @@ public class NotificationShelf extends ActivatableNotificationView {
             }
             viewState.setYTranslation(yTranslation, "NotificationShelf.updateState.visible");
         }
+        updateIfNeeded();
     }
 
     /**
@@ -555,7 +556,7 @@ public class NotificationShelf extends ActivatableNotificationView {
             }
         }
 
-        if (notificationRowTransparency() && needsToResetOverrideTint) {
+        if (mIsBlurSupported && needsToResetOverrideTint) {
             setTintColor(NO_COLOR);
             setOverrideTintColor(NO_COLOR, 0 /* overrideAmount */);
         }
@@ -588,6 +589,7 @@ public class NotificationShelf extends ActivatableNotificationView {
         if (mNotGoneIndex == -1) {
             mNotGoneIndex = notGoneIndex;
         }
+        updateIfNeeded();
     }
 
     public int calcActualWidth(float numViewsInShelf) {
@@ -1161,5 +1163,12 @@ public class NotificationShelf extends ActivatableNotificationView {
             setHasItemsInStableShelf(hasItemsInStableShelf);
             mShelfIcons.setAnimationsEnabled(mAnimationsEnabled);
         }
+    }
+
+    @Override
+    protected boolean usesTransparentBackground() {
+        return super.usesTransparentBackground()
+                && mAmbientState != null
+                && !mAmbientState.isOnKeyguard();
     }
 }

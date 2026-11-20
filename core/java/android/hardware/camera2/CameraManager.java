@@ -36,6 +36,7 @@ import android.annotation.SuppressLint;
 import android.annotation.SystemApi;
 import android.annotation.SystemService;
 import android.annotation.TestApi;
+import android.app.ActivityThread;
 import android.app.compat.CompatChanges;
 import android.companion.virtual.VirtualDeviceManager;
 import android.compat.annotation.ChangeId;
@@ -47,6 +48,7 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.res.CameraCompatibilityInfo;
 import android.content.res.CompatibilityInfo;
+import android.hardware.Camera;
 import android.hardware.CameraExtensionSessionStats;
 import android.hardware.CameraStatus;
 import android.hardware.ICameraService;
@@ -853,7 +855,20 @@ public final class CameraManager {
                 new HashMap<String, CameraCharacteristics>();
         Set<String> physicalCameraIds = chars.getPhysicalCameraIds();
         for (String physicalCameraId : physicalCameraIds) {
-            CameraCharacteristics physicalChars = getCameraCharacteristics(physicalCameraId);
+            CameraCharacteristics physicalChars;
+            try {
+                physicalChars = getCameraCharacteristics(physicalCameraId);
+            } catch (Exception e) {
+                final String fallbackId = SystemProperties.get(
+                        "persist.sys.camera.fallback_id_" + physicalCameraId);
+                if (fallbackId.isEmpty()) {
+                    throw e;
+                }
+                Log.w(TAG, "Could not retrieve camera " + physicalCameraId + " characteristics", e);
+                Log.i(TAG, "Trying fallback camera " + fallbackId);
+                // if this also fails, exception will be thrown
+                physicalChars = getCameraCharacteristics(fallbackId);
+            }
             physicalIdsToChars.put(physicalCameraId, physicalChars);
         }
         return physicalIdsToChars;
@@ -2513,7 +2528,12 @@ public final class CameraManager {
                     Thread.currentThread().getId(), mDeviceStatus.size()));
             try {
                 List<String> cameraIds = new ArrayList<>();
-                for (int i = 0; i < mDeviceStatus.size(); i++) {
+                boolean exposeAuxCamera = Camera.shouldExposeAuxCamera();
+                int size = exposeAuxCamera ? mDeviceStatus.size() : Math.min(mDeviceStatus.size(), 2);
+                if (mDeviceStatus.size() < size) {
+                    size = mDeviceStatus.size();
+                }
+                for (int i = 0; i < size; i++) {
                     int status = mDeviceStatus.valueAt(i);
                     DeviceCameraInfo info = mDeviceStatus.keyAt(i);
                     if (status == ICameraServiceListener.STATUS_NOT_PRESENT
@@ -2563,6 +2583,12 @@ public final class CameraManager {
         }
 
         private static void sortCameraIds(String[] cameraIds) {
+            // Check if the cameraIds array is null to avoid NullPointerException
+            if (cameraIds == null) {
+                Log.e("CameraManagerGlobal", "Camera ID array is null");
+                return;
+            }
+
             // The sort logic must match the logic in
             // libcameraservice/common/CameraProviderManager.cpp::getAPI1CompatibleCameraDeviceIds
             Arrays.sort(cameraIds, new Comparator<String>() {
@@ -2845,6 +2871,14 @@ public final class CameraManager {
                     throw new IllegalArgumentException("cameraId was null");
                 }
 
+                /* Force to expose only two cameras
+                 * if the package name does not falls in this bucket
+                 */
+                boolean exposeAuxCamera = Camera.shouldExposeAuxCamera();
+                if (exposeAuxCamera == false && (Integer.parseInt(cameraId) >= 2)) {
+                    throw new IllegalArgumentException("invalid cameraId");
+                }
+
                 ICameraService cameraService = getCameraService();
                 if (cameraService == null) {
                     throw new CameraAccessException(CameraAccessException.CAMERA_DISCONNECTED,
@@ -3115,6 +3149,11 @@ public final class CameraManager {
         }
 
         private void onStatusChangedLocked(int status, DeviceCameraInfo info) {
+            if (!Camera.shouldExposeAuxCamera() && Integer.parseInt(info.mCameraId) >= 2) {
+                Log.w(TAG, String.format("Ignoring status update of camera %d", info.mDeviceId));
+                return;
+            }
+
             if (DEBUG) {
                 Log.v(TAG,
                         String.format("Camera id %s has status changed to 0x%x for device %d",
@@ -3281,6 +3320,15 @@ public final class CameraManager {
                 Log.v(TAG, String.format(
                         "Camera id %s has torch status changed to 0x%x for device %d",
                         info.mCameraId, status, info.mDeviceId));
+            }
+
+            /* Force to ignore the aux or composite camera torch status update
+             * if the package name does not falls in this bucket
+             */
+            boolean exposeAuxCamera = Camera.shouldExposeAuxCamera();
+            if (exposeAuxCamera == false && Integer.parseInt(info.mCameraId) >= 2) {
+                Log.w(TAG, "ignore the torch status update of camera: " + info.mCameraId);
+                return;
             }
 
             if (!validTorchStatus(status)) {

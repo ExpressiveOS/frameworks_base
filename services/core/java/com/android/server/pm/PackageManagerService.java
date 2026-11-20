@@ -2300,7 +2300,8 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
             if (mIsUpgrade) {
                 PackageManagerServiceUtils.logCriticalInfo(Log.INFO,
                         "Upgrading from " + ver.fingerprint + " (" + ver.buildFingerprint + ") to "
-                                + PackagePartitions.FINGERPRINT + " (" + Build.FINGERPRINT + ")");
+                                + PackagePartitions.FINGERPRINT
+                                + " (" + Build.VERSION.INCREMENTAL + ")");
             }
             mPriorSdkVersion = mIsUpgrade ? ver.sdkVersion : -1;
             mPriorSdkVersionFull = mIsUpgrade ? ver.sdkVersionFull : -1;
@@ -2335,7 +2336,7 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
             }
 
             mCacheDir = PackageManagerServiceUtils.preparePackageParserCache(
-                    mIsEngBuild, mIsUserDebugBuild, mIncrementalVersion);
+                    mIsEngBuild, mIsUserDebugBuild, mIncrementalVersion, mIsUpgrade);
 
             mInitialNonStoppedSystemPackages = mInjector.getSystemConfig()
                     .getInitialNonStoppedSystemPackages();
@@ -2459,7 +2460,7 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
                                         | Installer.FLAG_CLEAR_APP_DATA_KEEP_ART_PROFILES);
                     }
                 }
-                ver.buildFingerprint = Build.FINGERPRINT;
+                ver.buildFingerprint = Build.VERSION.INCREMENTAL;
                 ver.fingerprint = PackagePartitions.FINGERPRINT;
             }
 
@@ -4562,6 +4563,33 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
 
         mUserManager.systemReady();
 
+        // Sweep stale per-user disable overrides for any component declared
+        // locked="true" in <component-override>. The guard in
+        // PackageSetting.disableComponentLPw prevents future re-entry.
+        synchronized (mLock) {
+            final ArrayMap<String, ArraySet<String>> lockedComponents =
+                    SystemConfig.getInstance().getLockedComponents();
+            if (!lockedComponents.isEmpty()) {
+                final int[] userIds = mUserManager.getUserIds();
+                for (int i = 0; i < lockedComponents.size(); i++) {
+                    final PackageSetting ps =
+                            mSettings.getPackageLPr(lockedComponents.keyAt(i));
+                    if (ps == null) {
+                        continue;
+                    }
+                    final ArraySet<String> classes = lockedComponents.valueAt(i);
+                    for (int j = 0; j < classes.size(); j++) {
+                        final String className = classes.valueAt(j);
+                        for (int userId : userIds) {
+                            if (ps.restoreComponentLPw(className, userId)) {
+                                mSettings.writePackageRestrictionsLPr(userId);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Watch for external volumes that come and go over time
         final StorageManager storage = mInjector.getSystemService(StorageManager.class);
         storage.registerListener(mStorageEventHelper);
@@ -4587,7 +4615,7 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
             final int userId = livingUsers.get(i).id;
             final boolean isPermissionUpgradeNeeded = !Objects.equals(
                     mPermissionManager.getDefaultPermissionGrantFingerprint(userId),
-                    Build.FINGERPRINT);
+                    Build.VERSION.INCREMENTAL);
             if (isPermissionUpgradeNeeded) {
                 grantPermissionsUserIds = ArrayUtils.appendInt(
                         grantPermissionsUserIds, userId);
@@ -4596,7 +4624,8 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
         // If we upgraded grant all default permissions before kicking off.
         for (int userId : grantPermissionsUserIds) {
             mLegacyPermissionManager.grantDefaultPermissions(userId);
-            mPermissionManager.setDefaultPermissionGrantFingerprint(Build.FINGERPRINT, userId);
+            mPermissionManager.setDefaultPermissionGrantFingerprint(
+                    Build.VERSION.INCREMENTAL, userId);
         }
         if (grantPermissionsUserIds == EMPTY_INT_ARRAY) {
             // If we did not grant default permissions, we preload from this the
@@ -4763,7 +4792,8 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
         if (!convertedFromPreCreated || !readPermissionStateForUser(userId)) {
             mPermissionManager.onUserCreated(userId);
             mLegacyPermissionManager.grantDefaultPermissions(userId);
-            mPermissionManager.setDefaultPermissionGrantFingerprint(Build.FINGERPRINT, userId);
+            mPermissionManager.setDefaultPermissionGrantFingerprint(
+                    Build.VERSION.INCREMENTAL, userId);
             mDomainVerificationManager.clearUser(userId);
             mInstallerService.onUserAdded(userId);
         }
@@ -4776,7 +4806,7 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
             mPermissionManager.readLegacyPermissionStateTEMP();
             final boolean isPermissionUpgradeNeeded = !Objects.equals(
                     mPermissionManager.getDefaultPermissionGrantFingerprint(userId),
-                    Build.FINGERPRINT);
+                    Build.VERSION.INCREMENTAL);
             return isPermissionUpgradeNeeded;
         }
     }

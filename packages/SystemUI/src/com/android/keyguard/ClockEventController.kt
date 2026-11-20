@@ -76,6 +76,7 @@ import com.android.systemui.statusbar.policy.BatteryController.BatteryStateChang
 import com.android.systemui.statusbar.policy.ConfigurationController
 import com.android.systemui.statusbar.policy.ZenModeController
 import com.android.systemui.statusbar.policy.domain.interactor.ZenModeInteractor
+import com.android.systemui.util.ScrimUtils
 import com.android.systemui.util.annotations.DeprecatedSysuiVisibleForTesting
 import com.android.systemui.util.concurrency.DelayableExecutor
 import dagger.Lazy
@@ -398,7 +399,9 @@ constructor(
             }
 
             override fun onTimeChanged() {
-                refreshTime()
+                if (ScrimUtils.get().isKeyguardShowing()) {
+                    refreshTime()
+                }
             }
 
             private fun refreshTime() {
@@ -497,13 +500,12 @@ constructor(
         keyguardUpdateMonitor.registerCallback(keyguardUpdateMonitorCallback)
         zenModeController.addCallback(zenModeCallback)
         if (SceneContainerFlag.isEnabled) {
-            handleDoze(
-                when (AOD) {
-                    keyguardTransitionInteractor.getCurrentState() -> 1f
-                    keyguardTransitionInteractor.getStartedState() -> 1f
-                    else -> 0f
-                }
-            )
+            val currentState = keyguardTransitionInteractor.getCurrentState()
+            val startedState = keyguardTransitionInteractor.getStartedState()
+            val isDozing =
+                currentState == AOD || startedState == AOD ||
+                    currentState == DOZING || startedState == DOZING
+            handleDoze(if (isDozing) 1f else 0f)
         }
         smallTimeListener?.update(shouldTimeListenerRun)
         largeTimeListener?.update(shouldTimeListenerRun)
@@ -622,12 +624,16 @@ constructor(
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     fun listenForDozeAmountTransition(scope: CoroutineScope): Job {
         return scope.launch {
-            merge(
+            val transitions = buildList {
+                add(
                     keyguardTransitionInteractor.transition(Edge.create(AOD, LOCKSCREEN)).map {
                         it.copy(value = 1f - it.value)
-                    },
-                    keyguardTransitionInteractor.transition(Edge.create(LOCKSCREEN, AOD)),
+                    }
                 )
+                add(keyguardTransitionInteractor.transition(Edge.create(LOCKSCREEN, AOD)))
+                add(keyguardTransitionInteractor.transition(Edge.create(LOCKSCREEN, DOZING)))
+            }
+            merge(*transitions.toTypedArray())
                 .filter { it.transitionState != TransitionState.FINISHED }
                 .collect { handleDoze(it.value) }
         }

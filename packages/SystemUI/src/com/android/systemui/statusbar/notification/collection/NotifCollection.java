@@ -585,6 +585,10 @@ public class NotifCollection implements Dumpable, PipelineDumpable {
 
             mLogger.logNotifUpdated(entry);
             mEventQueue.add(new EntryUpdatedEvent(entry, source));
+            // update ticker only, LyricController will handle it
+            if ((entry.getSbn().getNotification().flags & Notification.FLAG_ONLY_UPDATE_TICKER) != 0) {
+                return;
+            }
         }
     }
 
@@ -966,7 +970,7 @@ public class NotifCollection implements Dumpable, PipelineDumpable {
 
     @Override
     public void dump(PrintWriter pw, @NonNull String[] args) {
-        final List<NotificationEntry> entries = new ArrayList<>(getAllNotifs());
+        final List<NotificationEntry> entries = new ArrayList<>(mReadOnlyNotificationSet);
         entries.sort(Comparator.comparing(NotificationEntry::getKey));
 
         pw.println("\t" + TAG + " unsorted/unfiltered notifications: " + entries.size());

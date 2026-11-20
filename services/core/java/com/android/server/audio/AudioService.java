@@ -75,6 +75,7 @@ import static android.media.audiopolicy.Flags.volumeGroupManagementUpdate;
 import static android.os.Process.FIRST_APPLICATION_UID;
 import static android.os.Process.INVALID_UID;
 import static android.os.Process.SYSTEM_UID;
+import static android.provider.Settings.Secure.VOLUME_HUSH_CYCLE;
 import static android.provider.Settings.Secure.VOLUME_HUSH_MUTE;
 import static android.provider.Settings.Secure.VOLUME_HUSH_OFF;
 import static android.provider.Settings.Secure.VOLUME_HUSH_VIBRATE;
@@ -162,6 +163,7 @@ import android.hardware.hdmi.HdmiTvClient;
 import android.hardware.input.InputManager;
 import android.hardware.usb.UsbManager;
 import android.hidl.manager.V1_0.IServiceManager;
+import android.media.AppVolume;
 import android.media.AudioAttributes;
 import android.media.AudioAttributes.AttributeSystemUsage;
 import android.media.AudioDescriptor;
@@ -423,6 +425,7 @@ public class AudioService extends IAudioService.Stub
 
     final Context mContext;
     private final ContentResolver mContentResolver;
+    private int mShowAppVolume;
     private final AppOpsManager mAppOps;
 
     /** do not use directly, use getMediaSessionManager() which handles lazy initialization */
@@ -1544,7 +1547,8 @@ public class AudioService extends IAudioService.Stub
 
         final PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         var brokerWakeLock =
-                pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "handleAudioDeviceEvent");
+                pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "handleAudioDeviceEvent",
+                        Display.INVALID_DISPLAY);
 
         mDeviceBroker = new AudioDeviceBroker(mContext, this,
                 new AudioDeviceInventory(mAudioSystem,
@@ -1558,7 +1562,8 @@ public class AudioService extends IAudioService.Stub
         mSensorPrivacyManagerInternal =
                 LocalServices.getService(SensorPrivacyManagerInternal.class);
 
-        mAudioEventWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "handleAudioEvent");
+        mAudioEventWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "handleAudioEvent",
+                Display.INVALID_DISPLAY);
 
         mSfxHelper = new SoundEffectsHelper(mContext, playerBase -> ignorePlayerLogs(playerBase));
 
@@ -3575,6 +3580,9 @@ public class AudioService extends IAudioService.Stub
         updateMasterMono(cr);
 
         updateMasterBalance(cr);
+
+        mShowAppVolume = mSettings.getSystemIntForUser(cr,
+                Settings.System.SHOW_APP_VOLUME, 0, UserHandle.USER_CURRENT);
 
         // Each stream will read its own persisted settings
 
@@ -7004,6 +7012,8 @@ public class AudioService extends IAudioService.Stub
         setRingerMode(ringerMode, caller, false /*external*/);
     }
 
+    private static Toast mSilenceToast;
+
     public void silenceRingerModeInternal(String reason) {
         VibrationEffect effect = null;
         int ringerMode = AudioManager.RINGER_MODE_SILENT;
@@ -7028,10 +7038,31 @@ public class AudioService extends IAudioService.Stub
                 ringerMode = AudioManager.RINGER_MODE_VIBRATE;
                 toastText = com.android.internal.R.string.volume_dialog_ringer_guidance_vibrate;
                 break;
+            case VOLUME_HUSH_CYCLE:
+                switch (mRingerMode) {
+                    case AudioManager.RINGER_MODE_NORMAL:
+                        effect = VibrationEffect.get(VibrationEffect.EFFECT_HEAVY_CLICK);
+                        ringerMode = AudioManager.RINGER_MODE_VIBRATE;
+                        toastText = com.android.internal.R.string.volume_dialog_ringer_guidance_vibrate;
+                        break;
+                    case AudioManager.RINGER_MODE_VIBRATE:
+                        effect = VibrationEffect.get(VibrationEffect.EFFECT_DOUBLE_CLICK);
+                        ringerMode = AudioManager.RINGER_MODE_SILENT;
+                        toastText = com.android.internal.R.string.volume_dialog_ringer_guidance_silent;
+                        break;
+                    case AudioManager.RINGER_MODE_SILENT:
+                        effect = VibrationEffect.get(VibrationEffect.EFFECT_HEAVY_CLICK);
+                        ringerMode = AudioManager.RINGER_MODE_NORMAL;
+                        toastText = com.android.internal.R.string.volume_dialog_ringer_guidance_normal;
+                        break;
+                }
+                break;
         }
         maybeVibrate(effect, reason);
         setRingerModeInternal(ringerMode, reason);
-        Toast.makeText(mContext, toastText, Toast.LENGTH_SHORT).show();
+        if (mSilenceToast != null) mSilenceToast.cancel();
+        mSilenceToast = Toast.makeText(mContext, toastText, Toast.LENGTH_SHORT);
+        mSilenceToast.show();
     }
 
     private boolean maybeVibrate(VibrationEffect effect, String reason) {
@@ -12154,6 +12185,8 @@ public class AudioService extends IAudioService.Stub
                     Settings.System.MASTER_MONO), false, this, UserHandle.USER_ALL);
             mContentResolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.MASTER_BALANCE), false, this, UserHandle.USER_ALL);
+            mContentResolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.SHOW_APP_VOLUME), false, this);
 
             mEncodedSurroundMode = mSettings.getGlobalInt(
                     mContentResolver, Settings.Global.ENCODED_SURROUND_OUTPUT,
@@ -12187,6 +12220,7 @@ public class AudioService extends IAudioService.Stub
                 readDockAudioSettings(mContentResolver);
                 updateMasterMono(mContentResolver);
                 updateMasterBalance(mContentResolver);
+                updateShowAppVolume(mContentResolver);
             }
 
             synchronized (mSurroundLock) {
@@ -12196,6 +12230,17 @@ public class AudioService extends IAudioService.Stub
 
             synchronized (mAssistantUidLock) {
                 updateAssistantUIdLocked(/* forceUpdate= */ false);
+            }
+        }
+
+        private void updateShowAppVolume(ContentResolver cr) {
+            int showAppVolume = mSettings.getSystemIntForUser(cr,
+                    Settings.System.SHOW_APP_VOLUME, 0, UserHandle.USER_CURRENT);
+            if (mShowAppVolume != showAppVolume) {
+                mShowAppVolume = showAppVolume;
+                if (mShowAppVolume == 0) {
+                    resetAppVolumes();
+                }
             }
         }
 
@@ -12213,6 +12258,17 @@ public class AudioService extends IAudioService.Stub
                 mSurroundModeChanged = true;
             } else {
                 mSurroundModeChanged = false;
+            }
+        }
+    }
+
+    private void resetAppVolumes() {
+        ArrayList<AppVolume> volumes = new ArrayList<>();
+        int status = AudioSystem.listAppVolumes(volumes);
+        if (status == AudioSystem.SUCCESS) {
+            for (AppVolume vol : volumes) {
+                AudioSystem.setAppVolume(vol.getPackageName(), 1.0f);
+                AudioSystem.setAppMute(vol.getPackageName(), false);
             }
         }
     }
@@ -14194,7 +14250,8 @@ public class AudioService extends IAudioService.Stub
             synchronized (mHdmiClientLock) {
                 if (mHdmiManager == null) return;
                 boolean cecEnabled = isCecEnabled == HdmiControlManager.HDMI_CEC_CONTROL_ENABLED;
-                updateHdmiCecSinkLocked(cecEnabled ? isCecAvailable : false);
+                updateHdmiCecSinkLocked(cecEnabled && isCecAvailable
+                        && mHdmiCecVolumeControlEnabled);
             }
         }
     };
@@ -14207,6 +14264,7 @@ public class AudioService extends IAudioService.Stub
                 if (mHdmiManager == null) return;
                 mHdmiCecVolumeControlEnabled =
                         hdmiCecVolumeControl == HdmiControlManager.VOLUME_CONTROL_ENABLED;
+                updateHdmiCecSinkLocked(mHdmiCecVolumeControlEnabled);
             }
         }
     };

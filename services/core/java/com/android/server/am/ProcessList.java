@@ -186,6 +186,7 @@ import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.PackageStateInternal;
 import com.android.server.privatecompute.PccSandboxManagerInternal;
 import com.android.server.wm.ActivityServiceConnectionsHolder;
+import com.android.server.wm.AxSandboxService;
 import com.android.server.wm.WindowManagerService;
 import com.android.server.wm.WindowProcessController;
 
@@ -810,8 +811,8 @@ public final class ProcessList extends ProcessListInternal
                     break;
                 case LMKD_RECONNECT_MSG:
                     if (!sLmkdConnection.connect()) {
-                        Slog.i(TAG, "Failed to connect to lmkd, retry after " +
-                                LMKD_RECONNECT_DELAY_MS + " ms");
+                        //Slog.i(TAG, "Failed to connect to lmkd, retry after " +
+                                //LMKD_RECONNECT_DELAY_MS + " ms");
                         // retry after LMKD_RECONNECT_DELAY_MS
                         sendMessageDelayed(obtainMessage(
                                 LMKD_RECONNECT_MSG), LMKD_RECONNECT_DELAY_MS);
@@ -1863,6 +1864,7 @@ public final class ProcessList extends ProcessListInternal
                 AppGlobals.getPackageManager().checkPackageStartable(app.info.packageName, userId);
             } catch (RemoteException e) {
                 throw e.rethrowAsRuntimeException();
+            } catch (SecurityException e) {
             }
 
             int uid = app.uid;
@@ -1902,6 +1904,29 @@ public final class ProcessList extends ProcessListInternal
                 }
 
                 gids = computeGidsForProcess(mountExternal, uid, permGids, externalStorageAccess);
+            }
+            if (gids != null) {
+                try {
+                    int[] restrictedGids = AxSandboxService.get()
+                            .getRestrictedGids(app.info.packageName, UserHandle.getUserId(app.uid));
+                    if (restrictedGids != null && restrictedGids.length > 0) {
+                        java.util.ArrayList<Integer> filtered = new java.util.ArrayList<>();
+                        for (int gid : gids) {
+                            boolean restricted = false;
+                            for (int rg : restrictedGids) {
+                                if (gid == rg) { restricted = true; break; }
+                            }
+                            if (!restricted) filtered.add(gid);
+                        }
+                        if (filtered.size() != gids.length) {
+                            gids = new int[filtered.size()];
+                            for (int i = 0; i < filtered.size(); i++) gids[i] = filtered.get(i);
+                        }
+                    }
+                } catch (Exception e) {
+                    Slog.w(TAG_PROCESSES, "Failed to apply GID restrictions for "
+                            + app.info.packageName, e);
+                }
             }
             app.setMountMode(mountExternal);
             checkSlow(startUptime, "startProcess: building args");
@@ -2409,8 +2434,13 @@ public final class ProcessList extends ProcessListInternal
                     getUidTransitionPolicy().disallowAllUidTransitionsFrom(uid);
                 } else {
                     final IsolatedUidRange uidRange =
-                        mAppIsolatedUidRangeAllocator.getIsolatedUidRangeLocked(
+                        mAppIsolatedUidRangeAllocator.getOrCreateIsolatedUidRangeLocked(
                                 app.info.processName, app.getHostingRecord().getDefiningUid());
+                    if (uidRange == null) {
+                        Slog.w(TAG_PROCESSES, "Unable to allocate isolated UID range for app "
+                                + "zygote: " + app.info.processName);
+                        return null;
+                    }
                     // Create the app-zygote and provide it with the UID-range it's allowed
                     // to setresuid/setresgid to.
                     firstUid = UserHandle.getUid(userId, uidRange.mFirstUid);
@@ -2491,8 +2521,15 @@ public final class ProcessList extends ProcessListInternal
 
     private boolean needsStorageDataIsolation(StorageManagerInternal storageManagerInternal,
             ProcessRecord app) {
+        boolean sandboxIsolation = false;
+        try {
+            sandboxIsolation = AxSandboxService.get()
+                    .isSandboxDataIsolationEnabled(app.info.packageName, UserHandle.getUserId(app.uid));
+        } catch (Exception e) {
+            // ignore
+        }
         final int mountMode = app.getMountMode();
-        return mVoldAppDataIsolationEnabled && UserHandle.isApp(app.uid)
+        return (mVoldAppDataIsolationEnabled || sandboxIsolation) && UserHandle.isApp(app.uid)
                 && !storageManagerInternal.isExternalStorageService(app.uid)
                 // Special mounting mode doesn't need to have data isolation as they won't
                 // access /mnt/user anyway.
@@ -2521,11 +2558,19 @@ public final class ProcessList extends ProcessListInternal
             Map<String, Pair<String, Long>> pkgDataInfoMap;
             Map<String, Pair<String, Long>> allowlistedAppDataInfoMap;
             boolean bindMountAppStorageDirs = false;
-            boolean bindMountAppsData = mAppDataIsolationEnabled
+            boolean sandboxDataIsolation = false;
+            try {
+                sandboxDataIsolation = AxSandboxService.get()
+                        .isSandboxDataIsolationEnabled(app.info.packageName, UserHandle.getUserId(app.uid));
+            } catch (Exception e) {
+                // ignore
+            }
+            boolean bindMountAppsData = (mAppDataIsolationEnabled || sandboxDataIsolation)
                     && (UserHandle.isApp(app.uid) || UserHandle.isIsolated(app.uid)
                         || app.isSdkSandbox
                         || (enablePccFrameworkSupport() && Process.isPrivateComputeCoreUid(uid)))
-                    && mPlatformCompat.isChangeEnabled(APP_DATA_DIRECTORY_ISOLATION, app.info);
+                    && (sandboxDataIsolation
+                        || mPlatformCompat.isChangeEnabled(APP_DATA_DIRECTORY_ISOLATION, app.info));
 
             // Get all packages belongs to the same shared uid. sharedPackages is empty array
             // if it doesn't have shared uid.
@@ -2642,6 +2687,10 @@ public final class ProcessList extends ProcessListInternal
                         new String[]{PROC_START_SEQ_IDENT + app.getStartSeq()});
             } else if (hostingRecord.usesAppZygote()) {
                 final AppZygote appZygote = createAppZygoteForProcessIfNeeded(app);
+                if (appZygote == null) {
+                    throw new RuntimeException("Unable to create app zygote for "
+                            + app.processName);
+                }
 
                 if (Flags.useSafesetidUidPolicy2()
                         && UidTransitionPolicy.isEnabled()
@@ -2990,27 +3039,29 @@ public final class ProcessList extends ProcessListInternal
 
         Watchdog.getInstance().processStarted(app.processName, pid);
 
-        checkSlow(app.getStartTime(), "startProcess: building log message");
-        StringBuilder buf = mStringBuilder;
-        buf.setLength(0);
-        buf.append("Start proc ");
-        buf.append(pid);
-        buf.append(':');
-        buf.append(app.processName);
-        buf.append('/');
-        UserHandle.formatUid(buf, app.getStartUid());
-        if (app.getIsolatedEntryPoint() != null) {
-            buf.append(" [");
-            buf.append(app.getIsolatedEntryPoint());
-            buf.append("]");
+        if (DEBUG_PROCESSES) {
+            checkSlow(app.getStartTime(), "startProcess: building log message");
+            StringBuilder buf = mStringBuilder;
+            buf.setLength(0);
+            buf.append("Start proc ");
+            buf.append(pid);
+            buf.append(':');
+            buf.append(app.processName);
+            buf.append('/');
+            UserHandle.formatUid(buf, app.getStartUid());
+            if (app.getIsolatedEntryPoint() != null) {
+                buf.append(" [");
+                buf.append(app.getIsolatedEntryPoint());
+                buf.append("]");
+            }
+            buf.append(" for ");
+            buf.append(app.getHostingRecord().getType());
+            if (app.getHostingRecord().getName() != null) {
+                buf.append(" ");
+                buf.append(app.getHostingRecord().getName());
+            }
+            mService.reportUidInfoMessageLocked(TAG, buf.toString(), app.getStartUid());
         }
-        buf.append(" for ");
-        buf.append(app.getHostingRecord().getType());
-        if (app.getHostingRecord().getName() != null) {
-            buf.append(" ");
-            buf.append(app.getHostingRecord().getName());
-        }
-        mService.reportUidInfoMessageLocked(TAG, buf.toString(), app.getStartUid());
         synchronized (mProcLock) {
             app.setPid(pid);
             app.setUsingWrapper(usingWrapper);
@@ -3456,7 +3507,9 @@ public final class ProcessList extends ProcessListInternal
         if (hostingRecord == null || !hostingRecord.usesAppZygote()) {
             // Allocate an isolated UID from the global range
             return mGlobalIsolatedUids;
-        } else if (Flags.useSafesetidUidPolicy2() && UidTransitionPolicy.isEnabled()) {
+        } else if (Flags.useSafesetidUidPolicy2()
+                && UidTransitionPolicy.isEnabled()
+                && getUidTransitionPolicy() != null) {
             return mGlobalAppIsolatedUids;
         } else {
             return mAppIsolatedUidRangeAllocator.getOrCreateIsolatedUidRangeLocked(

@@ -130,12 +130,11 @@ public class StatusBarIconControllerImpl implements Tunable,
     /**  */
     @Override
     public void addIconGroup(IconManager group) {
-        for (IconManager existingIconManager : mIconGroups) {
-            if (existingIconManager.mGroup == group.mGroup) {
-                Log.e(TAG, "Adding new IconManager for the same ViewGroup. This could cause "
-                        + "unexpected results.");
-            }
-        }
+        // Remove existing icon group if present
+        mIconGroups.stream()
+                .filter(i -> i.mGroup == group.mGroup)
+                .findFirst()
+                .ifPresent(i -> removeIconGroup(i));
 
         group.setController(this);
         group.reloadDimens();
@@ -222,6 +221,17 @@ public class StatusBarIconControllerImpl implements Tunable,
             for (StatusBarIconHolder holder : iconsForSlot) {
                 setIcon(item.getName(), holder);
             }
+        }
+    }
+
+    @Override
+    public void setNetworkTraffic(String slot) {
+        StatusBarIconHolder holder = mStatusBarIconList.getIconHolder(slot, 0);
+        if (holder == null) {
+            holder = StatusBarIconHolder.fromNetworkTraffic();
+            setIcon(slot, holder);
+        } else {
+            handleSet(slot, holder);
         }
     }
 
@@ -506,6 +516,11 @@ public class StatusBarIconControllerImpl implements Tunable,
         List<String> s = new ArrayList<>();
         s.add(DemoMode.COMMAND_STATUS);
         return s;
+    }
+
+    @Override
+    public void onThemeChanged() {
+        refreshIconGroups(mContext.getDisplayId());
     }
 
     private String createExternalSlotName(String slot) {

@@ -19,7 +19,6 @@ package com.android.systemui.statusbar.events
 import android.annotation.IntRange
 import android.content.Context
 import android.location.flags.Flags.locationIndicatorsAnimation
-import android.location.flags.Flags.locationIndicatorsEnabled
 import android.provider.DeviceConfig
 import android.provider.DeviceConfig.NAMESPACE_PRIVACY
 import com.android.internal.annotations.VisibleForTesting
@@ -35,6 +34,7 @@ import com.android.systemui.privacy.PrivacyItem
 import com.android.systemui.privacy.PrivacyItemController
 import com.android.systemui.privacy.PrivacyType
 import com.android.systemui.res.R
+import com.android.systemui.statusbar.pipeline.battery.domain.interactor.BatteryInteractor
 import com.android.systemui.statusbar.policy.BatteryController
 import com.android.systemui.util.time.SystemClock
 import javax.inject.Inject
@@ -53,6 +53,7 @@ class SystemEventCoordinator
 constructor(
     private val systemClock: SystemClock,
     private val batteryController: BatteryController,
+    private val batteryInteractor: BatteryInteractor,
     private val privacyController: PrivacyItemController,
     @DisplayAware private val context: Context,
     @DisplayAware private val scope: CoroutineScope,
@@ -92,7 +93,15 @@ constructor(
     }
 
     fun notifyPluggedIn(@IntRange(from = 0, to = 100) batteryLevel: Int) {
-        scope.launch(mainCoroutineContext) { scheduler.onStatusEvent(BatteryEvent(batteryLevel)) }
+        scope.launch(mainCoroutineContext) {
+            scheduler.onStatusEvent(
+                BatteryEvent(
+                    batteryLevel,
+                    batteryInteractor.batteryIconStyle.value,
+                    batteryInteractor.showPercentNextToIcon.value,
+                )
+            )
+        }
     }
 
     fun notifyPrivacyItemsEmpty() {
@@ -185,9 +194,7 @@ constructor(
                             // For location-only, we show an animation if the flag is enabled. The
                             // 10-minute debounce is handled in filterOutExemptItems.
                             val shouldAnimateLocation =
-                                hasOnlyLocationItems &&
-                                    locationIndicatorsEnabled() &&
-                                    locationIndicatorsAnimation()
+                                hasOnlyLocationItems && privacyController.locationAvailable
 
                             isChipAnimationEnabled() &&
                                 (shouldAnimateCameraMic || shouldAnimateLocation)
@@ -199,7 +206,7 @@ constructor(
                     currentPrivacyItems.forEach {
                         if (
                             it.privacyType == PrivacyType.TYPE_LOCATION &&
-                                locationIndicatorsEnabled()
+                                privacyController.locationAvailable
                         ) {
                             appLastLocationUseTime[it.application.packageName] = now
                         }
@@ -216,7 +223,7 @@ constructor(
             private fun filterOutExemptItems(items: List<PrivacyItem>): List<PrivacyItem> {
                 val now = systemClock.elapsedRealtime()
 
-                val locationFlagEnabled = locationIndicatorsEnabled()
+                val locationFlagEnabled = privacyController.locationAvailable
 
                 // First, filter out camera/mic exemptions
                 val afterCameraMicFilter =

@@ -66,8 +66,10 @@ import com.android.systemui.statusbar.notification.stack.ui.view.NotificationRow
 import com.android.systemui.statusbar.phone.KeyguardBypassController;
 import com.android.systemui.statusbar.policy.SmartReplyConstants;
 import com.android.systemui.statusbar.policy.dagger.RemoteInputViewSubcomponent;
+import com.android.systemui.util.ScrimUtils;
 import com.android.systemui.util.time.SystemClock;
 import com.android.systemui.window.domain.interactor.WindowRootViewBlurInteractor;
+import com.axion.applocker.AxAppLockerHelper;
 
 import com.google.android.msdl.data.model.MSDLToken;
 import com.google.android.msdl.domain.MSDLPlayer;
@@ -128,6 +130,7 @@ public class ExpandableNotificationRowController implements NotifViewController 
     private final NotificationUiEligibilityChecker mNotificationUiEligibilityChecker;
     private final Optional<AutomationNotificationBackgroundProvider>
             mAutomationNotificationBackgroundProvider;
+    private final AxAppLockerHelper mAxAppLockerHelper;
     private final Context mContext;
 
     @VisibleForTesting
@@ -296,7 +299,8 @@ public class ExpandableNotificationRowController implements NotifViewController 
             NotificationActivityStarter notificationActivityStarter,
             NotificationUiEligibilityChecker notificationUiEligibilityChecker,
             Optional<AutomationNotificationBackgroundProvider>
-                    automationNotificationBackgroundProvider) {
+                    automationNotificationBackgroundProvider,
+            AxAppLockerHelper axAppLockerHelper) {
         mView = view;
         mContext = context;
         mListContainer = listContainer;
@@ -337,6 +341,7 @@ public class ExpandableNotificationRowController implements NotifViewController 
         mNotificationActivityStarter = notificationActivityStarter;
         mNotificationUiEligibilityChecker = notificationUiEligibilityChecker;
         mAutomationNotificationBackgroundProvider = automationNotificationBackgroundProvider;
+        mAxAppLockerHelper = axAppLockerHelper;
     }
 
     String loadsGutsAppName(Context context, PipelineEntry pipelineEntry) {
@@ -402,7 +407,8 @@ public class ExpandableNotificationRowController implements NotifViewController 
                 mBundleInteractionLogger,
                 mNotificationActivityStarter,
                 mNotificationUiEligibilityChecker,
-                mAutomationNotificationBackgroundProvider);
+                mAutomationNotificationBackgroundProvider,
+                mAxAppLockerHelper);
         mView.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         if (mAllowLongPress) {
             if (mFeatureFlags.isEnabled(
@@ -446,7 +452,7 @@ public class ExpandableNotificationRowController implements NotifViewController 
                     mView.setOnKeyguard(mStatusBarStateController.getState() == KEYGUARD);
                     mStatusBarStateController.addCallback(mStatusBarStateListener);
                 }
-
+                ScrimUtils.get().addListener(mScrimListener);
             }
 
             @Override
@@ -456,13 +462,18 @@ public class ExpandableNotificationRowController implements NotifViewController 
                     mStatusBarStateController.removeCallback(mStatusBarStateListener);
                 }
                 mSettingsController.removeCallback(BUBBLES_SETTING_URI, mSettingsListener);
+                ScrimUtils.get().removeListener(mScrimListener);
             }
         });
 
-        if (Flags.notificationRowTransparency()) {
-            collectFlow(mView, mWindowRootViewBlurInteractor.isBlurCurrentlySupported(),
-                    mView::setIsBlurSupported);
-        }
+        collectFlow(
+                mView,
+                mWindowRootViewBlurInteractor.isTranslucentSupported(),
+                mView::setIsBlurSupported);
+        collectFlow(
+                mView,
+                mWindowRootViewBlurInteractor.isLockscreenTranslucentSupported(),
+                mView::setIsLockscreenBlurSupported);
     }
 
     private final StatusBarStateController.StateListener mStatusBarStateListener =
@@ -470,6 +481,14 @@ public class ExpandableNotificationRowController implements NotifViewController 
                 @Override
                 public void onStateChanged(int newState) {
                     mView.setOnKeyguard(newState == KEYGUARD);
+                }
+            };
+
+    private final ScrimUtils.ScrimEventListener mScrimListener =
+            new ScrimUtils.ScrimEventListener() {
+                @Override
+                public void onNotificationPosted(StatusBarNotification sbn) {
+                    mView.updateIfNeeded();
                 }
             };
 

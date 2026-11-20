@@ -142,6 +142,7 @@ import android.os.UserHandle;
 import android.permission.PermissionManager;
 import android.permission.flags.Flags;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.AtomicFile;
@@ -219,7 +220,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -2604,46 +2604,28 @@ public class AppOpsService extends IAppOpsService.Stub {
         }
     }
 
-    private static ArrayList<ChangeRec> addChange(ArrayList<ChangeRec> reports,
-            int op, int uid, String packageName, int previousMode) {
-        boolean duplicate = false;
-        if (reports == null) {
-            reports = new ArrayList<>();
-        } else {
-            final int reportCount = reports.size();
-            for (int j = 0; j < reportCount; j++) {
-                ChangeRec report = reports.get(j);
-                if (report.op == op && report.pkg.equals(packageName)) {
-                    duplicate = true;
-                    break;
-                }
-            }
-        }
-        if (!duplicate) {
-            reports.add(new ChangeRec(op, uid, packageName, previousMode));
-        }
-
-        return reports;
-    }
-
-    private static HashMap<OnOpModeChangedListener, ArrayList<ChangeRec>> addCallbacks(
-            HashMap<OnOpModeChangedListener, ArrayList<ChangeRec>> callbacks,
+    private static ArrayMap<OnOpModeChangedListener, ArraySet<ChangeRec>> addCallbacks(
+            ArrayMap<OnOpModeChangedListener, ArraySet<ChangeRec>> callbacks,
             int op, int uid, String packageName, int previousMode,
             ArraySet<OnOpModeChangedListener> cbs) {
         if (cbs == null) {
             return callbacks;
         }
         if (callbacks == null) {
-            callbacks = new HashMap<>();
+            callbacks = new ArrayMap<>();
         }
         final int N = cbs.size();
         for (int i=0; i<N; i++) {
             OnOpModeChangedListener cb = cbs.valueAt(i);
-            ArrayList<ChangeRec> reports = callbacks.get(cb);
-            ArrayList<ChangeRec> changed = addChange(reports, op, uid, packageName, previousMode);
-            if (changed != reports) {
-                callbacks.put(cb, changed);
+            if (uid != UID_ANY && !cb.isWatchingUid(uid)) {
+                continue;
             }
+            ArraySet<ChangeRec> reports = callbacks.get(cb);
+            if (reports == null) {
+                reports = new ArraySet<>();
+                callbacks.put(cb, reports);
+            }
+            reports.add(new ChangeRec(op, uid, packageName, previousMode));
         }
         return callbacks;
     }
@@ -2659,6 +2641,19 @@ public class AppOpsService extends IAppOpsService.Stub {
             uid = _uid;
             pkg = _pkg;
             previous_mode = _previous_mode;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ChangeRec changeRec = (ChangeRec) o;
+            return op == changeRec.op && uid == changeRec.uid && Objects.equals(pkg, changeRec.pkg);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(op, uid, pkg);
         }
     }
 
@@ -2681,7 +2676,7 @@ public class AppOpsService extends IAppOpsService.Stub {
 
         enforceManageAppOpsModes(callingPid, callingUid, reqUid);
 
-        HashMap<OnOpModeChangedListener, ArrayList<ChangeRec>> callbacks = null;
+        ArrayMap<OnOpModeChangedListener, ArraySet<ChangeRec>> callbacks = null;
         ArrayList<ChangeRec> allChanges = new ArrayList<>();
         synchronized (this) {
             boolean changed = false;
@@ -2689,6 +2684,9 @@ public class AppOpsService extends IAppOpsService.Stub {
                 UidState uidState = mUidStates.valueAt(i);
                 // TODO(b/266164193): Ensure this behavior is device-aware after uid op mode for
                 //  runtime permissions is deprecated.
+                if (uidState.getState() >= AppOpsManager.UID_STATE_CACHED) {
+                    continue;
+                }
                 SparseIntArray opModes =
                         getNonDefaultUidModes(
                                 uidState.uid, PERSISTENT_DEVICE_ID_DEFAULT);
@@ -2705,14 +2703,18 @@ public class AppOpsService extends IAppOpsService.Stub {
                                     PERSISTENT_DEVICE_ID_DEFAULT,
                                     code,
                                     newMode);
-                            for (String packageName : getPackagesForUid(uidState.uid)) {
-                                callbacks = addCallbacks(callbacks, code, uidState.uid, packageName,
-                                        previousMode, mOpModeWatchers.get(code));
+                              final String[] packageNamesForUid = getPackagesForUid(uidState.uid);
+                              final ArraySet<String> uniquePackageNames = new ArraySet<>(
+                                     packageNamesForUid.length);
+                             Collections.addAll(uniquePackageNames, packageNamesForUid);
+                             for (int pkgIdx = 0, pkgCount = uniquePackageNames.size();
+                                     pkgIdx < pkgCount; pkgIdx++) {
+                                 final String packageName = uniquePackageNames.valueAt(pkgIdx);
                                 callbacks = addCallbacks(callbacks, code, uidState.uid, packageName,
                                         previousMode, mPackageModeWatchers.get(packageName));
 
-                                allChanges = addChange(allChanges, code, uidState.uid,
-                                        packageName, previousMode);
+                                allChanges.add(new ChangeRec(code, uidState.uid, packageName,
+                                    previousMode));
                             }
                         }
                     }
@@ -2768,8 +2770,8 @@ public class AppOpsService extends IAppOpsService.Stub {
                             callbacks = addCallbacks(callbacks, curOp.op, uid, packageName,
                                     previousMode, mPackageModeWatchers.get(packageName));
 
-                            allChanges = addChange(allChanges, curOp.op, uid, packageName,
-                                    previousMode);
+                                allChanges.add(new ChangeRec(curOp.op, uid, packageName,
+                                    previousMode));
                             curOp.removeAttributionsWithNoTime();
                             if (curOp.mDeviceAttributedOps.isEmpty()) {
                                 pkgOps.removeAt(j);
@@ -2789,12 +2791,12 @@ public class AppOpsService extends IAppOpsService.Stub {
             }
         }
         if (callbacks != null) {
-            for (Map.Entry<OnOpModeChangedListener, ArrayList<ChangeRec>> ent
-                    : callbacks.entrySet()) {
-                OnOpModeChangedListener cb = ent.getKey();
-                ArrayList<ChangeRec> reports = ent.getValue();
-                for (int i=0; i<reports.size(); i++) {
-                    ChangeRec rep = reports.get(i);
+            for (int callbackIdx = 0; callbackIdx < callbacks.size(); callbackIdx++) {
+                OnOpModeChangedListener cb = callbacks.keyAt(callbackIdx);
+                ArraySet<ChangeRec> reports = callbacks.valueAt(callbackIdx);
+                final int reportCount = reports.size();
+                for (int i=0; i<reportCount; i++) {
+                    ChangeRec rep = reports.valueAt(i);
                     Set<String> devices = new ArraySet<>();
                     devices.add(PERSISTENT_DEVICE_ID_DEFAULT);
                     if (mVirtualDeviceManagerInternal != null) {
@@ -3838,14 +3840,14 @@ public class AppOpsService extends IAppOpsService.Stub {
                 callbacks = new RemoteCallbackList.Builder<IAppOpsAsyncNotedCallback>(
                         RemoteCallbackList.FROZEN_CALLEE_POLICY_DROP)
                         .setInterfaceDiedCallback((rcl, cb, cookie) ->
-                            stopWatchingAsyncNoted(packageName, callback)
+                            stopWatchingAsyncNoted(uid, packageName, cb)
                         ).build();
             }
             if (callbacks == null) {
                 callbacks = new RemoteCallbackList<IAppOpsAsyncNotedCallback>() {
                         @Override
                         public void onCallbackDied(IAppOpsAsyncNotedCallback cb) {
-                            stopWatchingAsyncNoted(packageName, callback);
+                            stopWatchingAsyncNoted(uid, packageName, cb);
                         }
                     };
             }
@@ -3860,10 +3862,13 @@ public class AppOpsService extends IAppOpsService.Stub {
         Objects.requireNonNull(callback);
 
         int uid = Binder.getCallingUid();
-        Pair<String, Integer> key = getAsyncNotedOpsKey(packageName, uid);
-
         verifyAndGetBypass(uid, packageName, /* attributionTag= */ null);
+        stopWatchingAsyncNoted(uid, packageName, callback);
+    }
 
+    private void stopWatchingAsyncNoted(int uid, String packageName,
+            IAppOpsAsyncNotedCallback callback) {
+        Pair<String, Integer> key = getAsyncNotedOpsKey(packageName, uid);
         synchronized (this) {
             RemoteCallbackList<IAppOpsAsyncNotedCallback> callbacks = mAsyncOpWatchers.get(key);
             if (callbacks != null) {
@@ -5249,7 +5254,7 @@ public class AppOpsService extends IAppOpsService.Stub {
             @Nullable String attributionTag) {
         if (pkg == null) {
             return false;
-        } else if (attributionTag == null) {
+        } else if (TextUtils.isEmpty(attributionTag)) {
             return true;
         }
         if (pkg.getAttributions() != null) {

@@ -107,10 +107,12 @@ import android.app.ActivityThread;
 import android.app.LoadedApk;
 import android.app.ResourcesManager;
 import android.app.WindowConfiguration;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.graphics.Insets;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
@@ -126,6 +128,7 @@ import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.Trace;
 import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.Slog;
@@ -434,6 +437,8 @@ public class DisplayPolicy {
     private final ForceShowNavBarSettingsObserver mForceShowNavBarSettingsObserver;
     private boolean mForceShowNavigationBarEnabled;
 
+    private volatile boolean mGamingGestureLocked;
+
     private class PolicyHandler extends Handler {
 
         PolicyHandler(Looper looper) {
@@ -511,6 +516,9 @@ public class DisplayPolicy {
 
                 @Override
                 public void onSwipeFromTop() {
+                    if (isGamingGestureLocked()) {
+                        return;
+                    }
                     synchronized (mLock) {
                         requestTransientBars(mTopGestureHost,
                                 getControllableInsets(mTopGestureHost).top > 0);
@@ -519,6 +527,9 @@ public class DisplayPolicy {
 
                 @Override
                 public void onSwipeFromBottom() {
+                    if (isGamingGestureLocked()) {
+                        return;
+                    }
                     synchronized (mLock) {
                         requestTransientBars(mBottomGestureHost,
                                 getControllableInsets(mBottomGestureHost).bottom > 0);
@@ -526,12 +537,18 @@ public class DisplayPolicy {
                 }
 
                 private boolean allowsSideSwipe(Region excludedRegion) {
+                    if (isGamingGestureLocked()) {
+                        return false;
+                    }
                     return mNavigationBarAlwaysShowOnSideGesture
                             && !mSystemGestures.currentGestureStartedInRegion(excludedRegion);
                 }
 
                 @Override
                 public void onSwipeFromRight() {
+                    if (isGamingGestureLocked()) {
+                        return;
+                    }
                     final Region excludedRegion = Region.obtain();
                     synchronized (mLock) {
                         mDisplayContent.calculateSystemGestureExclusion(
@@ -547,6 +564,9 @@ public class DisplayPolicy {
 
                 @Override
                 public void onSwipeFromLeft() {
+                    if (isGamingGestureLocked()) {
+                        return;
+                    }
                     final Region excludedRegion = Region.obtain();
                     synchronized (mLock) {
                         mDisplayContent.calculateSystemGestureExclusion(
@@ -736,6 +756,20 @@ public class DisplayPolicy {
         mForceShowNavBarSettingsObserver.setOnChangeRunnable(this::updateForceShowNavBarSettings);
         mForceShowNavigationBarEnabled = mForceShowNavBarSettingsObserver.isEnabled();
         mHandler.post(mForceShowNavBarSettingsObserver::register);
+
+        ContentResolver resolver = mContext.getContentResolver();
+        mGamingGestureLocked = Settings.Secure.getIntForUser(resolver,
+                "ax_gaming_gesture_lock", 0, UserHandle.USER_CURRENT) == 1;
+        ContentObserver gestureLockObserver = new ContentObserver(mHandler) {
+            @Override
+            public void onChange(boolean selfChange) {
+                mGamingGestureLocked = Settings.Secure.getIntForUser(
+                        mContext.getContentResolver(),
+                        "ax_gaming_gesture_lock", 0, UserHandle.USER_CURRENT) == 1;
+            }
+        };
+        resolver.registerContentObserver(Settings.Secure.getUriFor(
+                "ax_gaming_gesture_lock"), false, gestureLockObserver, UserHandle.USER_ALL);
     }
 
     private void updateForceShowNavBarSettings() {
@@ -800,6 +834,10 @@ public class DisplayPolicy {
 
     public int getDockMode() {
         return mDockMode;
+    }
+
+    public boolean isGamingGestureLocked() {
+        return mGamingGestureLocked;
     }
 
     public boolean hasNavigationBar() {
@@ -1496,6 +1534,17 @@ public class DisplayPolicy {
         // This window might be in the simulated environment.
         // We invoke this to get the proper DisplayFrames.
         displayFrames = win.getDisplayFrames(displayFrames);
+        
+        if (win.mActivityRecord != null) {
+            final int cutoutMode = mService.mAtmService.getCutoutMode(
+                    win.mAttrs.layoutInDisplayCutoutMode,
+                    win.mActivityRecord.packageName,
+                    displayFrames.mWidth,
+                    displayFrames.mHeight);
+            if (cutoutMode != win.mAttrs.layoutInDisplayCutoutMode) {
+                win.mAttrs.layoutInDisplayCutoutMode = cutoutMode;
+            }
+        }
 
         final WindowManager.LayoutParams attrs = win.mAttrs.forRotation(displayFrames.mRotation);
         sTmpClientFrames.attachedFrame = attached != null ? attached.getFrame() : null;
@@ -2447,6 +2496,9 @@ public class DisplayPolicy {
         if (com.android.window.flags.Flags.enableTransientGestureInSystemUi()) {
             return;
         }
+        if (isGamingGestureLocked()) {
+            return;
+        }
         if (swipeTarget == null || !mService.mPolicy.isUserSetupComplete()) {
             // Swipe-up for navigation bar is disabled during setup
             return;
@@ -2465,12 +2517,9 @@ public class DisplayPolicy {
             return;
         }
 
-        if (controlTarget != null) {
-            final WindowState win = controlTarget.getWindow();
-
-            if (win != null && win.isActivityTypeDream()) {
-                return;
-            }
+        final WindowState controlWindow = controlTarget.getWindow();
+        if (controlWindow != null && controlWindow.isActivityTypeDream()) {
+            return;
         }
 
         final @InsetsType int restorePositionTypes = (Type.statusBars() | Type.navigationBars())
@@ -2495,14 +2544,13 @@ public class DisplayPolicy {
             // Restore visibilities and positions of system bars.
             controlTarget.showInsets(Type.statusBars() | Type.navigationBars(),
                     null /* statsToken */);
-            // To further allow the pull-down-from-the-top gesture to pull down the notification
-            // shade as a consistent motion, we reroute the touch events here from the currently
-            // touched window to the status bar after making it visible.
-            if (swipeTarget == mStatusBar) {
-                final boolean transferred = mStatusBar.transferTouch();
-                if (!transferred) {
-                    Slog.i(TAG, "Could not transfer touch to the status bar");
-                }
+            // Only transfer the control window's gesture. The shade may already be handling
+            // a swipe while another window still controls the status bar insets.
+            if (swipeTarget == mStatusBar && controlWindow != null
+                    && controlWindow.mInputChannelToken != null
+                    && mStatusBar.mInputChannelToken != null) {
+                mService.mInputManager.transferTouchGesture(controlWindow.mInputChannelToken,
+                        mStatusBar.mInputChannelToken, false /* transferEntireGesture */);
             }
         }
         mStatusBarManagerInternal.confirmImmersivePrompt();

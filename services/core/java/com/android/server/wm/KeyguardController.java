@@ -61,6 +61,7 @@ import android.util.proto.ProtoOutputStream;
 import android.view.Display;
 
 import com.android.internal.policy.IKeyguardDismissCallback;
+import com.android.server.LocalServices;
 import com.android.server.inputmethod.InputMethodManagerInternal;
 import com.android.server.policy.WindowManagerPolicy;
 import com.android.window.flags.Flags;
@@ -240,6 +241,14 @@ class KeyguardController {
         state.mAodShowing = aodShowing;
         state.writeEventLog("setKeyguardShown");
 
+        if (displayId == DEFAULT_DISPLAY && keyguardChanged) {
+            final GameSpaceService gameSpaceService =
+                    LocalServices.getService(GameSpaceService.class);
+            if (gameSpaceService != null) {
+                gameSpaceService.onKeyguardChanged(keyguardShowing);
+            }
+        }
+
         if (keyguardChanged || (Flags.aodTransition() && aodChanged)) {
             if (keyguardChanged) {
                 // Irrelevant to AOD.
@@ -267,6 +276,10 @@ class KeyguardController {
                 dc.executeAppTransition();
             }
             scheduleGoingAwayTimeout(displayId);
+        }
+
+        if (displayId == DEFAULT_DISPLAY && keyguardChanged) {
+            AxSandboxService.get().setKeyguardDoneLocked(!keyguardShowing);
         }
 
         // Update the sleep token first such that ensureActivitiesVisible has correct sleep token

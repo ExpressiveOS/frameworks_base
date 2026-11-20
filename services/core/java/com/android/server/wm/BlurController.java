@@ -16,7 +16,6 @@
 
 package com.android.server.wm;
 
-import static android.os.PowerManager.THERMAL_STATUS_SEVERE;
 import static android.view.CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED;
 
 import android.content.BroadcastReceiver;
@@ -46,7 +45,6 @@ final class BlurController {
     private final Object mLock = new Object();
     private volatile boolean mBlurEnabled;
     private boolean mInPowerSaveMode;
-    private boolean mDisabledByThermal;
     private boolean mBlurDisabledSetting;
     private boolean mTunnelModeEnabled = false;
 
@@ -91,12 +89,6 @@ final class BlurController {
                 });
         mBlurDisabledSetting = getBlurDisabledSetting();
 
-        powerManager.addThermalStatusListener((status) -> {
-            mDisabledByThermal = status >= THERMAL_STATUS_SEVERE;
-            updateBlurEnabled();
-        });
-        mDisabledByThermal = powerManager.getCurrentThermalStatus() >= THERMAL_STATUS_SEVERE;
-
         TunnelModeEnabledListener.register(mTunnelModeListener);
 
         updateBlurEnabled();
@@ -120,7 +112,7 @@ final class BlurController {
     private void updateBlurEnabled() {
         synchronized (mLock) {
             final boolean newEnabled = CROSS_WINDOW_BLUR_SUPPORTED && !mBlurDisabledSetting
-                    && !mInPowerSaveMode && !mTunnelModeEnabled && !mDisabledByThermal;
+                    && !mInPowerSaveMode && !mTunnelModeEnabled;
             if (mBlurEnabled == newEnabled) {
                 return;
             }

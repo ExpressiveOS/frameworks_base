@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.android.internal.widget.LockPatternUtils
 import com.android.internal.widget.LockPatternView
 import com.android.internal.widget.LockPatternView.Cell
 import com.android.internal.widget.LockPatternView.DisplayMode
@@ -34,12 +35,14 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun CredentialPatternView(
-    onVerify: suspend (List<Cell>) -> ByteArray?,
+    onVerify: suspend (List<Cell>, Byte) -> ByteArray?,
     onSuccess: (ByteArray) -> Unit,
     onPatternCellAdded: () -> Unit,
+    patternSize: Byte,
     stealthMode: Boolean,
     isVisible: Boolean,
     error: String,
+    userId: Int,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -58,6 +61,10 @@ fun CredentialPatternView(
                     .fillMaxWidth(),
             factory = { context ->
                 LockPatternView(context).apply {
+                    val lockPatternUtils = LockPatternUtils(context)
+                    setLockPatternSize(lockPatternUtils.getLockPatternSize(userId))
+                    setVisibleDots(lockPatternUtils.isVisibleDotsEnabled(userId))
+                    setShowErrorPath(lockPatternUtils.isShowErrorPath(userId))
                     setOnPatternListener(
                         object : LockPatternView.OnPatternListener {
                             // TODO: These will likely need to be updated for mouse
@@ -69,13 +76,13 @@ fun CredentialPatternView(
                                 onPatternCellAdded()
                             }
 
-                            override fun onPatternDetected(pattern: List<Cell>) {
+                            override fun onPatternDetected(pattern: List<Cell>, patternSize: Byte) {
                                 if (pattern.isEmpty()) return
 
                                 isEnabled = false
 
                                 scope.launch {
-                                    val attestation = onVerify(pattern)
+                                    val attestation = onVerify(pattern, patternSize)
 
                                     if (attestation != null) {
                                         onSuccess(attestation)
@@ -93,6 +100,7 @@ fun CredentialPatternView(
                 }
             },
             update = { view ->
+                view.lockPatternSize = patternSize
                 view.isInStealthMode = stealthMode
 
                 if (!isVisible) {
@@ -102,3 +110,4 @@ fun CredentialPatternView(
         )
     }
 }
+

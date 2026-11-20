@@ -17,6 +17,7 @@ package com.android.systemui.statusbar.phone
 
 import android.app.StatusBarManager.WINDOW_STATUS_BAR
 import android.content.res.Resources
+import android.provider.Settings
 import android.util.Log
 import android.view.Display.DEFAULT_DISPLAY
 import android.view.GestureDetector
@@ -47,6 +48,7 @@ import com.android.systemui.statusbar.policy.Clock
 import com.android.systemui.statusbar.policy.ConfigurationController
 import com.android.systemui.statusbar.window.StatusBarWindowControllerStore
 import com.android.systemui.statusbar.window.StatusBarWindowStateController
+import com.android.systemui.tuner.TunerService
 import com.android.systemui.unfold.UNFOLD_STATUS_BAR
 import com.android.systemui.unfold.util.ScopedUnfoldTransitionProgressProvider
 import com.android.systemui.user.ui.viewmodel.StatusBarUserChipViewModel
@@ -86,14 +88,21 @@ private constructor(
     private val shadeExpansionTargetDisplayInteractor: ShadeExpansionTargetDisplayInteractor,
     private val lazyShadeDisplaysRepository: Lazy<ShadeDisplaysRepository>,
     private val statusBarWindowControllerStore: StatusBarWindowControllerStore,
-) : ViewController<PhoneStatusBarView>(view) {
+    private val tunerService: TunerService,
+) : ViewController<PhoneStatusBarView>(view), TunerService.Tunable {
 
     private lateinit var clock: Clock
+    private lateinit var clockCenter: Clock
+    private lateinit var clockRight: Clock
     private lateinit var startSideContainer: View
     private lateinit var endSideContainer: View
 
     private val shadeInvocationSplitRatio: Float =
         resources.getFloat(R.dimen.config_invocationGestureSplitRatio)
+
+    private var extraStartDp = 0
+    private var extraTopDp = 0
+    private var extraEndDp = 0
 
     // Creates a [View.OnTouchListener] that only handles mouse click events.
     private fun createMouseClickListener(onClick: () -> Unit): View.OnTouchListener =
@@ -180,6 +189,8 @@ private constructor(
 
     override fun onViewAttached() {
         clock = mView.requireViewById(R.id.clock)
+        clockCenter = mView.requireViewById(R.id.clock_center)
+        clockRight = mView.requireViewById(R.id.clock_right)
 
         addDarkReceivers()
 
@@ -199,6 +210,24 @@ private constructor(
         }
         progressProvider?.setReadyToHandleTransition(true)
         configurationController.addCallback(configurationListener)
+
+        tunerService.addTunable(this, STATUSBAR_EXTRA_PADDING_START)
+        tunerService.addTunable(this, STATUSBAR_EXTRA_PADDING_TOP)
+        tunerService.addTunable(this, STATUSBAR_EXTRA_PADDING_END)
+    }
+
+    override fun onTuningChanged(key: String?, newValue: String?) {
+        when (key) {
+            STATUSBAR_EXTRA_PADDING_START ->
+                extraStartDp = TunerService.parseInteger(newValue, 0)
+            STATUSBAR_EXTRA_PADDING_TOP ->
+                extraTopDp = TunerService.parseInteger(newValue, 0)
+            STATUSBAR_EXTRA_PADDING_END ->
+                extraEndDp = TunerService.parseInteger(newValue, 0)
+            else -> return
+        }
+
+        mView.setExtraStatusBarPaddingDp(extraStartDp, extraTopDp, extraEndDp)
     }
 
     private fun addCursorSupportToIconContainers() {
@@ -253,6 +282,7 @@ private constructor(
 
     @VisibleForTesting
     public override fun onViewDetached() {
+        tunerService.removeTunable(this)
         removeDarkReceivers()
         startSideContainer.setOnHoverListener(null)
         endSideContainer.setOnHoverListener(null)
@@ -315,10 +345,14 @@ private constructor(
 
     private fun addDarkReceivers() {
         darkIconDispatcher.addDarkReceiver(clock)
+        darkIconDispatcher.addDarkReceiver(clockCenter)
+        darkIconDispatcher.addDarkReceiver(clockRight)
     }
 
     private fun removeDarkReceivers() {
         darkIconDispatcher.removeDarkReceiver(clock)
+        darkIconDispatcher.removeDarkReceiver(clockCenter)
+        darkIconDispatcher.removeDarkReceiver(clockRight)
     }
 
     @Deprecated(
@@ -436,6 +470,15 @@ private constructor(
         }
     }
 
+    private companion object {
+        private const val STATUSBAR_EXTRA_PADDING_START =
+            "system:" + Settings.System.STATUSBAR_EXTRA_PADDING_START
+        private const val STATUSBAR_EXTRA_PADDING_TOP =
+            "system:" + Settings.System.STATUSBAR_EXTRA_PADDING_TOP
+        private const val STATUSBAR_EXTRA_PADDING_END =
+            "system:" + Settings.System.STATUSBAR_EXTRA_PADDING_END
+    }
+
     class Factory
     @Inject
     constructor(
@@ -463,6 +506,7 @@ private constructor(
         private val shadeExpansionTargetDisplayInteractor: ShadeExpansionTargetDisplayInteractor,
         private val lazyShadeDisplaysRepository: Lazy<ShadeDisplaysRepository>,
         private val statusBarWindowControllerStore: StatusBarWindowControllerStore,
+        private val tunerService: TunerService,
     ) {
         fun create(view: PhoneStatusBarView): PhoneStatusBarViewController {
             return PhoneStatusBarViewController(
@@ -488,6 +532,7 @@ private constructor(
                 shadeExpansionTargetDisplayInteractor,
                 lazyShadeDisplaysRepository,
                 statusBarWindowControllerStore,
+                tunerService,
             )
         }
     }

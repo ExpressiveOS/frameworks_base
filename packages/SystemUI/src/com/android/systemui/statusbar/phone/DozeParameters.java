@@ -98,7 +98,6 @@ public class DozeParameters implements
     private final SecureSettings mSecureSettings;
     private final Optional<MinModeManager> mMinModeManager;
 
-    private boolean mDozeAlwaysOn;
     private boolean mControlScreenOffAnimation;
     private boolean mIsQuickPickupEnabled;
 
@@ -298,7 +297,8 @@ public class DozeParameters implements
      * @return {@code true} if enabled and available.
      */
     public boolean getAlwaysOn() {
-        return (mDozeAlwaysOn && !mBatteryController.isAodPowerSave()) || isMinModeActive();
+        return mAmbientDisplayConfiguration.alwaysOnEnabled(mUserTracker.getUserId()) && !mBatteryController.isAodPowerSave()
+               || isMinModeActive();
     }
 
     /**
@@ -414,6 +414,10 @@ public class DozeParameters implements
         return 2 * getPulseVisibleDuration();
     }
 
+    public boolean doubleTapNeedsProximityCheck() {
+        return mResources.getBoolean(R.bool.doze_double_tap_proximity_check);
+    }
+
     public boolean doubleTapReportsTouchCoordinates() {
         return mResources.getBoolean(R.bool.doze_double_tap_reports_touch_coordinates);
     }
@@ -436,6 +440,10 @@ public class DozeParameters implements
         return mResources.getBoolean(R.bool.doze_single_tap_uses_prox);
     }
 
+    public boolean longPressNeedsProximityCheck() {
+        return mResources.getBoolean(R.bool.doze_long_press_proximity_check);
+    }
+
     /**
      * Whether the long press sensor uses the proximity sensor.
      */
@@ -454,8 +462,6 @@ public class DozeParameters implements
 
     @Override
     public void onTuningChanged(String key, String newValue) {
-        mDozeAlwaysOn = mAmbientDisplayConfiguration.alwaysOnEnabled(mUserTracker.getUserId());
-
         if (key.equals(Settings.Secure.DOZE_ALWAYS_ON)) {
             updateControlScreenOff();
         }

@@ -66,7 +66,6 @@ import com.android.systemui.statusbar.phone.KeyguardBypassController
 import com.android.systemui.statusbar.policy.ConfigurationController
 import com.android.systemui.statusbar.policy.KeyguardStateController
 import com.android.systemui.statusbar.policy.SplitShadeStateController
-import com.android.systemui.statusbar.quickactions.popups.StatusBarPopupChips
 import com.android.systemui.util.animation.UniqueObjectHostView
 import com.android.systemui.util.kotlin.mapDirect
 import com.android.systemui.util.settings.SecureSettings
@@ -386,7 +385,7 @@ constructor(
     /** Is the Media Control StatusBarPopup showing */
     var isMediaControlPopupShowing: Boolean = false
         set(value) {
-            if (field != value && StatusBarPopupChips.isEnabled) {
+            if (field != value) {
                 field = value
                 updateDesiredLocation(forceNoAnimation = true)
             }
@@ -716,6 +715,12 @@ constructor(
             inSplitShade =
                 splitShadeStateController.shouldUseSplitNotificationShade(context.resources)
         }
+        allowMediaPlayerOnLockScreen =
+            secureSettings.getBoolForUser(
+                Settings.Secure.MEDIA_CONTROLS_LOCK_SCREEN,
+                true,
+                UserHandle.USER_CURRENT
+            )
     }
 
     /**
@@ -1283,7 +1288,7 @@ constructor(
             (onCommunalNotDreaming && qsExpansion == 0.0f) || onCommunalDreamingAndShadeExpanding
         val location =
             when {
-                isMediaControlPopupShowing && StatusBarPopupChips.isEnabled ->
+                isMediaControlPopupShowing ->
                     LOCATION_STATUS_BAR_POPUP
                 dreamOverlayActive && dreamMediaComplicationActive -> LOCATION_DREAM_OVERLAY
                 onCommunal -> LOCATION_COMMUNAL_HUB

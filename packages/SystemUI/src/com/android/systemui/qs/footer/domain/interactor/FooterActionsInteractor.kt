@@ -43,6 +43,7 @@ import com.android.systemui.qs.footer.domain.model.SecurityButtonConfig
 import com.android.systemui.security.data.repository.SecurityRepository
 import com.android.systemui.shade.ShadeDisplayAware
 import com.android.systemui.statusbar.policy.DeviceProvisionedController
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 import com.android.systemui.supervision.data.repository.SupervisionRepository
 import com.android.systemui.user.data.repository.UserSwitcherRepository
 import com.android.systemui.user.domain.interactor.UserSwitcherInteractor
@@ -92,6 +93,9 @@ interface FooterActionsInteractor {
     /** Show the settings. */
     fun showSettings(expandable: Expandable)
 
+    /** Show the custom settings */
+    fun showCustomSettings(expandable: Expandable)
+
     /** Show the user switcher. */
     fun showUserSwitcher(expandable: Expandable)
 }
@@ -104,6 +108,7 @@ constructor(
     private val metricsLogger: MetricsLogger,
     private val uiEventLogger: UiEventLogger,
     private val deviceProvisionedController: DeviceProvisionedController,
+    private val keyguardStateController: KeyguardStateController,
     private val qsSecurityFooterUtils: QSSecurityFooterUtils,
     private val fgsManagerController: FgsManagerController,
     private val userSwitcherInteractor: UserSwitcherInteractor,
@@ -164,7 +169,7 @@ constructor(
     ) {
         uiEventLogger.log(GlobalActionsEvent.GA_OPEN_QS)
         globalActionsDialogLite.showOrHideDialog(
-            /* keyguardShowing= */ false,
+            keyguardStateController.isShowing(),
             /* isDeviceProvisioned= */ true,
             expandable,
             context.displayId,
@@ -186,6 +191,28 @@ constructor(
                 InteractionJankMonitor.CUJ_SHADE_APP_LAUNCH_FROM_SETTINGS_BUTTON
             ),
         )
+    }
+
+    override fun showCustomSettings(expandable: Expandable) {
+        if (!deviceProvisionedController.isCurrentUserSetup) {
+            // If user isn't setup just unlock the device and dump them back at SUW.
+            activityStarter.postQSRunnableDismissingKeyguard {}
+            return
+        }
+
+        metricsLogger.action(MetricsProto.MetricsEvent.ACTION_QS_EXPANDED_SETTINGS_LAUNCH)
+
+        val intent = Intent()
+        intent.setClassName("com.android.settings",
+                "com.android.settings.Settings\$ExpressiveStudioActivity")
+        activityStarter.startActivity(
+            intent,
+            true /* dismissShade */,
+            expandable.activityTransitionController(
+                InteractionJankMonitor.CUJ_SHADE_APP_LAUNCH_FROM_SETTINGS_BUTTON
+            ),
+        )
+        return
     }
 
     override fun showUserSwitcher(expandable: Expandable) {

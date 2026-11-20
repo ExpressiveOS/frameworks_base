@@ -113,6 +113,12 @@ interface ISystemUiProxy {
     /** Sets home rotation enabled. */
     oneway void setHomeRotationEnabled(boolean enabled) = 45;
 
+    /**
+     * Notifies SystemUI of a long press KeyEvent of the specified type
+     * (e.g. KEYCODE_BACK, KEYCODE_HOME).
+     */
+    oneway void onLongPressKeyEvent(int keycode, int displayId) = 46;
+
     /** Notifies when taskbar status updated */
     oneway void notifyTaskbarStatus(boolean visible, boolean stashed) = 47;
 
@@ -201,5 +207,10 @@ interface ISystemUiProxy {
      */
     oneway void onOverviewHidden(int displayId) = 62;
 
-    // Next id = 63
+    /**
+     * Notifies SystemUI of a double tap to sleep event.
+     */
+    oneway void onSleepEvent(in MotionEvent event) = 63;
+
+    // Next id = 64
 }

@@ -23,6 +23,26 @@
     android:outlineProvider="none" >
 
     <LinearLayout
+        android:id="@+id/keyguard_indication_area_top"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/status_bar_height"
+        android:layout_gravity="top|center_horizontal"
+        android:orientation="vertical">
+
+        <com.android.systemui.statusbar.phone.FaceUnlockImageView
+            android:id="@+id/face_unlock_icon"
+            android:layout_height="24dp"
+            android:layout_width="24dp"
+            android:layout_marginTop="@dimen/face_unlock_icon_margin_top"
+            android:layout_gravity="center"
+            android:scaleType="fitCenter"
+            android:tint="@android:color/white"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@id/keyguard_indication_area"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

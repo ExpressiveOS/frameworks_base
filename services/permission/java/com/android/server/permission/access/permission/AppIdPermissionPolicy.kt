@@ -1233,8 +1233,13 @@ class AppIdPermissionPolicy : SchemePolicy() {
                     sourcePermissions?.anyIndexed { _, sourcePermissionName ->
                         val sourcePermission =
                             newState.systemState.permissions[sourcePermissionName]
-                        checkNotNull(sourcePermission) {
-                            "Unknown source permission $sourcePermissionName in split permissions"
+                        if (sourcePermission == null) {
+                            if (sourcePermissionName.contains(".permission.ACTIVITY_RECOGNITION")) {
+                                return@anyIndexed false
+                            }
+                            checkNotNull(sourcePermission) {
+                                "Unknown source permission $sourcePermissionName in split permissions"
+                            }
                         }
                         !sourcePermission.isRuntime
                     } ?: false
@@ -1373,8 +1378,13 @@ class AppIdPermissionPolicy : SchemePolicy() {
             var newFlags = getPermissionFlags(appId, userId, implicitPermissionName)
             sourcePermissions.forEachIndexed sourcePermissions@{ _, sourcePermissionName ->
                 val sourcePermission = newState.systemState.permissions[sourcePermissionName]
-                checkNotNull(sourcePermission) {
-                    "Unknown source permission $sourcePermissionName in split permissions"
+                if (sourcePermission == null) {
+                    if (sourcePermissionName.contains(".permission.ACTIVITY_RECOGNITION")) {
+                        return@sourcePermissions
+                    }
+                    checkNotNull(sourcePermission) {
+                        "Unknown source permission $sourcePermissionName in split permissions"
+                    }
                 }
                 val sourceFlags = getPermissionFlags(appId, userId, sourcePermissionName)
                 val isSourceGranted = PermissionFlags.isPermissionGranted(sourceFlags)
@@ -1920,10 +1930,13 @@ class AppIdPermissionPolicy : SchemePolicy() {
 
     override fun MutateStateScope.onSystemReady() {
         if (!privilegedPermissionAllowlistViolations.isEmpty()) {
-            throw IllegalStateException(
-                "Signature|privileged permissions not in privileged" +
+            val msg = "Signature|privileged permissions not in privileged" +
                     " permission allowlist: $privilegedPermissionAllowlistViolations"
-            )
+            if (Build.isDebuggable()) {
+                Slog.e(LOG_TAG, msg)
+            } else {
+                throw IllegalStateException(msg)
+            }
         }
     }
 

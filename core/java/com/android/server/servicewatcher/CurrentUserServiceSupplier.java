@@ -22,6 +22,9 @@ import static android.content.pm.PackageManager.MATCH_DIRECT_BOOT_AWARE;
 import static android.content.pm.PackageManager.MATCH_DIRECT_BOOT_UNAWARE;
 import static android.content.pm.PackageManager.MATCH_SYSTEM_ONLY;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
+import static android.location.provider.GeocodeProviderBase.ACTION_GEOCODE_PROVIDER;
+import static android.location.provider.LocationProviderBase.ACTION_FUSED_PROVIDER;
+import static android.location.provider.LocationProviderBase.ACTION_NETWORK_PROVIDER;
 import static android.os.UserHandle.USER_SYSTEM;
 
 import android.annotation.BoolRes;
@@ -43,6 +46,7 @@ import android.os.UserHandle;
 import android.util.Log;
 import android.util.TypedValue;
 
+import com.android.internal.content.MicrogUtils;
 import com.android.internal.util.Preconditions;
 import com.android.server.FgThread;
 import com.android.server.LocalServices;
@@ -252,6 +256,34 @@ public final class CurrentUserServiceSupplier extends BroadcastReceiver implemen
         mMatchSystemAppsOnly = matchSystemAppsOnly;
     }
 
+    private List<ResolveInfo> queryIntentServicesAsUser(Intent intent, int flags, int userId) {
+        boolean isLocationAction = ACTION_FUSED_PROVIDER.equals(intent.getAction())
+                || ACTION_GEOCODE_PROVIDER.equals(intent.getAction())
+                || ACTION_NETWORK_PROVIDER.equals(intent.getAction());
+        boolean systemOnly = (flags & MATCH_SYSTEM_ONLY) != 0;
+
+        if (isLocationAction) {
+            flags &= ~MATCH_SYSTEM_ONLY;
+        }
+
+        List<ResolveInfo> resolveInfos = mContext.getPackageManager()
+                .queryIntentServicesAsUser(intent,
+                        flags,
+                        userId);
+
+        if (isLocationAction) {
+            resolveInfos.removeIf(resolveInfo -> {
+                ServiceInfo serviceInfo = resolveInfo.serviceInfo;
+                if (!systemOnly || serviceInfo.applicationInfo.isSystemApp()) {
+                    return false;
+                }
+                return !MicrogUtils.isMicrogServices(mContext, serviceInfo.packageName, userId);
+            });
+        }
+
+        return resolveInfos;
+    }
+
     @Override
     public boolean hasMatchingService() {
         if (Flags.fixServiceWatcher() && NO_MATCH_PACKAGE.equals(mIntent.getPackage())) {
@@ -262,8 +294,8 @@ public final class CurrentUserServiceSupplier extends BroadcastReceiver implemen
         if (mMatchSystemAppsOnly) {
             intentQueryFlags |= MATCH_SYSTEM_ONLY;
         }
-        List<ResolveInfo> resolveInfos = mContext.getPackageManager()
-                .queryIntentServicesAsUser(mIntent,
+        List<ResolveInfo> resolveInfos =
+                queryIntentServicesAsUser(mIntent,
                         intentQueryFlags,
                         UserHandle.USER_SYSTEM);
         return !resolveInfos.isEmpty();
@@ -305,7 +337,7 @@ public final class CurrentUserServiceSupplier extends BroadcastReceiver implemen
             intentQueryFlags |= MATCH_SYSTEM_ONLY;
         }
         int currentUserId = mActivityManager.getCurrentUserId();
-        List<ResolveInfo> resolveInfos = mContext.getPackageManager().queryIntentServicesAsUser(
+        List<ResolveInfo> resolveInfos = queryIntentServicesAsUser(
                 mIntent,
                 intentQueryFlags,
                 currentUserId);

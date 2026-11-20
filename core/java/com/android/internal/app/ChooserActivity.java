@@ -1432,15 +1432,18 @@ public class ChooserActivity extends ResolverActivity implements
 
         final ViewGroup actionRow =
                 (ViewGroup) contentPreviewLayout.findViewById(R.id.chooser_action_row);
+        String action = targetIntent.getAction();
+
         //TODO: addActionButton(actionRow, createCopyButton());
         if (shouldNearbyShareBeIncludedAsActionButton()) {
             addActionButton(actionRow, createNearbyButton(targetIntent));
         }
-        addActionButton(actionRow, createEditButton(targetIntent));
+        if (!Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+            addActionButton(actionRow, createEditButton(targetIntent));
+        }
 
         mPreviewCoord = new ContentPreviewCoordinator(contentPreviewLayout, false);
 
-        String action = targetIntent.getAction();
         if (Intent.ACTION_SEND.equals(action)) {
             Uri uri = targetIntent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri.class);
             if (!validForContentPreview(uri)) {
@@ -2815,7 +2818,7 @@ public class ChooserActivity extends ResolverActivity implements
 
     @Override // ChooserListCommunicator
     public int getMaxRankedTargets() {
-        return mMaxTargetsPerRow;
+        return mMaxTargetsPerRow * 2;
     }
 
     @Override

@@ -33,6 +33,8 @@ public class LongScreenshotData {
     private final AtomicReference<ScrollCaptureController.LongScreenshot> mLongScreenshot;
     private final AtomicReference<TransitionDestination>
             mTransitionDestinationCallback;
+    private String mForegroundAppName;
+    private boolean mNeedsMagnification;
 
     public interface TransitionDestination {
         /**
@@ -82,5 +84,27 @@ public class LongScreenshotData {
      */
     public TransitionDestination takeTransitionDestinationCallback() {
         return mTransitionDestinationCallback.getAndSet(null);
+    }
+
+    /**
+     * Set the holder's foreground app name.
+     */
+    public void setForegroundAppName(String foregroundAppName) {
+        mForegroundAppName = foregroundAppName;
+    }
+
+    /**
+     * Return the current foreground app name.
+     */
+    public String getForegroundAppName() {
+        return mForegroundAppName;
+    }
+
+    public void setNeedsMagnification(boolean status) {
+        mNeedsMagnification = status;
+    }
+
+    public boolean getNeedsMagnification() {
+        return mNeedsMagnification;
     }
 }

@@ -145,6 +145,9 @@ import com.android.systemui.util.ListenerSet;
 import com.android.systemui.util.state.DownstreamObservableState;
 import com.android.systemui.util.state.ObservableState;
 
+import com.axion.applocker.AxAppLockerHelper;
+import android.service.notification.StatusBarNotification;
+
 import com.google.errorprone.annotations.CompileTimeConstant;
 
 import kotlin.Unit;
@@ -508,6 +511,7 @@ public class NotificationStackScrollLayout
     private final Rect mBackgroundAnimationRect = new Rect();
     private final ArrayList<BiConsumer<Float, Float>> mExpandedHeightListeners = new ArrayList<>();
     private int mHeadsUpInset;
+    private boolean mFullWidthNotificationsInLandscape = false;
 
     /**
      * The position of the scroll boundary relative to this view. This is where the notifications
@@ -813,6 +817,16 @@ public class NotificationStackScrollLayout
         }
     }
 
+    /** Refreshes translucency state of all notification rows (e.g. after shade expand/collapse). */
+    public void updateIfNeeded() {
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            if (child instanceof ActivatableNotificationView activatableView) {
+                activatableView.updateIfNeeded();
+            }
+        }
+    }
+
     private void onJustBeforeDraw() {
         if (SceneContainerFlag.isEnabled()) {
             if (mChildrenUpdateRequested) {
@@ -990,6 +1004,8 @@ public class NotificationStackScrollLayout
         mHeadsUpInset = mStatusBarHeight + res.getDimensionPixelSize(
                 R.dimen.heads_up_status_bar_padding);
         mQsScrollBoundaryPosition = SystemBarUtils.getQuickQsOffsetHeight(mContext);
+        mFullWidthNotificationsInLandscape = res.getBoolean(
+                R.bool.config_fullWidthNotificationsInLandscape);
     }
 
     void updateSidePadding(int viewWidth) {
@@ -1020,7 +1036,8 @@ public class NotificationStackScrollLayout
             }
 
             if (orientation == Configuration.ORIENTATION_PORTRAIT
-                    || mShouldUseSplitNotificationShade) {
+                    || mShouldUseSplitNotificationShade
+                    || mFullWidthNotificationsInLandscape) {
                 return;
             }
 
@@ -7643,5 +7660,24 @@ public class NotificationStackScrollLayout
         if (SPEW) {
             Log.v(TAG, logMsg);
         }
+    }
+
+    public void onAppLockerUpdate(String packageName) {
+        boolean hideSensitive = mAmbientState.isHideSensitive();
+        int childCount = getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            ExpandableView child = getChildAtIndex(i);
+            if (child instanceof ExpandableNotificationRow row) {
+                StatusBarNotification sbn = row.getEntryAdapter() != null
+                        ? row.getEntryAdapter().getSbn() : null;
+                if (sbn == null) continue;
+                if (packageName != null && !packageName.equals(sbn.getPackageName())) {
+                    continue;
+                }
+                row.setHideSensitive(hideSensitive, false, 0, 0);
+                onChildHeightChanged(child, true, "applocker-update");
+            }
+        }
+        updateContentHeight();
     }
 }

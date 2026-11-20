@@ -194,6 +194,7 @@ public class NotificationMenuRow implements NotificationMenuRowPlugin, View.OnCl
     @Override
     public void createMenu(ViewGroup parent) {
         mParent = (ExpandableNotificationRow) parent;
+        mContext = mParent.getContext();
         createMenuViews(true /* resetState */);
     }
 
@@ -238,11 +239,17 @@ public class NotificationMenuRow implements NotificationMenuRowPlugin, View.OnCl
             // Menu hasn't been created yet, no need to do anything.
             return;
         }
+        if (mParent != null) {
+            mContext = mParent.getContext();
+        }
         createMenuViews(!isMenuVisible() /* resetState */);
     }
 
     @Override
     public void onConfigurationChanged() {
+        if (mParent != null) {
+            mContext = mParent.getContext();
+        }
         mParent.setLayoutListener(this);
     }
 
@@ -926,7 +933,7 @@ public class NotificationMenuRow implements NotificationMenuRowPlugin, View.OnCl
             if (iconResId >= 0) {
                 AlphaOptimizedImageView iv = new AlphaOptimizedImageView(context);
                 iv.setPadding(padding, padding, padding, padding);
-                Drawable icon = context.getResources().getDrawable(iconResId);
+                Drawable icon = context.getDrawable(iconResId);
                 iv.setImageDrawable(icon);
                 iv.setColorFilter(tint);
                 iv.setAlpha(1f);

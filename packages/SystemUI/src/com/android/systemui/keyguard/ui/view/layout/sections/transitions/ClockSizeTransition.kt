@@ -41,7 +41,6 @@ import com.android.systemui.res.R
 import com.android.systemui.shared.R as sharedR
 import com.google.android.material.math.MathUtils
 import java.lang.ref.WeakReference
-import kotlin.math.abs
 
 internal fun View.getRect(): Rect = Rect(this.left, this.top, this.right, this.bottom)
 
@@ -59,6 +58,9 @@ class ClockSizeTransition(
         if (config.type != Type.SmartspaceVisibility) {
             addTransition(ClockFaceOutTransition(config, clockViewModel, logBuffer))
             addTransition(ClockFaceInTransition(config, clockViewModel, logBuffer))
+        }
+        if (config.type == Type.ClockSize) {
+            addTransition(SliceViewFadeThroughTransition(logBuffer))
         }
 
         addTransition(SmartspaceMoveTransition(config, clockViewModel, logBuffer))
@@ -81,22 +83,31 @@ class ClockSizeTransition(
             transition.values[PROP_BOUNDS] = view.getRect()
 
             if (!captureSmartspace) return
+            // Without smartspace the date row is the keyguard slice view, which
+            // SliceViewFadeThroughTransition fades in place rather than moves, so there is no
+            // motion for the small clock to keep pace with: leave the bounds unset.
             val parent = view.parent as View
-            val targetSSView =
-                parent.findViewById<View>(sharedR.id.bc_smartspace_view)
-                    ?: parent.findViewById<View>(R.id.keyguard_slice_view)
-            if (targetSSView == null) {
-                logger.e({ "Failed to find smartspace equivalent target under $str1" }) {
-                    str1 = "$parent"
-                }
-                return
-            }
+            val targetSSView = parent.findViewById<View>(sharedR.id.bc_smartspace_view) ?: return
             transition.values[SMARTSPACE_BOUNDS] = targetSSView.getRect()
         }
 
         open fun initTargets(from: Target, to: Target) {}
 
         open fun mutateTargets(from: Target, to: Target) {}
+
+        /** Bounds and alpha of the target at [fract] of the animation. */
+        protected open fun frameAt(from: Target, to: Target, fract: Float): Pair<Rect, Float> {
+            fun lerp(start: Int, end: Int): Int =
+                MathUtils.lerp(start.toFloat(), end.toFloat(), fract).toInt()
+            val bounds =
+                Rect(
+                    lerp(from.bounds.left, to.bounds.left),
+                    lerp(from.bounds.top, to.bounds.top),
+                    lerp(from.bounds.right, to.bounds.right),
+                    lerp(from.bounds.bottom, to.bounds.bottom),
+                )
+            return bounds to MathUtils.lerp(from.alpha, to.alpha, fract)
+        }
 
         data class Target(
             var view: View,
@@ -180,15 +191,6 @@ class ClockSizeTransition(
             }
 
             val sendToBack = from.isVisible && !to.isVisible
-            fun lerp(start: Int, end: Int, fract: Float): Int =
-                MathUtils.lerp(start.toFloat(), end.toFloat(), fract).toInt()
-            fun computeBounds(fract: Float): Rect =
-                Rect(
-                    lerp(from.bounds.left, to.bounds.left, fract),
-                    lerp(from.bounds.top, to.bounds.top, fract),
-                    lerp(from.bounds.right, to.bounds.right, fract),
-                    lerp(from.bounds.bottom, to.bounds.bottom, fract),
-                )
 
             fun assignAnimValues(
                 src: String,
@@ -197,8 +199,7 @@ class ClockSizeTransition(
                 log: Boolean = false,
             ) {
                 mutateTargets(from, to)
-                val bounds = computeBounds(fract)
-                val alpha = MathUtils.lerp(from.alpha, to.alpha, fract)
+                val (bounds, alpha) = frameAt(from, to, fract)
                 if (log) {
                     logger.i({
                         "$str1: $str2; fract=$int1%; alpha=$double1; " +
@@ -339,16 +340,20 @@ class ClockSizeTransition(
             if (isLargeClock) {
                 // Large clock shouldn't move; fromBounds already set
             } else if (to.ssBounds != null && from.ssBounds != null) {
-                // Instead of moving the small clock the full distance, we compute the distance
-                // smartspace will move. We then scale this to match the duration of this animation
-                // so that the small clock moves at the same speed as smartspace.
+                // The small clock keeps pace with smartspace: it moves in the same direction, over
+                // the distance smartspace covers during this transition's duration. An incoming
+                // clock starts offset against that motion and arrives in place; an outgoing clock
+                // starts in place and leaves with it (rather than jumping to the offset first).
                 val ssTranslation =
-                    abs((to.ssBounds!!.top - from.ssBounds!!.top) * smallClockMoveScale).toInt()
-                from.bounds.top = to.bounds.top - ssTranslation
-                from.bounds.bottom = to.bounds.bottom - ssTranslation
-            } else {
-                logger.e("initTargets: smallClock received no smartspace bounds")
+                    ((to.ssBounds!!.top - from.ssBounds!!.top) * smallClockMoveScale).toInt()
+                if (to.isVisible) {
+                    from.bounds.offset(0, -ssTranslation)
+                } else {
+                    to.bounds.offset(0, ssTranslation)
+                }
             }
+            // Otherwise there is no smartspace motion to match (the slice view fades in place):
+            // the small clock fades in place too.
         }
     }
 
@@ -391,6 +396,47 @@ class ClockSizeTransition(
         companion object {
             const val CLOCK_OUT_MILLIS = 133L
             val CLOCK_OUT_INTERPOLATOR = Interpolators.LINEAR
+        }
+    }
+
+    /**
+     * The keyguard slice view carries the date row when smartspace is unavailable. It is a single
+     * view that changes position with the clock size and is not a target of the transitions
+     * above, so it used to jump. Fade it out where it was while the outgoing face fades out, then
+     * fade it in where it goes while the incoming face fades in, rather than sliding it across the
+     * clock.
+     */
+    class SliceViewFadeThroughTransition(logBuffer: LogBuffer) :
+        VisibilityBoundsTransition(logBuffer) {
+        override val captureSmartspace = false
+
+        init {
+            duration = DURATION_MILLIS
+            interpolator = Interpolators.LINEAR
+            addTarget(R.id.keyguard_slice_view)
+        }
+
+        override fun frameAt(from: Target, to: Target, fract: Float): Pair<Rect, Float> {
+            val outFraction = ClockFaceOutTransition.CLOCK_OUT_MILLIS / DURATION_MILLIS.toFloat()
+            return if (fract < outFraction) {
+                val outProgress =
+                    ClockFaceOutTransition.CLOCK_OUT_INTERPOLATOR.getInterpolation(
+                        fract / outFraction
+                    )
+                Rect(from.bounds) to from.alpha * (1f - outProgress)
+            } else {
+                val inProgress =
+                    ClockFaceInTransition.CLOCK_IN_INTERPOLATOR.getInterpolation(
+                        (fract - outFraction) / (1f - outFraction)
+                    )
+                Rect(to.bounds) to to.alpha * inProgress
+            }
+        }
+
+        companion object {
+            const val DURATION_MILLIS =
+                ClockFaceInTransition.CLOCK_IN_START_DELAY_MILLIS +
+                    ClockFaceInTransition.CLOCK_IN_MILLIS
         }
     }
 

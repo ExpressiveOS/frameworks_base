@@ -199,7 +199,7 @@ oneway interface IStatusBar
     void showPinningEnterExitToast(boolean entering);
     void showPinningEscapeToast();
 
-    void showShutdownUi(boolean isReboot, String reason);
+    void showShutdownUi(boolean isReboot, String reason, boolean rebootCustom);
 
     /**
     * Used to show the authentication dialog (Biometrics, Device Credential).
@@ -443,4 +443,6 @@ oneway interface IStatusBar
      * Called when the configuration has been changed.
      */
     void onConfigurationChanged();
+
+    void restartSystemUI();
 }

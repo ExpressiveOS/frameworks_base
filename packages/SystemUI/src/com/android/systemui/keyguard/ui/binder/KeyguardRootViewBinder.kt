@@ -19,8 +19,11 @@ package com.android.systemui.keyguard.ui.binder
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
+import android.content.Context;
 import android.graphics.Point
 import android.graphics.Rect
+import android.os.UserHandle;
+import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -88,6 +91,7 @@ object KeyguardRootViewBinder {
         viewModel: KeyguardRootViewModel,
         blueprintViewModel: KeyguardBlueprintViewModel,
         configuration: ConfigurationState,
+        context: Context,
         shadeInteractor: ShadeInteractor,
         smartspaceViewModel: KeyguardSmartspaceViewModel,
         deviceEntryHapticsInteractor: DeviceEntryHapticsInteractor?,
@@ -136,17 +140,20 @@ object KeyguardRootViewBinder {
             view.repeatWhenAttached(mainImmediateDispatcher) {
                 repeatOnLifecycle(Lifecycle.State.CREATED) {
                     if (deviceEntryHapticsInteractor != null && vibratorHelper != null) {
+
                         launch {
                             deviceEntryHapticsInteractor.playSuccessHapticOnDeviceEntry.collect {
-                                if (msdlFeedback()) {
-                                    msdlPlayer?.playToken(
-                                        MSDLToken.UNLOCK,
-                                        authInteractionProperties,
-                                    )
-                                } else {
+                                if (!isFpHapticEnabled(context, Settings.System.FP_SUCCESS_VIBRATE)) return@collect
+
+                                val playedMsdl = msdlFeedback() && (msdlPlayer?.let {
+                                    it.playToken(MSDLToken.UNLOCK, authInteractionProperties)
+                                    true
+                                } == true)
+
+                                if (!playedMsdl) {
                                     vibratorHelper.performHapticFeedback(
                                         view,
-                                        HapticFeedbackConstants.BIOMETRIC_CONFIRM,
+                                        HapticFeedbackConstants.BIOMETRIC_CONFIRM
                                     )
                                 }
                             }
@@ -154,15 +161,17 @@ object KeyguardRootViewBinder {
 
                         launch {
                             deviceEntryHapticsInteractor.playErrorHaptic.collect {
-                                if (msdlFeedback()) {
-                                    msdlPlayer?.playToken(
-                                        MSDLToken.FAILURE,
-                                        authInteractionProperties,
-                                    )
-                                } else {
+                                if (!isFpHapticEnabled(context, Settings.System.FP_ERROR_VIBRATE)) return@collect
+
+                                val playedMsdl = msdlFeedback() && (msdlPlayer?.let {
+                                    it.playToken(MSDLToken.FAILURE, authInteractionProperties)
+                                    true
+                                } == true)
+
+                                if (!playedMsdl) {
                                     vibratorHelper.performHapticFeedback(
                                         view,
-                                        HapticFeedbackConstants.BIOMETRIC_REJECT,
+                                        HapticFeedbackConstants.BIOMETRIC_REJECT
                                     )
                                 }
                             }
@@ -190,6 +199,8 @@ object KeyguardRootViewBinder {
                         viewModel.alpha(viewState).collect { alpha ->
                             view.alpha = alpha
                             childViews[burnInLayerId]?.alpha = alpha
+                            childViews[sliceViewId]?.alpha = alpha
+                            childViews[weatherAreaId]?.alpha = alpha
                         }
                     }
 
@@ -216,6 +227,8 @@ object KeyguardRootViewBinder {
                         // need to add translation to it here same as translationX
                         viewModel.translationY.collect { y ->
                             childViews[burnInLayerId]?.translationY = y
+                            childViews[sliceViewId]?.translationY = y
+                            childViews[weatherAreaId]?.translationY = y
                             childViews[largeClockId]?.translationY = y
                             childViews[largeClockDateId]?.translationY = y
                             childViews[aodPromotedNotificationId]?.translationY = y
@@ -230,6 +243,8 @@ object KeyguardRootViewBinder {
                                 state.isToOrFrom(KeyguardState.AOD) -> {
                                     // Large Clock is not translated in the x direction
                                     childViews[burnInLayerId]?.translationX = px
+                                    childViews[sliceViewId]?.translationX = px
+                                    childViews[weatherAreaId]?.translationX = px
                                     childViews[aodPromotedNotificationId]?.translationX = px
                                     childViews[aodNotificationIconContainerId]?.translationX = px
                                 }
@@ -266,18 +281,20 @@ object KeyguardRootViewBinder {
                     launch {
                         viewModel.burnInLayerVisibility.collect { visibility ->
                             childViews[burnInLayerId]?.visibility = visibility
+                            childViews[sliceViewId]?.visibility = visibility
+                            childViews[weatherAreaId]?.visibility = visibility
                         }
                     }
 
                     launch {
                         viewModel.scale.collect { scaleViewModel ->
-                            if (scaleViewModel.scaleClockOnly) {
-                                // For clocks except weather clock, we have scale transition besides
-                                // translate
-                                childViews[largeClockId]?.let {
-                                    it.scaleX = scaleViewModel.scale
-                                    it.scaleY = scaleViewModel.scale
-                                }
+                            // For clocks except weather clock, we have scale transition besides
+                            // translate. Clocks that only translate must be put back to 1: the
+                            // scale may have been applied before the clock was known.
+                            val scale = if (scaleViewModel.scaleClockOnly) scaleViewModel.scale else 1f
+                            childViews[largeClockId]?.let {
+                                it.scaleX = scale
+                                it.scaleY = scale
                             }
                         }
                     }
@@ -399,6 +416,11 @@ object KeyguardRootViewBinder {
             }
 
         return disposables
+    }
+
+    private fun isFpHapticEnabled(context: Context, key: String): Boolean {
+        return Settings.System.getIntForUser(
+            context.contentResolver, key, 1, UserHandle.USER_CURRENT) == 1
     }
 
     private class OnLayoutChange(
@@ -533,6 +555,8 @@ object KeyguardRootViewBinder {
     }
 
     private val burnInLayerId = R.id.burn_in_layer
+    private val sliceViewId = R.id.keyguard_slice_view
+    private val weatherAreaId = R.id.keyguard_weather_area
     private val aodPromotedNotificationId = AodPromotedNotificationSection.viewId
     private val aodNotificationIconContainerId = R.id.aod_notification_icon_container
     private val largeClockId = ClockViewIds.LOCKSCREEN_CLOCK_VIEW_LARGE

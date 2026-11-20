@@ -142,6 +142,9 @@
     <dimen name="status_bar_bottom_aligned_margin_rotation_180">-1px</dimen>
     <dimen name="status_bar_bottom_aligned_margin_rotation_270">-1px</dimen>
 
+    <!-- Height of the system icons container view in the status bar -->
+    <dimen name="status_bar_system_icons_height">@dimen/status_bar_icon_size_sp</dimen>
+
      <!-- Height for shrink-wrapped icons displayed in composables in the status bar -->
     <dimen name="status_bar_composable_icon_height_sp">13sp</dimen>
 
@@ -209,6 +212,10 @@
         match the core/status_bar_system_icon_size and change to sp unit -->
     <dimen name="status_bar_mobile_signal_size">15sp</dimen>
     <dimen name="status_bar_mobile_signal_size_updated">12sp</dimen>
+    <dimen name="status_bar_signal_overlay_width">17dp</dimen>
+    <dimen name="status_bar_signal_overlay_height">12dp</dimen>
+    <dimen name="status_bar_wifi_overlay_width">17dp</dimen>
+    <dimen name="status_bar_wifi_overlay_height">12.58dp</dimen>
 
     <!-- Size of the view displaying the mobile signal icon in the status bar. This value should
         match the viewport height of mobile signal drawables such as ic_lte_mobiledata
@@ -557,6 +564,8 @@
     <!-- The height of the container that holds the system icons in the quick settings header in the
          car setting. -->
     <dimen name="car_qs_header_system_icons_area_height">54dp</dimen>
+
+    <dimen name="qs_footer_action_corner_radius">20dp</dimen>
 
     <!-- (48dp - 40dp) / 2 -->
     <dimen name="qs_footer_action_inset">4dp</dimen>
@@ -942,7 +951,7 @@
     <dimen name="kg_framed_avatar_size">32dp</dimen>
 
     <!-- Margin on the left side of the carrier text on Keyguard -->
-    <dimen name="keyguard_carrier_text_margin">16dp</dimen>
+    <dimen name="keyguard_carrier_text_margin">@dimen/status_bar_padding_start</dimen>
 
     <!-- Additional translation (downwards) for appearing notifications when going to the full shade
          from Keyguard. -->
@@ -1108,9 +1117,9 @@
     <dimen name="global_actions_controls_y_translation">20dp</dimen>
 
     <!-- Shutdown and restart actions are larger in power options dialog -->
-    <dimen name="global_actions_power_dialog_item_height">190dp</dimen>
-    <dimen name="global_actions_power_dialog_item_width">255dp</dimen>
-    <dimen name="global_actions_power_dialog_item_bottom_margin">45dp</dimen>
+    <dimen name="global_actions_power_dialog_item_height">128dp</dimen>
+    <dimen name="global_actions_power_dialog_item_width">128dp</dimen>
+    <dimen name="global_actions_power_dialog_item_bottom_margin">22dp</dimen>
 
     <!-- Power Menu Lite -->
     <dimen name="global_actions_button_size">96dp</dimen>

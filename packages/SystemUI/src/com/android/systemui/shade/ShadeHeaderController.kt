@@ -29,6 +29,7 @@ import android.os.Bundle
 import android.os.Trace
 import android.os.Trace.TRACE_TAG_APP
 import android.provider.AlarmClock
+import android.provider.Settings
 import android.view.DisplayCutout
 import android.view.View
 import android.view.ViewGroup
@@ -39,7 +40,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.constraintlayout.motion.widget.MotionLayout
 import androidx.core.view.doOnLayout
@@ -49,7 +49,6 @@ import com.android.app.displaylib.PerDisplayRepository
 import com.android.compose.theme.PlatformTheme
 import com.android.keyguard.AlphaOptimizedLinearLayout
 import com.android.systemui.Dumpable
-import com.android.systemui.Flags
 import com.android.systemui.Flags.notificationShadeBlur
 import com.android.systemui.animation.ShadeInterpolation
 import com.android.systemui.battery.BatteryMeterView.MODE_ESTIMATE
@@ -58,6 +57,7 @@ import com.android.systemui.demomode.DemoMode
 import com.android.systemui.demomode.DemoModeController
 import com.android.systemui.display.dagger.SystemUIDisplaySubcomponent
 import com.android.systemui.dump.DumpManager
+import com.android.systemui.lifecycle.rememberViewModel
 import com.android.systemui.plugins.ActivityStarter
 import com.android.systemui.qs.ChipVisibilityListener
 import com.android.systemui.qs.HeaderPrivacyIconsController
@@ -77,7 +77,7 @@ import com.android.systemui.statusbar.phone.StatusOverlayHoverListenerFactory
 import com.android.systemui.statusbar.phone.domain.interactor.IsAreaDark
 import com.android.systemui.statusbar.phone.ui.StatusBarIconController
 import com.android.systemui.statusbar.phone.ui.TintedIconManager
-import com.android.systemui.statusbar.pipeline.battery.ui.composable.BatteryWithEstimate
+import com.android.systemui.statusbar.pipeline.battery.ui.composable.BatteryWithPercent
 import com.android.systemui.statusbar.pipeline.battery.ui.viewmodel.BatteryViewModel
 import com.android.systemui.statusbar.pipeline.shared.ui.view.SystemStatusIconsLayoutHelper
 import com.android.systemui.statusbar.policy.Clock
@@ -85,6 +85,8 @@ import com.android.systemui.statusbar.policy.ConfigurationController
 import com.android.systemui.statusbar.policy.NextAlarmController
 import com.android.systemui.statusbar.policy.VariableDateView
 import com.android.systemui.statusbar.policy.VariableDateViewController
+import com.android.systemui.tuner.TunerService
+import com.android.systemui.tuner.TunerService.Tunable
 import com.android.systemui.util.ViewController
 import dagger.Lazy
 import java.io.PrintWriter
@@ -114,7 +116,7 @@ constructor(
     @ShadeDisplayAware private val context: Context,
     private val shadeDisplaysRepositoryLazy: Lazy<ShadeDisplaysRepository>,
     private val variableDateViewControllerFactory: VariableDateViewController.Factory,
-    private val unifiedBatteryViewModelFactory: BatteryViewModel.AlwaysShowPercent.Factory,
+    private val unifiedBatteryViewModelFactory: BatteryViewModel.BasedOnUserSetting.Factory,
     private val dumpManager: DumpManager,
     private val shadeCarrierGroupControllerBuilder: ShadeCarrierGroupController.Builder,
     private val combinedShadeHeadersConstraintManager: CombinedShadeHeadersConstraintManager,
@@ -123,7 +125,8 @@ constructor(
     private val nextAlarmController: NextAlarmController,
     private val activityStarter: ActivityStarter,
     private val statusOverlayHoverListenerFactory: StatusOverlayHoverListenerFactory,
-) : ViewController<View>(header), Dumpable {
+    private val tunerService: TunerService,
+) : ViewController<View>(header), Dumpable, TunerService.Tunable {
 
     private val statusBarContentInsetsProvider
         get() =
@@ -145,6 +148,9 @@ constructor(
         internal val LARGE_SCREEN_HEADER_CONSTRAINT = R.id.large_screen_header_constraint
 
         @VisibleForTesting internal val DEFAULT_CLOCK_INTENT = Intent(AlarmClock.ACTION_SHOW_ALARMS)
+
+        internal val NETWORK_TRAFFIC_ENABLED =
+            "system:" + Settings.System.NETWORK_TRAFFIC_ENABLED
 
         private fun Int.stateToString() =
             when (this) {
@@ -261,6 +267,16 @@ constructor(
             }
         }
 
+    // Stable OnLayoutChangeListener instance (SAM ctor, NOT a bare lambda) so add/remove target
+    // the same object; added in onViewAttached, removed in onViewDetached to avoid accumulating a
+    // listener on the clock view across attach/detach cycles.
+    private val clockPivotListener =
+        View.OnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val newPivot = if (v.isLayoutRtl) v.width.toFloat() else 0f
+            v.pivotX = newPivot
+            v.pivotY = v.height.toFloat() / 2
+        }
+
     private var singleCarrier = false
 
     private val demoModeReceiver =
@@ -354,6 +370,8 @@ constructor(
 
         iconManager = tintedIconManagerFactory.create(iconContainer, StatusBarLocation.QS)
         iconManager.setTint(fgColor, bgColor)
+        iconContainer.setIsUsingQs(true)
+        iconContainer.setNetworkTrafficColor(fgColor)
 
         // Configure the correct margins for the system icon container
         val statusIcons = mView.requireViewById<AlphaOptimizedLinearLayout>(R.id.statusIcons)
@@ -364,6 +382,8 @@ constructor(
         mView.requireViewById<ViewGroup>(R.id.hover_system_icons_container).apply {
             addView(batteryComposeView, -1)
         }
+
+        batteryComposeView.setOnClickListener { launchBatteryActivity() }
 
         carrierIconSlots =
             listOf(
@@ -397,14 +417,15 @@ constructor(
                     id = R.id.battery_meter_composable_view
                     val showBatteryEstimate by showBatteryEstimate.collectAsStateWithLifecycle()
                     val dark = isSystemInDarkTheme()
-                    BatteryWithEstimate(
+                    val viewModel =
+                        rememberViewModel(traceName = "UnifiedBattery") {
+                            unifiedBatteryViewModelFactory.create()
+                        }
+                    BatteryWithPercent(
                         modifier = Modifier.wrapContentSize(),
-                        viewModelFactory = unifiedBatteryViewModelFactory,
+                        viewModel = viewModel,
                         isDarkProvider = { IsAreaDark { dark } },
-                        textColor =
-                            if (notificationShadeBlur())
-                                Color(context.getColor(R.color.shade_header_text_color))
-                            else Color.White,
+                        showPercent = viewModel.isBatteryPercentSettingEnabled,
                         showEstimate = showBatteryEstimate,
                     )
                 }
@@ -420,11 +441,7 @@ constructor(
 
         header.setOnApplyWindowInsetsListener(insetListener)
 
-        clock.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            val newPivot = if (v.isLayoutRtl) v.width.toFloat() else 0f
-            v.pivotX = newPivot
-            v.pivotY = v.height.toFloat() / 2
-        }
+        clock.addOnLayoutChangeListener(clockPivotListener)
         clock.setOnClickListener { launchClockActivity() }
 
         dumpManager.registerDumpable(this)
@@ -435,10 +452,15 @@ constructor(
         systemIconsHoverContainer.setOnHoverListener(
             statusOverlayHoverListenerFactory.createListener(systemIconsHoverContainer)
         )
+
+        iconContainer.setIsUsingQs(true)
+
+        tunerService.addTunable(this, NETWORK_TRAFFIC_ENABLED)
     }
 
     override fun onViewDetached() {
         clock.setOnClickListener(null)
+        clock.removeOnLayoutChangeListener(clockPivotListener)
         privacyIconsController.chipVisibilityListener = null
         dumpManager.unregisterDumpable(this::class.java.simpleName)
         configurationController.removeCallback(configurationControllerListener)
@@ -446,6 +468,19 @@ constructor(
         statusBarIconController.removeIconGroup(iconManager)
         nextAlarmController.removeCallback(nextAlarmCallback)
         systemIconsHoverContainer.setOnHoverListener(null)
+        iconContainer.setIsUsingQs(false)
+        tunerService.removeTunable(this)
+    }
+
+    override fun onTuningChanged(key: String?, value: String?) {
+        when (key) {
+            NETWORK_TRAFFIC_ENABLED -> {
+                if (TunerService.parseIntegerSwitch(value, false))
+                    updateColors()
+            }
+
+            else -> return
+        }
     }
 
     fun disable(state1: Int, state2: Int, animate: Boolean) {
@@ -463,6 +498,12 @@ constructor(
             .setInterpolator(if (show) Interpolators.ALPHA_OUT else Interpolators.ALPHA_IN)
             .setListener(CustomizerAnimationListener(show))
             .start()
+    }
+
+    private fun launchBatteryActivity() {
+        activityStarter.postStartActivityDismissingKeyguard(
+            Intent(Intent.ACTION_POWER_USAGE_SUMMARY), 0
+        )
     }
 
     @VisibleForTesting

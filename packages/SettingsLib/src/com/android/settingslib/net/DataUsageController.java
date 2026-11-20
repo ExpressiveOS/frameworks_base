@@ -23,9 +23,11 @@ import static android.text.format.DateUtils.FORMAT_SHOW_DATE;
 import android.app.usage.NetworkStats.Bucket;
 import android.app.usage.NetworkStatsManager;
 import android.content.Context;
+import android.net.ConnectivityManager;
 import android.net.NetworkPolicy;
 import android.net.NetworkPolicyManager;
 import android.net.NetworkTemplate;
+import android.net.wifi.WifiManager;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.format.DateUtils;
@@ -36,9 +38,14 @@ import com.android.internal.R;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.ArrayUtils;
 
+import java.time.DayOfWeek;
 import java.time.ZonedDateTime;
+import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
+import java.time.temporal.WeekFields;
 import java.util.Iterator;
 import java.util.Locale;
+import java.util.Set;
 
 public class DataUsageController {
 
@@ -52,6 +59,7 @@ public class DataUsageController {
     private final Context mContext;
     private final NetworkPolicyManager mPolicyManager;
     private final NetworkStatsManager mNetworkStatsManager;
+    private final WifiManager mWifiManager;
 
     private Callback mCallback;
     private NetworkNameProvider mNetworkController;
@@ -61,6 +69,7 @@ public class DataUsageController {
         mContext = context;
         mPolicyManager = NetworkPolicyManager.from(mContext);
         mNetworkStatsManager = context.getSystemService(NetworkStatsManager.class);
+        mWifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
         mSubscriptionId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
     }
 
@@ -94,6 +103,55 @@ public class DataUsageController {
         return null;
     }
 
+    public DataUsageInfo getDataUsageInfo() {
+        NetworkTemplate template = DataUsageUtils.getMobileTemplate(mContext, mSubscriptionId);
+
+        return getDataUsageInfo(template);
+    }
+
+    public DataUsageInfo getDailyDataUsageInfo() {
+        NetworkTemplate template = DataUsageUtils.getMobileTemplate(mContext, mSubscriptionId);
+
+        return getDailyDataUsageInfo(template);
+    }
+
+    public DataUsageInfo getWeeklyDataUsageInfo() {
+        NetworkTemplate template = DataUsageUtils.getMobileTemplate(mContext, mSubscriptionId);
+
+        return getWeeklyDataUsageInfo(template);
+    }
+
+    public DataUsageInfo getWifiDataUsageInfo() {
+        return getWifiDataUsageInfo(false);
+    }
+
+    public DataUsageInfo getWifiDataUsageInfo(boolean currentNetwork) {
+        return getDataUsageInfo(getWifiNetworkTemplate(currentNetwork));
+    }
+
+    public DataUsageInfo getWifiDailyDataUsageInfo(boolean currentNetwork) {
+        return getDailyDataUsageInfo(getWifiNetworkTemplate(currentNetwork));
+    }
+
+    public DataUsageInfo getWifiWeeklyDataUsageInfo(boolean currentNetwork) {
+        return getWeeklyDataUsageInfo(getWifiNetworkTemplate(currentNetwork));
+    }
+
+    public NetworkTemplate getWifiNetworkTemplate(boolean currentNetwork) {
+        final NetworkTemplate.Builder builder =
+                new NetworkTemplate.Builder(NetworkTemplate.MATCH_WIFI);
+        if (currentNetwork) {
+            final var info = mWifiManager.getConnectionInfo();
+            if (info != null) {
+                final String networkKey = info.getNetworkKey();
+                if (networkKey != null && !networkKey.isEmpty()) {
+                    builder.setWifiNetworkKeys(Set.of(networkKey));
+                }
+            }
+        }
+        return builder.build();
+    }
+
     public DataUsageInfo getDataUsageInfo(NetworkTemplate template) {
         final NetworkPolicy policy = findNetworkPolicy(template);
         final long now = System.currentTimeMillis();
@@ -125,7 +183,77 @@ public class DataUsageController {
         } else {
             usage.warningLevel = getDefaultWarningLevel();
         }
-        if (mNetworkController != null) {
+        if (usage != null && mNetworkController != null) {
+            usage.carrier = mNetworkController.getMobileDataNetworkName();
+        }
+        return usage;
+    }
+
+    public DataUsageInfo getDailyDataUsageInfo(NetworkTemplate template) {
+        final NetworkPolicy policy = findNetworkPolicy(template);
+        final long end = System.currentTimeMillis();
+        long start = end - DataUsageUtils.getTodayMillis();
+
+        final long totalBytes = getUsageLevel(template, start, end);
+        if (totalBytes < 0L) {
+            return warn("no entry data");
+        }
+        final DataUsageInfo usage = new DataUsageInfo();
+        usage.startDate = start;
+        usage.usageLevel = totalBytes;
+        usage.period = formatDateRange(start, end);
+        usage.cycleStart = start;
+        usage.cycleEnd = end;
+
+        if (policy != null) {
+            usage.limitLevel = policy.limitBytes > 0 ? policy.limitBytes : 0;
+            usage.warningLevel = policy.warningBytes > 0 ? policy.warningBytes : 0;
+        } else {
+            usage.warningLevel = getDefaultWarningLevel();
+        }
+        if (usage != null && mNetworkController != null) {
+            usage.carrier = mNetworkController.getMobileDataNetworkName();
+        }
+        return usage;
+    }
+
+    private long[] getWeekToDateWindowMillis() {
+        final ZoneId zone = ZoneId.systemDefault();
+        final DayOfWeek weekStart = WeekFields.of(Locale.getDefault()).getFirstDayOfWeek();
+
+        final ZonedDateTime now = ZonedDateTime.now(zone);
+        final ZonedDateTime startOfWeek =
+                now.with(TemporalAdjusters.previousOrSame(weekStart))
+                   .toLocalDate()
+                   .atStartOfDay(zone);
+
+        return new long[] { startOfWeek.toInstant().toEpochMilli(), now.toInstant().toEpochMilli() };
+    }
+
+    public DataUsageInfo getWeeklyDataUsageInfo(NetworkTemplate template) {
+        final NetworkPolicy policy = findNetworkPolicy(template);
+        final long[] win = getWeekToDateWindowMillis();
+        final long start = win[0];
+        final long end = win[1];
+
+        final long totalBytes = getUsageLevel(template, start, end);
+        if (totalBytes < 0L) {
+            return warn("no entry data");
+        }
+        DataUsageInfo usage = new DataUsageInfo();
+        usage.startDate = start;
+        usage.usageLevel = totalBytes;
+        usage.period = formatDateRange(start, end);
+        usage.cycleStart = start;
+        usage.cycleEnd = end;
+
+        if (policy != null) {
+            usage.limitLevel = policy.limitBytes > 0 ? policy.limitBytes : 0;
+            usage.warningLevel = policy.warningBytes > 0 ? policy.warningBytes : 0;
+        } else {
+            usage.warningLevel = getDefaultWarningLevel();
+        }
+        if (usage != null && mNetworkController != null) {
             usage.carrier = mNetworkController.getMobileDataNetworkName();
         }
         return usage;
@@ -158,12 +286,25 @@ public class DataUsageController {
         if (mPolicyManager == null || template == null) return null;
         final NetworkPolicy[] policies = mPolicyManager.getNetworkPolicies();
         if (policies == null) return null;
-        for (final NetworkPolicy policy : policies) {
+        final int N = policies.length;
+        for (int i = 0; i < N; i++) {
+            final NetworkPolicy policy = policies[i];
             if (policy != null && template.equals(policy.template)) {
                 return policy;
             }
         }
         return null;
+    }
+
+    private static String statsBucketToString(Bucket bucket) {
+        return bucket == null ? null : new StringBuilder("Entry[")
+            .append("bucketDuration=").append(bucket.getEndTimeStamp() - bucket.getStartTimeStamp())
+            .append(",bucketStart=").append(bucket.getStartTimeStamp())
+            .append(",rxBytes=").append(bucket.getRxBytes())
+            .append(",rxPackets=").append(bucket.getRxPackets())
+            .append(",txBytes=").append(bucket.getTxBytes())
+            .append(",txPackets=").append(bucket.getTxPackets())
+            .append(']').toString();
     }
 
     @VisibleForTesting
@@ -183,8 +324,8 @@ public class DataUsageController {
             }
         }
 
-        return mContext.getSystemService(TelephonyManager.class)
-                .createForSubscriptionId(subscriptionId);
+        return mContext.getSystemService(
+                TelephonyManager.class).createForSubscriptionId(subscriptionId);
     }
 
     public void setMobileDataEnabled(boolean enabled) {
@@ -203,6 +344,28 @@ public class DataUsageController {
 
     public boolean isMobileDataEnabled() {
         return getTelephonyManager().isDataEnabled();
+    }
+
+    static int getNetworkType(NetworkTemplate networkTemplate) {
+        if (networkTemplate == null) {
+            return ConnectivityManager.TYPE_NONE;
+        }
+        final int matchRule = networkTemplate.getMatchRule();
+        switch (matchRule) {
+            case NetworkTemplate.MATCH_MOBILE:
+                return ConnectivityManager.TYPE_MOBILE;
+            case NetworkTemplate.MATCH_WIFI:
+                return  ConnectivityManager.TYPE_WIFI;
+            case NetworkTemplate.MATCH_ETHERNET:
+                return  ConnectivityManager.TYPE_ETHERNET;
+            default:
+                return ConnectivityManager.TYPE_MOBILE;
+        }
+    }
+
+    private String getActiveSubscriberId() {
+        final String actualSubscriberId = getTelephonyManager().getSubscriberId();
+        return actualSubscriberId;
     }
 
     private String formatDateRange(long start, long end) {

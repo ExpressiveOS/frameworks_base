@@ -135,7 +135,7 @@ constructor(
 
     private var isHomeFocused = true
 
-    val maxBlurRadiusPx = blurUtils.maxBlurRadius
+    val maxBlurRadiusPx get() = blurUtils.maxBlurRadius
 
     // Shade expansion offset that happens when pulling down on a HUN.
     var panelPullDownMinFraction = 0f
@@ -504,6 +504,11 @@ constructor(
                 }
             }
         }
+        applicationScope.launch {
+            blurUtils.maxBlurRadiusFlow.collect {
+                scheduleUpdate()
+            }
+        }
         initBlurListeners()
     }
 
@@ -676,15 +681,14 @@ constructor(
     }
 
     private fun scheduleUpdate() {
-        val (blur, zoomOutFromShadeRadius) = computeBlurAndZoomOut()
-        zoomOutCalculatedFromShadeRadius = zoomOutFromShadeRadius
-
         // Do not blur or zoom out the wallpaper if the blurred wallpaper is not supported.
         if (!windowRootViewBlurInteractor.isBlurredWallpaperOnShadeSupported) {
             return
         }
 
         if (Flags.bouncerUiRevamp() || Flags.glanceableHubBlurredBackground()) {
+            val (blur, zoomOutFromShadeRadius) = computeBlurAndZoomOut()
+            zoomOutCalculatedFromShadeRadius = zoomOutFromShadeRadius
             if (windowRootViewBlurInteractor.isBlurCurrentlySupported.value) {
                 updateScheduled =
                     windowRootViewBlurInteractor.requestBlurForShade(
@@ -705,6 +709,7 @@ constructor(
             return
         }
         updateScheduled = true
+        val (blur, _) = computeBlurAndZoomOut()
         blurUtils.prepareBlur(blur)
         choreographer.postFrameCallback(updateBlurCallback)
     }

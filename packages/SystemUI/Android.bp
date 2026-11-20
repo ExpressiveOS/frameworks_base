@@ -419,6 +419,7 @@ android_library {
         "SystemUICustomizationLib",
         "SettingsLib",
         "WindowManager-Shell",
+        "ax_blur",
         "androidx.leanback_leanback",
         "androidx.slice_slice-core",
         "androidx.slice_slice-view",
@@ -488,6 +489,13 @@ android_library {
     static_libs: [
         "//frameworks/libs/systemui:compilelib",
         "com.android.systemui.bundle.phone_api",
+        "axquicklook-client",
+        "ax_blur",
+        "ax_compose",
+        "ax_platform_hooks",
+        "axquicklook-client",
+        "ax_compose",
+        "ax_blur",
         "SystemUI-res",
         "WifiTrackerLib",
         "WindowManager-Shell",
@@ -572,6 +580,8 @@ android_library {
         "SurfaceEffectsComposeLib",
         "uilatencystats_flags_core_java_lib",
         "personalcontext_ace_visualizer",
+        "vendor.lineage.powershare-V1-java",
+        "FadingEdgeLayoutLib",
     ],
     enable_ksp: true,
     annotation_processor_flags: [
@@ -617,6 +627,7 @@ android_library {
         "dagger.useBindingGraphFix=ENABLED",
     ],
     manifest: "AndroidManifest.xml",
+    additional_manifests: ["LineageManifest.xml"],
 }
 
 java_library {
@@ -781,6 +792,7 @@ android_library {
         "displaylib",
         "dynamiccolors",
         "SurfaceEffectsComposeLib",
+        "vendor.lineage.powershare-V1-java",
     ],
 }
 
@@ -799,8 +811,10 @@ android_library {
     ],
     static_libs: [
         "//frameworks/libs/systemui:compilelib",
+        "ax_blur",
         "com.android.systemui.bundle.phone_dagger",
         "SystemUI_test_fixtures",
+        "ax_blur",
         "SystemUI-tests-base",
         "SystemUI_pod_tests",
         "androidx.compose.ui_ui-test-junit4",

@@ -173,10 +173,16 @@ constructor(
             override val isSingleCarrier: State<Boolean> = latest(true) { isSingleCarrier }
             override val isRoaming: State<Boolean> = latest(false) { isRoaming }
             override val isForceHidden: State<Boolean> = latest(false) { isForceHidden }
+            override val isRoamingForceHidden: State<Boolean> = latest(false) { isRoamingForceHidden }
             override val isAllowedDuringAirplaneMode: State<Boolean> =
                 latest(false) { isAllowedDuringAirplaneMode }
             override val carrierNetworkChangeActive: State<Boolean> =
                 latest(false) { carrierNetworkChangeActive }
+            override val isMobileHd: State<Boolean> = latest(false) { isMobileHd }
+            override val isMobileHdForceHidden: State<Boolean> = latest(true) { isMobileHdForceHidden }
+            override val isVoWifi: State<Boolean> = latest(false) { isVoWifi }
+            override val isVoWifiForceHidden: State<Boolean> = latest(true) { isVoWifiForceHidden }
+            override val shouldShowFourgIcon: State<Boolean> = latest(false) { shouldShowFourgIcon }
         }
 
     private fun trackedCommonViewModel(subId: Int) =
@@ -195,6 +201,7 @@ constructor(
             override val contentDescription: State<MobileContentDescription?> =
                 latest(null) { contentDescription }
             override val roaming: State<Boolean> = latest(false) { roaming }
+            override val isRoamingVisible: State<Boolean> = stateOf(false)
             override val networkTypeIcon: State<Icon.Resource?> = latest(null) { networkTypeIcon }
             override val networkTypeBackground: State<Icon.Resource?> =
                 latest(null) { networkTypeBackground }

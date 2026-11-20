@@ -35,6 +35,7 @@ import android.annotation.SuppressLint;
 import android.annotation.UserIdInt;
 import android.app.ActivityManagerInternal;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -261,6 +262,9 @@ public class InputManagerService extends IInputManager.Stub
             new SparseArray<>();
     private final ArrayList<InputDevicesChangedListenerRecord>
             mTempInputDevicesChangedListenersToNotify = new ArrayList<>(); // handler thread only
+
+    @GuardedBy("mInputDevicesLock")
+    private final SparseBooleanArray mSuppressedBluetoothPointers = new SparseBooleanArray();
 
     // State for vibrator tokens.
     private final Object mVibratorLock = new Object();
@@ -888,6 +892,9 @@ public class InputManagerService extends IInputManager.Stub
     }
 
     private void removeSpyWindowGestureMonitor(@NonNull IBinder inputChannelToken) {
+        if (inputChannelToken == null) {
+            return; // Handle the null inputChannelToken gracefully
+        }
         final GestureMonitorSpyWindow monitor;
         synchronized (mInputMonitors) {
             monitor = mInputMonitors.remove(inputChannelToken);
@@ -908,7 +915,8 @@ public class InputManagerService extends IInputManager.Stub
     @Override // Binder call
     public InputMonitor monitorGestureInput(@NonNull IBinder monitorToken,
             @NonNull String requestedName, int displayId) {
-        if (!checkCallingPermission(android.Manifest.permission.MONITOR_INPUT,
+        if (!com.android.internal.util.expressiveos.PixelPropsUtils.shouldBypassMonitorInputPermission(mContext) &&
+            !checkCallingPermission(android.Manifest.permission.MONITOR_INPUT,
                 "monitorGestureInput()")) {
             throw new SecurityException("Requires MONITOR_INPUT permission");
         }
@@ -955,6 +963,9 @@ public class InputManagerService extends IInputManager.Stub
      * @param connectionToken The input channel to unregister.
      */
     public void removeInputChannel(@NonNull IBinder connectionToken) {
+        if (connectionToken == null) {
+            return;
+        }
         Objects.requireNonNull(connectionToken, "connectionToken must not be null");
         mNative.removeInputChannel(connectionToken);
     }
@@ -2540,6 +2551,78 @@ public class InputManagerService extends IInputManager.Stub
             }
 
             mInputDevices = inputDevices;
+            mHandler.post(this::evaluateBluetoothPointerSuppression);
+        }
+    }
+
+    private void evaluateBluetoothPointerSuppression() {
+        final InputDevice[] devices;
+        synchronized (mInputDevicesLock) {
+            devices = mInputDevices;
+        }
+        synchronized (mInputDevicesLock) {
+            for (int i = mSuppressedBluetoothPointers.size() - 1; i >= 0; i--) {
+                final int trackedId = mSuppressedBluetoothPointers.keyAt(i);
+                boolean stillPresent = false;
+                for (InputDevice device : devices) {
+                    if (device.getId() == trackedId) {
+                        stillPresent = true;
+                        break;
+                    }
+                }
+                if (!stillPresent) {
+                    mSuppressedBluetoothPointers.removeAt(i);
+                }
+            }
+        }
+        for (InputDevice device : devices) {
+            final int id = device.getId();
+            // Composite controllers can initially appear as only a touchpad. Re-evaluate
+            // suppression when their keyboard/gamepad interfaces are added to the same id.
+            final boolean hasPointer = device.supportsSource(InputDevice.SOURCE_MOUSE);
+            final boolean hasControls = device.supportsSource(InputDevice.SOURCE_KEYBOARD)
+                    || device.supportsSource(InputDevice.SOURCE_GAMEPAD)
+                    || device.supportsSource(InputDevice.SOURCE_JOYSTICK);
+            final String btAddress = mNative.getBluetoothAddress(id);
+            final boolean shouldSuppress = hasPointer && !hasControls && btAddress != null
+                    && !isLikelyRealBluetoothPointer(btAddress);
+            if (!shouldSuppress) {
+                final boolean wasSuppressed;
+                synchronized (mInputDevicesLock) {
+                    wasSuppressed = mSuppressedBluetoothPointers.get(id);
+                    mSuppressedBluetoothPointers.delete(id);
+                }
+                if (wasSuppressed) {
+                    mNative.enableInputDevice(id);
+                }
+                continue;
+            }
+            synchronized (mInputDevicesLock) {
+                if (mSuppressedBluetoothPointers.get(id)) {
+                    continue;
+                }
+                mSuppressedBluetoothPointers.put(id, true);
+            }
+            mNative.disableInputDevice(id);
+        }
+    }
+
+    private boolean isLikelyRealBluetoothPointer(String btAddress) {
+        final BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter == null) {
+            return true;
+        }
+        try {
+            final BluetoothDevice device = adapter.getRemoteDevice(btAddress);
+            final BluetoothClass btClass = device.getBluetoothClass();
+            if (btClass == null) {
+                return true;
+            }
+            final int deviceClass = btClass.getDeviceClass();
+            return (deviceClass & BluetoothClass.Device.PERIPHERAL_POINTING)
+                    == BluetoothClass.Device.PERIPHERAL_POINTING;
+        } catch (IllegalArgumentException e) {
+            return true;
         }
     }
 

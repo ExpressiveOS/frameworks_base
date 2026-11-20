@@ -259,7 +259,7 @@ public class NotificationIconContainer extends ViewGroup {
         mIconSize = size;
     }
 
-    private void updateState() {
+    public void updateState() {
         resetViewStates();
         calculateIconXTranslations();
         applyIconStates();
@@ -758,11 +758,14 @@ public class NotificationIconContainer extends ViewGroup {
                     }
                 }
                 icon.setVisibleState(visibleState, animationsAllowed);
-                if (mOverrideIconColor) {
-                    int overrideIconColor = mUseInverseOverrideIconColor
-                            ? mThemedTextColorPrimaryInverse : mThemedTextColorPrimary;
-                    icon.setIconColor(overrideIconColor,
-                            /* animate= */ needsCannedAnimation && animationsAllowed);
+                boolean newIconStyle = StatusBarIconView.useColoredIcons(getContext());
+                if (icon.getStatusBarIcon().pkg.contains("systemui") || !newIconStyle) {
+                    if (mOverrideIconColor) {
+                        int overrideIconColor = mUseInverseOverrideIconColor
+                                ? mThemedTextColorPrimaryInverse : mThemedTextColorPrimary;
+                        icon.setIconColor(overrideIconColor,
+                                /* animate= */ needsCannedAnimation && animationsAllowed);
+                    }
                 }
                 if (animate) {
                     animateTo(icon, animationProperties);
@@ -792,7 +795,13 @@ public class NotificationIconContainer extends ViewGroup {
         public void initFrom(View view) {
             super.initFrom(view);
             if (view instanceof StatusBarIconView) {
-                iconColor = ((StatusBarIconView) view).getStaticDrawableColor();
+                StatusBarIconView icon = (StatusBarIconView) view;
+                boolean newIconStyle = StatusBarIconView.useColoredIcons(getContext());
+                if (icon.getStatusBarIcon().pkg.contains("systemui") || !newIconStyle) {
+                    iconColor = ((StatusBarIconView) view).getStaticDrawableColor();
+                } else {
+                    iconColor = StatusBarIconView.NO_COLOR;
+                }
             }
         }
     }

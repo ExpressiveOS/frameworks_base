@@ -2281,6 +2281,8 @@
   <java-symbol type="integer" name="config_screenBrightnessDim" />
   <java-symbol type="integer" name="config_screenBrightnessDoze" />
   <java-symbol type="integer" name="config_autoBrightnessShortTermModelTimeout" />
+  <java-symbol type="bool" name="config_autoBrightnessShortTermModelForceReset" />
+  <java-symbol type="bool" name="config_autoBrightnessResetShortTermModelOnScreenOff" />
   <java-symbol type="integer" name="config_progressTimeoutFallbackHome" />
   <java-symbol type="integer" name="config_shutdownBatteryTemperature" />
   <java-symbol type="bool" name="config_shutdownIfNoPower" />
@@ -3447,6 +3449,7 @@
   <java-symbol type="string" name="status_bar_sensors_off" />
   <java-symbol type="string" name="status_bar_screen_record" />
   <java-symbol type="string" name="status_bar_oem_satellite" />
+  <java-symbol type="string" name="status_bar_network_traffic" />
 
   <!-- Locale picker -->
   <java-symbol type="id" name="locale_search_menu" />
@@ -4393,10 +4396,11 @@
   <java-symbol type="bool" name="config_displayBrightnessBucketsInDoze" />
   <java-symbol type="bool" name="config_displayColorFadeDisabled" />
   <java-symbol type="integer" name="config_storageManagerDaystoRetainDefault" />
+  <java-symbol type="bool" name="config_supportsSmartIdleMaintenance" />
   <java-symbol type="string" name="config_headlineFontFamily" />
   <java-symbol type="string" name="config_headlineFontFamilyMedium" />
   <java-symbol type="string" name="config_bodyFontFamily" />
-
+  <java-symbol type="string" name="config_bodyFontFamilyMedium" />
 
   <java-symbol type="integer" name="config_pressedStateDurationMillis" />
   <java-symbol type="integer" name="config_tapTimeoutMillis" />
@@ -4685,8 +4689,8 @@
 
   <!-- Display White-Balance -->
   <java-symbol type="integer" name="config_displayWhiteBalanceBrightnessSensorRate" />
-  <java-symbol type="integer" name="config_displayWhiteBalanceBrightnessFilterHorizon" />
-  <java-symbol type="dimen" name="config_displayWhiteBalanceBrightnessFilterIntercept" />
+  <java-symbol type="integer" name="config_displayWhiteBalanceBrightnessFilterHorizon" id="0x010e008a" />
+  <java-symbol type="dimen" name="config_displayWhiteBalanceBrightnessFilterIntercept" id="0x0105010e" />
   <java-symbol type="string" name="config_displayWhiteBalanceColorTemperatureSensorName" />
   <java-symbol type="integer" name="config_displayWhiteBalanceColorTemperatureSensorRate" />
   <java-symbol type="integer" name="config_displayWhiteBalanceColorTemperatureFilterHorizon" />
@@ -4908,6 +4912,7 @@
   <java-symbol type="integer" name="config_app_start_info_history_list_size" />
 
   <java-symbol type="array" name="config_defaultImperceptibleKillingExemptionPkgs" />
+  <java-symbol type="array" name="config_defaultCachedAppFreezerExemptionPkgs" />
   <java-symbol type="array" name="config_defaultImperceptibleKillingExemptionProcStates" />
 
   <java-symbol type="color" name="conversation_important_highlight" />
@@ -6258,10 +6263,10 @@
   <java-symbol type="bool" name="config_displayBrightnessAsyncSensorReadingEnabled" />
 
   <java-symbol type="bool" name="config_watchlistUseFileHashesCache" />
-  <java-symbol type="string" name="config_defaultContextualSearchPackageName" />
-  <java-symbol type="string" name="config_defaultContextualSearchKey" />
-  <java-symbol type="string" name="config_defaultContextualSearchEnabled" />
-  <java-symbol type="string" name="config_defaultContextualSearchLegacyEnabled" />
+  <java-symbol type="string" name="config_defaultContextualSearchPackageName" id="0x01040276" />
+  <java-symbol type="string" name="config_defaultContextualSearchKey" id="0x01040274" />
+  <java-symbol type="string" name="config_defaultContextualSearchEnabled" id="0x01040273" />
+  <java-symbol type="string" name="config_defaultContextualSearchLegacyEnabled" id="0x01040275" />
 
   <java-symbol type="string" name="unarchival_session_app_label" />
 
@@ -6626,4 +6631,5 @@
   <java-symbol type="drawable" name="ic_cross_device_sync_airplane" />
   <!-- Disable the Video Capability over IWLAN when Wi-Fi Calling is turned off  -->
   <java-symbol type="bool" name="config_disable_video_capability_when_wfc_off" />
-  </resources>
+    <java-symbol type="bool" name="config_allowHbmWithoutTimeLimit" />
+</resources>

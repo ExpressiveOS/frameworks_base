@@ -79,6 +79,7 @@ import com.android.internal.R;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.os.BackgroundThread;
 import com.android.internal.protolog.ProtoLog;
+import com.android.internal.view.RotationPolicy;
 import com.android.server.UiThread;
 import com.android.server.policy.WindowManagerPolicy;
 import com.android.server.statusbar.StatusBarManagerInternal;
@@ -207,6 +208,10 @@ public class DisplayRotation {
      */
     @AllowAllRotations
     private int mAllowAllRotations = ALLOW_ALL_ROTATIONS_UNDEFINED;
+
+    private Boolean mEnableLockScreenRotation;
+
+    private int mUserRotationAngles = -1;
 
     @WindowManagerPolicy.UserRotationMode
     private int mUserRotationMode = WindowManagerPolicy.USER_ROTATION_FREE;
@@ -554,6 +559,26 @@ public class DisplayRotation {
         final int lastOrientation = mLastOrientation;
         @Surface.Rotation
         int rotation = rotationForOrientation(lastOrientation, oldRotation);
+
+        // Preserve locked user rotation across screen off/on and keyguard
+        if (getEnableLockScreenRotation()
+                && mUserRotationMode == WindowManagerPolicy.USER_ROTATION_LOCKED) {
+            final WindowContainer source = mDisplayContent.getLastOrientationSource();
+            final boolean isAppRequest = source != null &&
+                    (source.asActivityRecord() != null ||
+                            (source.asWindowState() != null &&
+                                    source.asWindowState().isActivityWindow()));
+
+            // If an app explicitly requests a fixed orientation (e.g., a landscape game),
+            // allow it to override the user lock. Otherwise, preserve the user's locked rotation.
+            if (!isAppRequest || !ActivityInfo.isFixedOrientation(lastOrientation)) {
+                rotation = mUserRotation;
+                ProtoLog.v(WM_DEBUG_ORIENTATION,
+                        "Preserving locked user rotation=%s (%d)",
+                        Surface.rotationToString(rotation), rotation);
+            }
+        }
+
         // Use the saved rotation for tabletop mode, if set.
         if (mFoldController != null && mFoldController.shouldRevertOverriddenRotation()) {
             int prevRotation = rotation;
@@ -1210,10 +1235,13 @@ public class DisplayRotation {
                 || orientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) {
             // Otherwise, use sensor only if requested by the application or enabled
             // by default for USER or UNSPECIFIED modes.  Does not apply to NOSENSOR.
-            if (sensorRotation != Surface.ROTATION_180
-                    || getAllowAllRotations() == ALLOW_ALL_ROTATIONS_ENABLED
-                    || orientation == ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
-                    || orientation == ActivityInfo.SCREEN_ORIENTATION_FULL_USER) {
+            boolean allowed = true;
+            if (orientation != ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+                    && orientation != ActivityInfo.SCREEN_ORIENTATION_FULL_USER) {
+                allowed = RotationPolicy.isRotationAllowed(sensorRotation, mUserRotationAngles,
+                        getAllowAllRotations() != ALLOW_ALL_ROTATIONS_DISABLED);
+            }
+            if (allowed) {
                 preferredRotation = sensorRotation;
             } else {
                 preferredRotation = lastRotation;
@@ -1311,6 +1339,17 @@ public class DisplayRotation {
         }
 
         return mAllowAllRotations;
+    }
+
+    private boolean getEnableLockScreenRotation() {
+        if (mEnableLockScreenRotation == null) {
+            // Can't read this during init() because the context doesn't have display metrics at
+            // that time so we cannot determine tablet vs. phone then.
+            mEnableLockScreenRotation = mContext.getResources().getBoolean(
+                    R.bool.config_enableLockScreenRotation);
+        }
+
+        return mEnableLockScreenRotation;
     }
 
     boolean isLandscapeOrSeascape(@Surface.Rotation final int rotation) {
@@ -1484,9 +1523,7 @@ public class DisplayRotation {
 
             // Configure rotation suggestions.
             final int showRotationSuggestions =
-                    ActivityManager.isLowRamDeviceStatic()
-                            ? Settings.Secure.SHOW_ROTATION_SUGGESTIONS_DISABLED
-                            : Settings.Secure.getIntForUser(resolver,
+                    Settings.Secure.getIntForUser(resolver,
                             Settings.Secure.SHOW_ROTATION_SUGGESTIONS,
                             Settings.Secure.SHOW_ROTATION_SUGGESTIONS_DEFAULT,
                             UserHandle.USER_CURRENT);
@@ -1501,6 +1538,13 @@ public class DisplayRotation {
                     UserHandle.USER_CURRENT);
             if (mUserRotation != userRotation) {
                 mUserRotation = userRotation;
+                shouldUpdateRotation = true;
+            }
+
+            final int userRotationAngles = Settings.System.getIntForUser(resolver,
+                    Settings.System.ACCELEROMETER_ROTATION_ANGLES, -1, UserHandle.USER_CURRENT);
+            if (mUserRotationAngles != userRotationAngles) {
+                mUserRotationAngles = userRotationAngles;
                 shouldUpdateRotation = true;
             }
 
@@ -2116,6 +2160,9 @@ public class DisplayRotation {
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.ACCELEROMETER_ROTATION), false, this,
+                    UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.ACCELEROMETER_ROTATION_ANGLES), false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.USER_ROTATION), false, this,

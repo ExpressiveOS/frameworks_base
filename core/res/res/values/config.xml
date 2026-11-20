@@ -58,6 +58,7 @@
         <item><xliff:g id="id">@string/status_bar_cast</xliff:g></item>
         <item><xliff:g id="id">@string/status_bar_ethernet</xliff:g></item>
         <item><xliff:g id="id">@string/status_bar_oem_satellite</xliff:g></item>
+        <item><xliff:g id="id">@string/status_bar_network_traffic</xliff:g></item>
         <item><xliff:g id="id">@string/status_bar_hotspot</xliff:g></item>
         <item><xliff:g id="id">@string/status_bar_stacked_mobile</xliff:g></item>
         <item><xliff:g id="id">@string/status_bar_mobile</xliff:g></item>
@@ -106,6 +107,7 @@
     <string translatable="false" name="status_bar_sensors_off">sensors_off</string>
     <string translatable="false" name="status_bar_screen_record">screen_record</string>
     <string translatable="false" name="status_bar_oem_satellite">satellite</string>
+    <string translatable="false" name="status_bar_network_traffic">network_traffic</string>
 
     <!-- Flag indicating whether the surface flinger has limited
          alpha compositing functionality in hardware.  If set, the window
@@ -1160,6 +1162,7 @@
             4 - Go to voice assist
             5 - Go to assistant (Settings.Secure.ASSISTANT)
             6 - Go to sleep (doze)
+            7 - Toggle torch on / off (if screen is off)
     -->
     <integer name="config_longPressOnPowerBehavior">5</integer>
 
@@ -1786,6 +1789,23 @@
          but also so that we don't erroneously keep the short-term model if the device is dozing
          but the display is fully on. -->
     <integer name="config_autoBrightnessShortTermModelTimeout">300000</integer>
+
+    <!-- When true, fully clear the auto-brightness short-term model (user slider bias) whenever
+         auto-brightness becomes active again. That covers display power-on (OFF_DUE_TO_DISPLAY_STATE
+         → ENABLED) and toggling auto-brightness off then on (DISABLED → ENABLED).
+
+         Stock AOSP keeps the short-term model across those transitions so a user preference
+         survives lock-screen cycles; set this true to treat each re-enable as a clean curve. -->
+    <bool name="config_autoBrightnessShortTermModelForceReset">false</bool>
+
+    <!-- When true, the short-term-model timeout above fully resets the model (clears the user's
+         manual brightness adjustment) instead of only invalidating it. Stock (false) keeps a
+         manual set at a similar ambient lux and only forgets it once the light changes enough,
+         which reads as brightness "sticking" (e.g. at minimum) across lock/unlock. Set this true
+         together with a short config_autoBrightnessShortTermModelTimeout so any real screen-off
+         forgets the manual set and unlocking returns to the automatic curve. -->
+    <bool name="config_autoBrightnessResetShortTermModelOnScreenOff">false</bool>
+
 
     <!-- Timeout (in milliseconds) after which we start the animation "Android
          is starting" -->
@@ -5552,8 +5572,11 @@
     <!-- Default number of days to retain for the automatic storage manager. -->
     <integer translatable="false" name="config_storageManagerDaystoRetainDefault">90</integer>
 
+    <!-- Whether the kernel supports the F2FS interfaces used by smart idle maintenance. -->
+    <bool name="config_supportsSmartIdleMaintenance">true</bool>
+
     <!-- Name of a font family to use for headlines. If empty, falls back to platform default -->
-    <string name="config_headlineFontFamily" translatable="false"></string>
+    <string name="config_headlineFontFamily" translatable="false">sans-serif</string>
     <!-- Allows setting custom fontFeatureSettings on specific text. -->
     <string name="config_headlineFontFeatureSettings" translatable="false"></string>
 
@@ -5638,7 +5661,7 @@
     <!-- Controls whether system buttons use all caps for text -->
     <bool name="config_buttonTextAllCaps">true</bool>
     <!-- Name of the font family used for system surfaces where the font should use medium weight -->
-    <string name="config_headlineFontFamilyMedium" translateable="false">@string/font_family_button_material</string>
+    <string name="config_headlineFontFamilyMedium" translateable="false">sans-serif-medium</string>
     <!-- Name of a font family to use for body text. -->
     <string name="config_bodyFontFamily" translatable="false">sans-serif</string>
     <!-- Name of a font family to use for medium body text. -->
@@ -6445,6 +6468,9 @@
     <!-- Packages that can't be killed even if it's requested to be killed on imperceptible -->
     <string-array name="config_defaultImperceptibleKillingExemptionPkgs" translatable="false" />
 
+    <!-- Packages that should not be frozen by the cached app freezer. -->
+    <string-array name="config_defaultCachedAppFreezerExemptionPkgs" translatable="false" />
+
     <!-- Proc States that can't be killed even if it's requested to be killed on imperceptible -->
     <integer-array name="config_defaultImperceptibleKillingExemptionProcStates">
       <item>0</item> <!-- PROCESS_STATE_PERSISTENT -->
@@ -7152,8 +7178,8 @@
     </string>
     <bool name="config_fillSecondaryBuiltInDisplayCutout">false</bool>
     <bool name="config_maskSecondaryBuiltInDisplayCutout">false</bool>
-    <string-array name="config_secondaryBuiltInDisplayCutoutSideOverride" translatable="false">
-    </string-array>
+    <integer-array name="config_secondaryBuiltInDisplayCutoutSideOverride">
+    </integer-array>
 
     <!-- An array contains unique ids of all built-in displays and the unique id of a display can be
          obtained from {@link Display#getUniqueId}. This array should be set for multi-display
@@ -8073,4 +8099,8 @@
 
     <!-- Whether to explicitly disable the Video capability over IWLAN when Wi-Fi Calling is turned off. -->
     <bool name="config_disable_video_capability_when_wfc_off">false</bool>
+    <!-- Legacy vendor displays may define 0/0/0 HBM timing as no time quota.
+         Enable only where the display stack independently enforces safe operation. -->
+    <bool name="config_allowHbmWithoutTimeLimit">false</bool>
+
 </resources>

@@ -630,11 +630,12 @@ public class StatusBarManagerService extends IStatusBarService.Stub implements D
         }
 
         @Override
-        public boolean showShutdownUi(boolean isReboot, String reason) {
+        public boolean showShutdownUi(boolean isReboot, String reason, boolean rebootCustom) {
             if (!mContext.getResources().getBoolean(R.bool.config_showSysuiShutdown)) {
                 return false;
             }
-            return runWithStatusBarIfPresent(bar -> bar.showShutdownUi(isReboot, reason));
+            return runWithStatusBarIfPresent(
+                    bar -> bar.showShutdownUi(isReboot, reason, rebootCustom));
         }
 
         @Override
@@ -865,6 +866,17 @@ public class StatusBarManagerService extends IStatusBarService.Stub implements D
                     bar.onConfigurationChanged();
                 } catch (RemoteException e) {
                     Slog.e(TAG, "onConfigucrationChanged", e);
+                }
+            }
+        }
+
+        @Override
+        public void restartSystemUI() {
+            IStatusBar bar = mBar;
+            if (bar != null) {
+                try {
+                    bar.restartSystemUI();
+                } catch (RemoteException e) {
                 }
             }
         }
@@ -1671,13 +1683,10 @@ public class StatusBarManagerService extends IStatusBarService.Stub implements D
      * Allows the status bar to reboot the device.
      */
     @Override
-    public void reboot(boolean safeMode) {
+    public void reboot(boolean safeMode, String reason) {
         enforceStatusBarService();
         enforceValidCallingUser();
 
-        String reason = safeMode
-                ? PowerManager.REBOOT_SAFE_MODE
-                : PowerManager.SHUTDOWN_USER_REQUESTED;
         ShutdownCheckPoints.recordCheckPoint(Binder.getCallingPid(), reason);
         final long identity = Binder.clearCallingIdentity();
         try {
@@ -1687,7 +1696,7 @@ public class StatusBarManagerService extends IStatusBarService.Stub implements D
                 if (safeMode) {
                     ShutdownThread.rebootSafeMode(getUiContext(), true);
                 } else {
-                    ShutdownThread.reboot(getUiContext(), reason, false);
+                    ShutdownThread.rebootCustom(getUiContext(), reason, false);
                 }
             });
         } finally {
@@ -1707,6 +1716,24 @@ public class StatusBarManagerService extends IStatusBarService.Stub implements D
         try {
             mHandler.post(() -> {
                 mActivityManagerInternal.restart();
+            });
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+    }
+
+    /**
+     * Allows SystemUI restart only
+     */
+    @Override
+    public void restartSystemUI() {
+        enforceStatusBarService();
+        enforceValidCallingUser();
+
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            mHandler.post(() -> {
+                mInternalService.restartSystemUI();
             });
         } finally {
             Binder.restoreCallingIdentity(identity);
@@ -2555,6 +2582,30 @@ public class StatusBarManagerService extends IStatusBarService.Stub implements D
         runWithStatusBarIfPresent(
                 bar -> bar.showRearDisplayDialog(currentState),
                 "showRearDisplayDialog");
+    }
+
+    @Override
+    public void startAssist(Bundle args) {
+        enforceStatusBarService();
+        if (mBar != null) {
+            try {
+                mBar.startAssist(args);
+            } catch (RemoteException e) {
+                Slog.e(TAG, "startAssist", e);
+            }
+        }
+    }
+
+    @Override
+    public void toggleRecentApps() {
+        enforceStatusBarService();
+        if (mBar != null) {
+            try {
+                mBar.toggleRecentApps();
+            } catch (RemoteException e) {
+                Slog.e(TAG, "toggleRecentApps", e);
+            }
+        }
     }
 
     /** @hide */

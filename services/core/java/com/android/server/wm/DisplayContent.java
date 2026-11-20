@@ -136,6 +136,7 @@ import static com.android.internal.protolog.WmProtoLogGroups.WM_DEBUG_SCREEN_ON;
 import static com.android.internal.protolog.WmProtoLogGroups.WM_DEBUG_SLEEP_TOKEN;
 import static com.android.internal.protolog.WmProtoLogGroups.WM_SHOW_TRANSACTIONS;
 import static com.android.internal.util.LatencyTracker.ACTION_ROTATE_SCREEN;
+import static com.android.server.display.LMOFreeformDisplayAdapter.UNIQUE_ID_PREFIX;
 import static com.android.server.policy.WindowManagerPolicy.FINISH_LAYOUT_REDO_ANIM;
 import static com.android.server.policy.WindowManagerPolicy.FINISH_LAYOUT_REDO_LAYOUT;
 import static com.android.server.policy.WindowManagerPolicy.FINISH_LAYOUT_REDO_WALLPAPER;
@@ -271,6 +272,7 @@ import com.android.internal.protolog.ProtoLog;
 import com.android.internal.util.ToBooleanFunction;
 import com.android.internal.util.function.pooled.PooledLambda;
 import com.android.internal.util.function.pooled.PooledPredicate;
+import com.android.server.LocalServices;
 import com.android.server.input.InputManagerService;
 import com.android.server.inputmethod.InputMethodManagerInternal;
 import com.android.server.policy.WindowManagerPolicy;
@@ -582,6 +584,8 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
     // TODO(multi-display): remove some of the usages.
     boolean isDefaultDisplay;
 
+    private boolean isFreeformDisplay;
+
     /** Save allocating when calculating rects */
     private final Rect mTmpRect = new Rect();
     private final Region mTmpRegion = new Region();
@@ -839,6 +843,8 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
 
     /** Last window to hold the screen locked. */
     private WindowState mLastWakeLockHoldingWindow;
+
+    private boolean mHasSecureContent;
 
     /**
      * Whether display is allowed to ignore all activity size restrictions.
@@ -1284,6 +1290,7 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
         mSystemGestureExclusionLimit = mWmService.mConstants.mSystemGestureExclusionLimitDp
                 * mDisplayMetrics.densityDpi / DENSITY_DEFAULT;
         isDefaultDisplay = mDisplayId == DEFAULT_DISPLAY;
+        isFreeformDisplay = mDisplayInfo.uniqueId.startsWith(UNIQUE_ID_PREFIX);
         mInsetsStateController = new InsetsStateController(this);
         initializeDisplayBaseInfo();
         mDisplayFrames = new DisplayFrames(mInsetsStateController.getRawInsetsState(),
@@ -2476,7 +2483,9 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
             return;
         }
         // The orientation of display is not changed.
-        clearFixedRotationLaunchingApp();
+        if (!mTransitionController.isCollecting(this)) {
+            clearFixedRotationLaunchingApp();
+        }
     }
 
     /**
@@ -4523,6 +4532,17 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
             if (newTask != null) newTask.onAppFocusChanged(true);
         }
 
+        if (mDisplayId == DEFAULT_DISPLAY && newFocus != null) {
+            AxSandboxService.get().onAppFocusChanged(newFocus, newTask);
+        }
+
+        if (newFocus != null && isDefaultDisplay) {
+            final GameSpaceService gameSpaceService =
+                    LocalServices.getService(GameSpaceService.class);
+            if (gameSpaceService != null) {
+                gameSpaceService.onAppFocusChanged(newFocus, newTask);
+            }
+        }
         getInputMonitor().setFocusedAppLw(newFocus);
         return true;
     }
@@ -4773,6 +4793,11 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
             return DISPLAY_IME_POLICY_FALLBACK_DISPLAY;
         }
         return mWmService.mDisplayWindowSettings.getImePolicyLocked(this);
+    }
+
+    boolean forceDesktopMode() {
+        return ("VNC".equals(mDisplay.getName()) || mWmService.mForceDesktopModeOnExternalDisplays)
+            && !isDefaultDisplay && !isFreeformDisplay && !isPrivate();
     }
 
     /** @see WindowManagerInternal#onToggleImeRequested */
@@ -5590,6 +5615,11 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
         return imeLayeringTarget.mSession.mUid == uid && imeLayeringTarget.mSession.mPid == pid;
     }
 
+    boolean hasSecureWindowOnScreen() {
+        final WindowState win = getWindow(w -> w.isOnScreen() && w.isSecureLocked());
+        return win != null;
+    }
+
     // TODO: Super unexpected long method that should be broken down...
     void applySurfaceChangesTransaction() {
         final WindowSurfacePlacer surfacePlacer = mWmService.mWindowPlacerLocked;
@@ -5724,6 +5754,13 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
         mInputMonitor.setUpdateInputWindowsNeededLw();
         if (updateInputWindows) {
             mInputMonitor.updateInputWindowsLw(false /*force*/);
+        }
+
+        // Notify if display added or removed a secure window
+        final boolean hasSecureContent = hasSecureWindowOnScreen();
+        if (hasSecureContent != mHasSecureContent) {
+            mHasSecureContent = hasSecureContent;
+            mWmService.notifyDisplaySecureContentChange(mDisplayId, hasSecureContent);
         }
     }
 
@@ -6118,7 +6155,7 @@ class DisplayContent extends RootDisplayArea implements WindowManagerPolicy.Disp
         if (DesktopExperienceFlags.ENABLE_DISPLAY_CONTENT_MODE_MANAGEMENT.isTrue()) {
             return false;
         }
-        if (!mWmService.mForceDesktopModeOnExternalDisplays || isDefaultDisplay || isPrivate()) {
+        if (!mWmService.mForceDesktopModeOnExternalDisplays || isDefaultDisplay || isPrivate() && !isFreeformDisplay) {
             return false;
         }
         if (!isWindowingModeSupported(WINDOWING_MODE_FREEFORM)) {

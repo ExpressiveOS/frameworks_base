@@ -655,7 +655,7 @@ public class BiometricUnlockController extends KeyguardUpdateMonitorCallback imp
         if (!deviceInteractive) {
             if (!keyguardShowing && !mScreenOffAnimationController.isKeyguardShowDelayed()) {
                 if (mKeyguardStateController.isUnlocked()) {
-                    return MODE_WAKE_AND_DISMISS;
+                    return MODE_ONLY_WAKE;
                 }
                 return MODE_ONLY_WAKE;
             } else if (mDozeScrimController.isPulsing() && unlockingAllowed) {
@@ -707,7 +707,7 @@ public class BiometricUnlockController extends KeyguardUpdateMonitorCallback imp
         final boolean unlockingAllowed =
                 mUpdateMonitor.isUnlockingWithBiometricAllowed(isStrongBiometric);
         final boolean deviceDreaming = mUpdateMonitor.isDreaming();
-        final boolean bypass = mKeyguardBypassController.getBypassEnabled()
+        final boolean bypass = mKeyguardBypassController.getBypassEnabledBiometric()
                 || mAuthController.isUdfpsFingerDown();
         final boolean isBouncerShowing = isBouncerShowing();
 

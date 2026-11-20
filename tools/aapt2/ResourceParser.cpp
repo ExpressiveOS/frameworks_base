@@ -889,15 +889,14 @@ bool ResourceParser::ParseString(xml::XmlPullParser* parser,
 
     if (formatted && translatable) {
       if (!util::VerifyJavaStringFormat(*string_value->value)) {
-        android::DiagMessage msg(out_resource->source);
-        msg << "multiple substitutions specified in non-positional format; "
-               "did you mean to add the formatted=\"false\" attribute?";
         if (options_.error_on_positional_arguments) {
+          android::DiagMessage msg(out_resource->source);
+          msg << "multiple substitutions specified in non-positional format; "
+                 "did you mean to add the formatted=\"false\" attribute?";
+
           diag_->Error(msg);
           return false;
         }
-
-        diag_->Warn(msg);
       }
     }
 
@@ -1133,6 +1132,17 @@ bool ResourceParser::ParseSymbolImpl(xml::XmlPullParser* parser,
                  << "invalid resource type '" << maybe_type.value() << "' in <"
                  << parser->element_name() << ">");
     return false;
+  }
+
+  if (std::optional<StringPiece> maybe_id_str = xml::FindNonEmptyAttribute(parser, "id")) {
+    std::optional<ResourceId> maybe_id = ResourceUtils::ParseResourceId(maybe_id_str.value());
+    if (!maybe_id) {
+      diag_->Error(android::DiagMessage(out_resource->source)
+                   << "invalid resource ID '" << maybe_id_str.value() << "' in <"
+                   << parser->element_name() << "> tag");
+      return false;
+    }
+    out_resource->id = maybe_id.value();
   }
 
   out_resource->name.type = parsed_type->ToResourceNamedType();

@@ -29,11 +29,14 @@ import android.app.IActivityManager;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.database.ContentObserver;
 import android.graphics.Rect;
 import android.graphics.Region;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.Trace;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.Display;
 import android.view.IWindow;
@@ -85,6 +88,8 @@ import com.android.systemui.Flags;
 
 import dagger.Lazy;
 
+import lineageos.providers.LineageSettings;
+
 import java.io.PrintWriter;
 import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
@@ -117,6 +122,7 @@ public class NotificationShadeWindowControllerImpl
     private final long mLockScreenDisplayTimeout;
     private final float mKeyguardPreferredRefreshRate; // takes precedence over max
     private final float mKeyguardMaxRefreshRate;
+    private final float mAODMaxRefreshRate;
     private final KeyguardViewMediator mKeyguardViewMediator;
     private final KeyguardBypassController mKeyguardBypassController;
     private final Executor mBackgroundExecutor;
@@ -232,6 +238,11 @@ public class NotificationShadeWindowControllerImpl
         mTopUiController = topUiController;
         mKeyguardSurfaceBehindInteractor = keyguardSurfaceBehindInteractor;
 
+        // Same as described above but limited to AOD
+        // Allows using a different rate for each
+        mAODMaxRefreshRate = context.getResources()
+                .getInteger(R.integer.config_aodMaxRefreshRate);
+
         if (SceneContainerFlag.isEnabled()) {
             javaAdapter.alwaysCollectFlow(
                     mKeyguardSurfaceBehindInteractor.isAnimatingSurface(),
@@ -297,6 +308,19 @@ public class NotificationShadeWindowControllerImpl
         }
     }
 
+    private boolean shouldEnableKeyguardScreenRotation() {
+        boolean enableAccelerometerRotation =
+                Settings.System.getInt(mContext.getContentResolver(),
+                Settings.System.ACCELEROMETER_ROTATION, 0) != 0;
+        boolean enableLockScreenRotation =
+                LineageSettings.System.getInt(mContext.getContentResolver(),
+                LineageSettings.System.LOCKSCREEN_ROTATION,
+                mContext.getResources().getBoolean(org.lineageos.platform.internal.R.bool.
+                        config_lockScreenRotationEnabledByDefault) ? 1 : 0) != 0;
+        return mKeyguardStateController.isKeyguardScreenRotationAllowed()
+                && (enableLockScreenRotation && enableAccelerometerRotation);
+    }
+
     /** Adds the notification shade view to the window manager. */
     @Override
     public void attach() {
@@ -334,6 +358,8 @@ public class NotificationShadeWindowControllerImpl
         }
 
         mLpChanged.copyFrom(mLp);
+        SettingsObserver observer = new SettingsObserver(new Handler());
+        observer.observe(mContext);
         onThemeChanged();
 
         // Make the state consistent with KeyguardViewMediator#setupLocked during initialization.
@@ -427,6 +453,7 @@ public class NotificationShadeWindowControllerImpl
     private void applyKeyguardFlags(NotificationShadeWindowState state) {
         final boolean keyguardOrAod =
                 state.keyguardShowing || (state.dozing && mDozeParameters.getAlwaysOn());
+        boolean wasKeyguardRateSet = false;
         if ((keyguardOrAod && !state.mediaBackdropShowing && !state.lightRevealScrimOpaque)
                 || (!SceneContainerFlag.isEnabled()
                         && mKeyguardViewMediator.isAnimatingBetweenKeyguardAndSurfaceBehind())
@@ -462,6 +489,7 @@ public class NotificationShadeWindowControllerImpl
                 // Both max and min display refresh rate must be set to take effect:
                 mLpChanged.preferredMaxDisplayRefreshRate = mKeyguardPreferredRefreshRate;
                 mLpChanged.preferredMinDisplayRefreshRate = mKeyguardPreferredRefreshRate;
+                wasKeyguardRateSet = true;
             } else {
                 mLpChanged.preferredMaxDisplayRefreshRate = 0;
                 mLpChanged.preferredMinDisplayRefreshRate = 0;
@@ -477,6 +505,7 @@ public class NotificationShadeWindowControllerImpl
                             && !state.keyguardGoingAway;
             if (state.dozing || bypassOnKeyguard) {
                 mLpChanged.preferredMaxDisplayRefreshRate = mKeyguardMaxRefreshRate;
+                wasKeyguardRateSet = true;
             } else {
                 mLpChanged.preferredMaxDisplayRefreshRate = 0;
             }
@@ -495,6 +524,19 @@ public class NotificationShadeWindowControllerImpl
         } else {
             mLpChanged.inputFeatures &= ~LayoutParams.INPUT_FEATURE_SENSITIVE_FOR_PRIVACY;
         }
+
+        if (mAODMaxRefreshRate > 0) {
+            if (state.dozing) {
+                // limit on AOD & ambient if we have that set
+                // overrides set max keyguard rate
+                mLpChanged.preferredMaxDisplayRefreshRate = mAODMaxRefreshRate;
+            } else if (!wasKeyguardRateSet) {
+                // un-limit when out, but only if max keyguard rate wasn't set
+                mLpChanged.preferredMaxDisplayRefreshRate = 0;
+            }
+            Trace.setCounter("display_max_refresh_rate",
+                        (long) mLpChanged.preferredMaxDisplayRefreshRate);
+        }
     }
 
     private void adjustScreenOrientation(NotificationShadeWindowState state) {
@@ -507,7 +549,7 @@ public class NotificationShadeWindowControllerImpl
         if (state.bouncerShowing
                 || (state.isKeyguardShowingAndNotOccluded() && !dreamShowingAndRotationAllowed)
                 || state.dozing) {
-            if (mKeyguardStateController.isKeyguardScreenRotationAllowed()) {
+            if (shouldEnableKeyguardScreenRotation()) {
                 mLpChanged.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_USER;
             } else {
                 mLpChanged.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_NOSENSOR;
@@ -942,7 +984,6 @@ public class NotificationShadeWindowControllerImpl
             return;
         }
         mCurrentState.backgroundBlurRadius = backgroundBlurRadius;
-        apply(mCurrentState);
     }
 
     @Override
@@ -1189,4 +1230,29 @@ public class NotificationShadeWindowControllerImpl
             apply(mCurrentState);
         }
     };
+
+    private class SettingsObserver extends ContentObserver {
+        public SettingsObserver(Handler handler) {
+            super(handler);
+        }
+
+        public void observe(Context context) {
+            context.getContentResolver().registerContentObserver(
+                    Settings.System.getUriFor(Settings.System.ACCELEROMETER_ROTATION),
+                    false, this);
+            context.getContentResolver().registerContentObserver(
+                    LineageSettings.System.getUriFor(LineageSettings.System.LOCKSCREEN_ROTATION),
+                    false, this);
+        }
+
+        public void unobserve(Context context) {
+            context.getContentResolver().unregisterContentObserver(this);
+        }
+
+        @Override
+        public void onChange(boolean selfChange) {
+            // update the state
+            apply(mCurrentState);
+        }
+    }
 }

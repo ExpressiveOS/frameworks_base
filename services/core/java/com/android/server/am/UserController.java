@@ -1019,7 +1019,7 @@ class UserController implements Handler.Callback {
             // Suppress double notifications for managed profiles that
             // were unlocked automatically as part of their parent user being
             // unlocked.  TODO(b/217442918): this code doesn't work correctly.
-            final boolean quiet = info.isManagedProfile();
+            final boolean quiet = info.isManagedProfile() || info.isCloneProfile();
             mInjector.sendPreBootBroadcast(userId, quiet,
                     () -> finishUserUnlockedCompleted(uss));
         } else {
@@ -1978,6 +1978,11 @@ class UserController implements Handler.Callback {
     }
 
     boolean startUserInBackgroundTemporarily(@UserIdInt int userId, int durationSecs) {
+        synchronized (mLock) {
+            if (!mReady) {
+                return false;
+            }
+        }
         return startUserNoChecks(userId, Display.DEFAULT_DISPLAY, USER_START_MODE_BACKGROUND,
                 durationSecs, /* unlockListener= */ null);
     }
@@ -3677,6 +3682,9 @@ class UserController implements Handler.Callback {
     }
 
     private void checkGetCurrentUserPermissions() {
+        if (com.android.internal.util.expressiveos.PixelPropsUtils.isSystemLauncher(Binder.getCallingUid())) {
+            return;
+        }
         if ((mInjector.checkCallingPermission(INTERACT_ACROSS_USERS)
                 != PackageManager.PERMISSION_GRANTED) && (
                 mInjector.checkCallingPermission(INTERACT_ACROSS_USERS_FULL)

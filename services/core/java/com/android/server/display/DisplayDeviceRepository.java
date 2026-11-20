@@ -164,7 +164,9 @@ class DisplayDeviceRepository implements DisplayAdapter.Listener {
                 Slog.w(TAG, "Attempted to add already added display device: " + info);
                 return;
             }
-            Slog.i(TAG, "Display device added: " + info);
+            if (DEBUG) {
+                Slog.i(TAG, "Display device added: " + info);
+            }
             device.mDebugLastLoggedDeviceInfo = info;
 
             mDisplayDevices.add(device);
@@ -184,18 +186,18 @@ class DisplayDeviceRepository implements DisplayAdapter.Listener {
                         "handleDisplayDeviceChanged");
             }
             int diff = device.mDebugLastLoggedDeviceInfo.diff(info);
-            if (diff == 0) {
+            if (DEBUG && diff == 0) {
                 Slog.i(TAG, "Display device same: " + info);
-            } else if (diff == DisplayDeviceInfo.DIFF_STATE) {
+            } else if (DEBUG && diff == DisplayDeviceInfo.DIFF_STATE) {
                 Slog.i(TAG, "Display device changed state: \"" + info.name
                         + "\", " + Display.stateToString(info.state));
-            } else if (diff == DisplayDeviceInfo.DIFF_ROTATION) {
+            } else if (DEBUG && diff == DisplayDeviceInfo.DIFF_ROTATION) {
                 Slog.i(TAG, "Display device rotated: \"" + info.name
                         + "\", " + Surface.rotationToString(info.rotation));
-            } else if ((diff &
+            } else if (DEBUG && (diff &
                     (DisplayDeviceInfo.DIFF_MODE_ID | DisplayDeviceInfo.DIFF_RENDER_TIMINGS
                             | DisplayDeviceInfo.DIFF_FRAME_RATE_OVERRIDE)) != 0) {
-                Slog.i(TAG, "Display device changed render timings: \"" + info.name
+                if (DEBUG) Slog.d(TAG, "Display device changed render timings: \"" + info.name
                         + "\", renderFrameRate=" + info.renderFrameRate
                         + ", presentationDeadlineNanos=" + info.presentationDeadlineNanos
                         + ", appVsyncOffsetNanos=" + info.appVsyncOffsetNanos
@@ -205,8 +207,16 @@ class DisplayDeviceRepository implements DisplayAdapter.Listener {
                     Slog.i(TAG, "Display device changed committed state: \"" + info.name
                             + "\", " + Display.stateToString(info.committedState));
                 }
-            } else if (diff != DisplayDeviceInfo.DIFF_HDR_SDR_RATIO) {
+            } else if (DEBUG && diff != DisplayDeviceInfo.DIFF_HDR_SDR_RATIO) {
                 Slog.i(TAG, "Display device changed: " + info);
+            }
+            if (DEBUG) {
+                if (diff == DisplayDeviceInfo.DIFF_STATE) {
+                    Slog.i(TAG, "Display device changed state: \"" + info.name
+                            + "\", " + Display.stateToString(info.state));
+                } else if (diff != DisplayDeviceInfo.DIFF_HDR_SDR_RATIO) {
+                    Slog.i(TAG, "Display device changed: " + info);
+                }
             }
 
             if ((diff & DisplayDeviceInfo.DIFF_COLOR_MODE) != 0) {
@@ -234,7 +244,9 @@ class DisplayDeviceRepository implements DisplayAdapter.Listener {
                 return;
             }
 
-            Slog.i(TAG, "Display device removed: " + info);
+            if (DEBUG) {
+                Slog.i(TAG, "Display device removed: " + info);
+            }
             device.mDebugLastLoggedDeviceInfo = info;
             sendEventLocked(device, DISPLAY_DEVICE_EVENT_REMOVED);
         }

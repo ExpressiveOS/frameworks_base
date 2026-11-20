@@ -37,6 +37,7 @@ import com.android.systemui.statusbar.notification.collection.PipelineDumpable;
 import com.android.systemui.statusbar.notification.collection.PipelineDumper;
 import com.android.systemui.statusbar.phone.CentralSurfaces;
 import com.android.systemui.statusbar.phone.NotificationListenerWithPlugins;
+import com.android.systemui.util.ScrimUtils;
 import com.android.systemui.util.time.SystemClock;
 
 import java.util.ArrayList;
@@ -94,10 +95,13 @@ public class NotificationListener extends NotificationListenerWithPlugins implem
 
     /** Registers a listener that's notified when notifications are added/removed/etc. */
     public void addNotificationHandler(NotificationHandler handler) {
-        if (mNotificationHandlers.contains(handler)) {
-            throw new IllegalArgumentException("Listener is already added");
+        if (!mNotificationHandlers.contains(handler)) {
+            mNotificationHandlers.add(handler);
         }
-        mNotificationHandlers.add(handler);
+    }
+
+    public void removeNotificationHandler(NotificationHandler handler) {
+        mNotificationHandlers.remove(handler);
     }
 
     @Override
@@ -152,6 +156,7 @@ public class NotificationListener extends NotificationListenerWithPlugins implem
                 for (NotificationHandler handler : mNotificationHandlers) {
                     handler.onNotificationPosted(sbn, rankingMap);
                 }
+                ScrimUtils.get().onNotificationPosted(sbn);
             });
         } else if (isKeyInRankingMap(key, rankingMap)) {
             Log.wtf(TAG, "Plugin prevented post but left ranking " + key);
@@ -176,6 +181,7 @@ public class NotificationListener extends NotificationListenerWithPlugins implem
                 for (NotificationHandler handler : mNotificationHandlers) {
                     handler.onNotificationRemoved(sbn, rankingMap, reason);
                 }
+                ScrimUtils.get().onNotificationRemoved(sbn);
             });
         } else if (!isKeyInRankingMap(key, rankingMap)) {
             Log.wtf(TAG, "Plugin prevented removal but removed ranking " + key

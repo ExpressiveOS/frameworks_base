@@ -703,6 +703,11 @@ class AppErrors {
                 return;
             }
 
+            // Crash log text for the dialog's "Copy crash log" option
+            data.paste = "time: " + timeMillis + "\n" +
+            "msg: " + longMsg + "\n" +
+            "stacktrace: " + stackTrace;
+
             final Message msg = Message.obtain();
             msg.what = ActivityManagerService.SHOW_ERROR_UI_MSG;
 

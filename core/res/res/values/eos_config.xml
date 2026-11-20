@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: The LineageOS Project
+     SPDX-FileCopyrightText: 2026 The ExpressiveOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+
+    <!-- Whether double tap on the status bar or lock screen turns the screen off by default.
+         Default of Settings.System.DOUBLE_TAP_SLEEP_GESTURE. -->
+    <bool name="config_dt2sGestureEnabledByDefault">true</bool>
+
+    <!-- Whether the lock screen rotates with the device by default.
+         Default of Settings.System.LOCKSCREEN_ROTATION. -->
+    <bool name="config_lockScreenRotationEnabledByDefault">false</bool>
+
+    <!-- Whether a fingerprint sensor on the power button unlocks without a press by default.
+         Default of Settings.Secure.SFPS_PERFORMANT_AUTH_ENABLED. -->
+    <bool name="config_fingerprintWakeAndUnlock">true</bool>
+
+    <!-- The actions shown in the advanced restart submenu of the power menu.
+         Possible values: restart, restart_systemui, restart_recovery, restart_bootloader,
+         restart_download, restart_fastboot -->
+    <string-array name="config_restartActionsList" translatable="false">
+        <item>restart</item>
+        <item>restart_systemui</item>
+        <item>restart_recovery</item>
+        <item>restart_bootloader</item>
+        <item>restart_fastboot</item>
+    </string-array>
+
+</resources>

@@ -1,0 +1,252 @@
+/*
+ * Copyright (C) 2025 The AxionAOSP Project
+ *           (C) 2025 crDroid Android Project
+ *           (C) 2024-2026 Lunaris AOSP
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.android.systemui.pulse
+
+import android.content.Context
+import android.database.ContentObserver
+import android.graphics.Color
+import android.net.Uri
+import android.os.Handler
+import android.os.UserHandle
+import android.os.Looper
+import android.provider.Settings
+import com.android.systemui.dagger.SysUISingleton
+
+import javax.inject.Inject
+
+@SysUISingleton
+class PulseSettingsRepository @Inject constructor(
+    private val context: Context
+) {
+
+    companion object {
+        private const val PULSE_ENABLED = Settings.Secure.LOCKSCREEN_PULSE_ENABLED
+        private const val PULSE_BAR_COUNT = Settings.Secure.PULSE_BAR_COUNT
+        private const val PULSE_ROUNDED_BARS = Settings.Secure.PULSE_ROUNDED_BARS
+        private const val PULSE_COLOR = Settings.Secure.PULSE_COLOR
+        private const val PULSE_CUSTOM_COLOR = Settings.Secure.PULSE_CUSTOM_COLOR
+        private const val PULSE_RENDERER = Settings.Secure.PULSE_RENDERER
+        private const val PULSE_SHOW_ON_AMBIENT = Settings.Secure.PULSE_SHOW_ON_AMBIENT
+        private const val PULSE_SHOW_ON_MEDIA_PLAYER = Settings.Secure.PULSE_SHOW_ON_MEDIA_PLAYER
+        private const val PULSE_HEIGHT_MULTIPLIER = Settings.Secure.PULSE_HEIGHT_MULTIPLIER
+        private const val PULSE_BASS_HAPTICS = Settings.Secure.PULSE_BASS_HAPTICS
+        private const val PULSE_CAPTURE_MODE = Settings.Secure.PULSE_CAPTURE_MODE
+
+        private const val DEFAULT_ENABLED = false
+        private const val DEFAULT_BAR_COUNT = 32
+        private const val DEFAULT_ROUNDED_BARS = false
+        private const val DEFAULT_COLOR = "lavalamp"
+        private const val DEFAULT_CUSTOM_COLOR = Color.WHITE
+        private const val DEFAULT_RENDERER = "solid"
+        private const val DEFAULT_SHOW_ON_AMBIENT = true
+        private const val DEFAULT_SHOW_ON_MEDIA_PLAYER = false
+        private const val DEFAULT_HEIGHT_MULTIPLIER = 100 // 100 = 1.0x (normal height)
+        private const val DEFAULT_HAPTICS_ENABLED = false
+        private const val DEFAULT_HAPTICS_MODE = 0
+        private const val DEFAULT_CAPTURE_MODE = 0
+    }
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var settingsObserver: SettingsObserver? = null
+    private var onSettingsChangedListener: (() -> Unit)? = null
+
+    private var cachedEnabled: Boolean? = null
+    private var cachedBarCount: Int? = null
+    private var cachedRoundedBars: Boolean? = null
+    private var cachedColorMode: String? = null
+    private var cachedCustomColor: Int? = null
+    private var cachedRenderer: String? = null
+    private var cachedShowOnAmbient: Boolean? = null
+    private var cachedShowOnMediaPlayer: Boolean? = null
+    private var cachedHeightMultiplier: Float? = null
+    private var cachedHapticsEnabled: Boolean? = null
+    private var cachedHapticsMode: Int? = null
+    private var cachedCaptureMode: PulseAudioDataProcessor.CaptureMode? = null
+
+    fun startObserving() {
+        if (settingsObserver != null) return
+
+        settingsObserver = SettingsObserver(handler) { invalidateCache() }
+
+        listOf(
+            Settings.Secure.getUriFor(PULSE_ENABLED),
+            Settings.Secure.getUriFor(PULSE_BAR_COUNT),
+            Settings.Secure.getUriFor(PULSE_ROUNDED_BARS),
+            Settings.Secure.getUriFor(PULSE_COLOR),
+            Settings.Secure.getUriFor(PULSE_CUSTOM_COLOR),
+            Settings.Secure.getUriFor(PULSE_RENDERER),
+            Settings.Secure.getUriFor(PULSE_SHOW_ON_AMBIENT),
+            Settings.Secure.getUriFor(PULSE_SHOW_ON_MEDIA_PLAYER),
+            Settings.Secure.getUriFor(PULSE_HEIGHT_MULTIPLIER),
+            Settings.Secure.getUriFor(PULSE_RENDERER),
+            Settings.Secure.getUriFor(PULSE_BASS_HAPTICS),
+            Settings.Secure.getUriFor(PULSE_CAPTURE_MODE)
+        ).forEach { uri ->
+            context.contentResolver.registerContentObserver(uri, false,
+                settingsObserver!!, UserHandle.USER_ALL)
+        }
+    }
+
+    fun stopObserving() {
+        settingsObserver?.let {
+            context.contentResolver.unregisterContentObserver(it)
+            settingsObserver = null
+        }
+    }
+
+    fun setOnSettingsChangedListener(listener: () -> Unit) {
+        onSettingsChangedListener = listener
+    }
+
+    fun isPulseEnabled(): Boolean {
+        if (cachedEnabled == null) {
+            cachedEnabled = getSecureSetting(PULSE_ENABLED, DEFAULT_ENABLED)
+        }
+        return cachedEnabled!!
+    }
+
+    fun getBarCount(): Int {
+        if (cachedBarCount == null) {
+            cachedBarCount = getSecureSetting(PULSE_BAR_COUNT, DEFAULT_BAR_COUNT).coerceIn(8, 64)
+        }
+        return cachedBarCount!!
+    }
+
+    fun isRoundedBarsEnabled(): Boolean {
+        if (cachedRoundedBars == null) {
+            cachedRoundedBars = getSecureSetting(PULSE_ROUNDED_BARS, DEFAULT_ROUNDED_BARS)
+        }
+        return cachedRoundedBars!!
+    }
+
+    fun getColorMode(): String {
+        if (cachedColorMode == null) {
+            cachedColorMode = getSecureStringSetting(PULSE_COLOR, DEFAULT_COLOR)
+        }
+        return cachedColorMode!!
+    }
+
+    fun getCustomColor(): Int {
+        if (cachedCustomColor == null) {
+            cachedCustomColor = getSecureSetting(PULSE_CUSTOM_COLOR, DEFAULT_CUSTOM_COLOR)
+        }
+        return cachedCustomColor!!
+    }
+
+    fun isPulseShowOnAmbient(): Boolean {
+        if (cachedShowOnAmbient == null) {
+            cachedShowOnAmbient = getSecureSetting(PULSE_SHOW_ON_AMBIENT, DEFAULT_SHOW_ON_AMBIENT)
+        }
+        return cachedShowOnAmbient!!
+    }
+
+    fun isPulseMediaEnabled(): Boolean {
+        if (cachedShowOnMediaPlayer == null) {
+            cachedShowOnMediaPlayer = getSecureSetting(PULSE_SHOW_ON_MEDIA_PLAYER, DEFAULT_SHOW_ON_MEDIA_PLAYER)
+        }
+        return cachedShowOnMediaPlayer!!
+    }
+
+    fun getStyleMode(): String {
+        // Valid values: "solid", "fading", "neon", "retro", "minimal",
+        //               "sparkle", "matrix", "particle", "waveform"
+        if (cachedRenderer == null) {
+            val raw = getSecureStringSetting(PULSE_RENDERER, DEFAULT_RENDERER)
+            cachedRenderer = when (raw) {
+                "solid", "fading", "neon", "retro", "minimal",
+                "sparkle", "matrix", "particle", "waveform", "dotwave" -> raw
+                else -> DEFAULT_RENDERER
+            }
+        }
+        return cachedRenderer!!
+    }
+
+    fun getHeightMultiplier(): Float {
+        if (cachedHeightMultiplier == null) {
+            val value = getSecureSetting(PULSE_HEIGHT_MULTIPLIER, DEFAULT_HEIGHT_MULTIPLIER)
+            // Clamp between 25% and 200% (values 25-200)
+            cachedHeightMultiplier = value.coerceIn(25, 200) / 100f
+        }
+        return cachedHeightMultiplier!!
+    }
+
+    fun getPulseHapticsMode(): Int {
+        if (cachedHapticsMode == null) {
+            cachedHapticsMode = getSecureSetting(PULSE_BASS_HAPTICS, DEFAULT_HAPTICS_MODE)
+        }
+        return cachedHapticsMode!!
+    }
+
+    fun getCaptureMode(): PulseAudioDataProcessor.CaptureMode {
+        if (cachedCaptureMode == null) {
+            val raw = getSecureSetting(PULSE_CAPTURE_MODE, DEFAULT_CAPTURE_MODE)
+            cachedCaptureMode = PulseAudioDataProcessor.CaptureMode.fromInt(raw)
+        }
+        return cachedCaptureMode!!
+    }
+
+    fun invalidateCache() {
+        cachedEnabled = null
+        cachedBarCount = null
+        cachedRoundedBars = null
+        cachedColorMode = null
+        cachedCustomColor = null
+        cachedRenderer = null
+        cachedShowOnAmbient = null
+        cachedHeightMultiplier = null
+        cachedHapticsEnabled = null
+        cachedHapticsMode = null
+        cachedCaptureMode = null
+        cachedShowOnMediaPlayer = null
+        onSettingsChangedListener?.invoke()
+    }
+
+    private fun getSecureSetting(key: String, defaultValue: Boolean): Boolean {
+        return Settings.Secure.getIntForUser(context.contentResolver, key,
+            if (defaultValue) 1 else 0, UserHandle.USER_CURRENT) == 1
+    }
+
+    private fun getSecureSetting(key: String, defaultValue: Int): Int {
+        return Settings.Secure.getIntForUser(context.contentResolver, key,
+            defaultValue, UserHandle.USER_CURRENT)
+    }
+
+    private fun getSecureStringSetting(key: String, defaultValue: String): String {
+        return Settings.Secure.getStringForUser(context.contentResolver, key,
+            UserHandle.USER_CURRENT) ?: defaultValue
+    }
+
+    private inner class SettingsObserver(
+        handler: Handler,
+        private val onChange: () -> Unit
+    ) : ContentObserver(handler) {
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            super.onChange(selfChange, uri)
+            onChange()
+        }
+    }
+
+    fun getBarGapPx(): Float = 2f * context.resources.displayMetrics.density
+    fun getDivisions(): Int = 16
+    fun getBlockStrokePx(): Float = 4f * context.resources.displayMetrics.density
+    fun getFilledBlockSizePx(): Float = 4f * context.resources.displayMetrics.density
+    fun getEmptyBlockSizePx(): Float = 1f * context.resources.displayMetrics.density
+
+    /** Raw screen density. Used by renderers that need DP-scaled physics or strokes. */
+    fun displayDensity(): Float = context.resources.displayMetrics.density
+}

@@ -335,7 +335,6 @@ final class DefaultPermissionGrantPolicy {
                 return mContext.getPackageManager().getPackageInfo(pkg,
                         DEFAULT_PACKAGE_INFO_QUERY_FLAGS);
             } catch (NameNotFoundException e) {
-                Slog.e(TAG, "Package not found: " + pkg);
                 return null;
             }
         }
@@ -488,25 +487,55 @@ final class DefaultPermissionGrantPolicy {
             grantRuntimePermissionsForSystemPackage(pm, userId, pkg);
         }
 
-        // Re-grant READ_PHONE_STATE as non-fixed to all system apps that have
-        // READ_PRIVILEGED_PHONE_STATE and READ_PHONE_STATE granted -- this is to undo the fixed
-        // grant from R.
+        // Grant READ_PHONE_STATE to all system apps that have READ_PRIVILEGED_PHONE_STATE
         for (PackageInfo pkg : packages) {
             if (pkg == null
                     || !doesPackageSupportRuntimePermissions(pkg)
                     || ArrayUtils.isEmpty(pkg.requestedPermissions)
                     || !pm.isGranted(Manifest.permission.READ_PRIVILEGED_PHONE_STATE,
                             pkg, UserHandle.of(userId))
-                    || !pm.isGranted(Manifest.permission.READ_PHONE_STATE, pkg,
-                            UserHandle.of(userId))
                     || pm.isSysComponentOrPersistentPlatformSignedPrivApp(pkg)) {
                 continue;
             }
 
-            pm.updatePermissionFlags(Manifest.permission.READ_PHONE_STATE, pkg,
-                    PackageManager.FLAG_PERMISSION_SYSTEM_FIXED,
-                    0,
-                    UserHandle.of(userId));
+            grantRuntimePermissions(pm, pkg,
+                    Collections.singleton(Manifest.permission.READ_PHONE_STATE),
+                    true, // systemFixed
+                    userId);
+        }
+        
+        // Grant ACCESS_COARSE_LOCATION to all system apps that have ACCESS_FINE_LOCATION
+        for (PackageInfo locPkg : packages) {
+            if (locPkg == null
+                    || !doesPackageSupportRuntimePermissions(locPkg)
+                    || ArrayUtils.isEmpty(locPkg.requestedPermissions)
+                    || !pm.isGranted(Manifest.permission.ACCESS_FINE_LOCATION,
+                            locPkg, UserHandle.of(userId))
+                    || pm.isSysComponentOrPersistentPlatformSignedPrivApp(locPkg)) {
+                continue;
+            }
+                    
+            grantRuntimePermissions(pm, locPkg,
+                    Collections.singleton(Manifest.permission.ACCESS_COARSE_LOCATION),
+                    true, // systemFixed
+                    userId);
+        }
+        
+        // Grant ACCESS_COARSE_LOCATION to all system apps that have ACCESS_FINE_LOCATION
+        for (PackageInfo locPkg : packages) {
+            if (locPkg == null
+                    || !doesPackageSupportRuntimePermissions(locPkg)
+                    || ArrayUtils.isEmpty(locPkg.requestedPermissions)
+                    || !pm.isGranted(Manifest.permission.ACCESS_FINE_LOCATION,
+                            locPkg, UserHandle.of(userId))
+                    || pm.isSysComponentOrPersistentPlatformSignedPrivApp(locPkg)) {
+                continue;
+            }
+                    
+            grantRuntimePermissions(pm, locPkg,
+                    Collections.singleton(Manifest.permission.ACCESS_COARSE_LOCATION),
+                    true, // systemFixed
+                    userId);
         }
 
     }
@@ -834,14 +863,11 @@ final class DefaultPermissionGrantPolicy {
             }
         }
 
-        if (ActivityManager.isLowRamDeviceStatic()) {
-            // Allow voice search on low-ram devices
-            grantPermissionsToSystemPackage(pm,
-                    getDefaultSystemHandlerActivityPackage(pm,
-                            SearchManager.INTENT_ACTION_GLOBAL_SEARCH, userId),
-                    userId, MICROPHONE_PERMISSIONS, ALWAYS_LOCATION_PERMISSIONS,
-                    NOTIFICATION_PERMISSIONS);
-        }
+        grantPermissionsToSystemPackage(pm,
+                getDefaultSystemHandlerActivityPackage(pm,
+                        SearchManager.INTENT_ACTION_GLOBAL_SEARCH, userId),
+                userId, MICROPHONE_PERMISSIONS, ALWAYS_LOCATION_PERMISSIONS,
+                NOTIFICATION_PERMISSIONS);
 
         // Voice recognition
         Intent voiceRecoIntent = new Intent(RecognitionService.SERVICE_INTERFACE)
@@ -981,6 +1007,16 @@ final class DefaultPermissionGrantPolicy {
         String commonServiceAction = "android.adservices.AD_SERVICES_COMMON_SERVICE";
         grantPermissionsToSystemPackage(pm, getDefaultSystemHandlerServicePackage(pm,
                         commonServiceAction, userId), userId, NOTIFICATION_PERMISSIONS);
+
+        // Mediascanner
+        grantSystemFixedPermissionsToSystemPackage(pm,
+                getDefaultProviderAuthorityPackage("com.android.providers.media.MediaProvider", userId), userId,
+                STORAGE_PERMISSIONS);
+
+        // Google App
+        grantPermissionsToPackage(pm, "com.google.android.googlequicksearchbox", userId,
+                false /* ignoreSystemPackage */, true /*whitelistRestrictedPermissions*/,
+                PHONE_PERMISSIONS);
     }
 
     private String getDefaultSystemHandlerActivityPackageForCategory(PackageManagerWrapper pm,
@@ -1926,7 +1962,7 @@ final class DefaultPermissionGrantPolicy {
                 int flagMask, int flagValues, @NonNull UserHandle user) {
             PermissionState state = getPermissionState(permission, pkg, user);
             state.initFlags();
-            state.newFlags = (state.newFlags & ~flagMask) | (flagValues & flagMask);
+            state.newFlags |= flagValues & flagMask;
         }
 
         @Override

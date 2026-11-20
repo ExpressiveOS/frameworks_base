@@ -45,6 +45,7 @@ import com.android.systemui.flags.FeatureFlags;
 import com.android.systemui.keyguard.KeyguardUnlockAnimationController;
 import com.android.systemui.keyguard.domain.interactor.KeyguardInteractor;
 import com.android.systemui.res.R;
+import com.android.systemui.util.ScrimUtils;
 import com.android.systemui.user.domain.interactor.SelectedUserInteractor;
 
 import dagger.Lazy;
@@ -79,9 +80,10 @@ public class KeyguardStateControllerImpl implements KeyguardStateController {
     private final Lazy<KeyguardInteractor> mKeyguardInteractorLazy;
 
     private boolean mCanDismissLockScreen;
-    private boolean mShowing;
+    // volatile: read off the main thread by SecureQSTile (on the QS background looper).
+    private volatile boolean mShowing;
     private boolean mPrimaryBouncerShowing;
-    private boolean mSecure;
+    private volatile boolean mSecure;
     private boolean mOccluded;
 
     private boolean mKeyguardFadingAway;
@@ -255,6 +257,7 @@ public class KeyguardStateControllerImpl implements KeyguardStateController {
                     keyguardFadingAway ? 1 : 0);
             mKeyguardFadingAway = keyguardFadingAway;
             invokeForEachCallback(Callback::onKeyguardFadingAwayChanged);
+            ScrimUtils.get().onKeyguardFadingAwayChanged(keyguardFadingAway);
         }
     }
 
@@ -371,6 +374,7 @@ public class KeyguardStateControllerImpl implements KeyguardStateController {
             mKeyguardGoingAway = keyguardGoingAway;
             mKeyguardInteractorLazy.get().setIsKeyguardGoingAway(keyguardGoingAway);
             invokeForEachCallback(Callback::onKeyguardGoingAwayChanged);
+            ScrimUtils.get().onKeyguardGoingAwayChanged(keyguardGoingAway);
         }
     }
 
@@ -380,6 +384,7 @@ public class KeyguardStateControllerImpl implements KeyguardStateController {
             mPrimaryBouncerShowing = showing;
 
             invokeForEachCallback(Callback::onPrimaryBouncerShowingChanged);
+            ScrimUtils.get().onPrimaryBouncerShowingChanged(showing);
         }
     }
 

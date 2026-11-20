@@ -59,6 +59,7 @@ import com.android.systemui.communal.dagger.CommunalModule;
 import com.android.systemui.complication.dagger.ComplicationComponent;
 import com.android.systemui.compose.ComposeModule;
 import com.android.systemui.controls.dagger.ControlsModule;
+import com.android.systemui.cutoutprogress.dagger.CutoutProgressModule;
 import com.android.systemui.dagger.qualifiers.Application;
 import com.android.systemui.dagger.qualifiers.Main;
 import com.android.systemui.dagger.qualifiers.SystemUser;
@@ -84,6 +85,7 @@ import com.android.systemui.keyguard.data.quickaffordance.KeyguardDataQuickAffor
 import com.android.systemui.keyguard.shared.quickaffordance.KeyguardQuickAffordancesMetricsLogger;
 import com.android.systemui.keyguard.shared.quickaffordance.KeyguardQuickAffordancesMetricsLoggerImpl;
 import com.android.systemui.keyguard.ui.composable.LockscreenContent;
+import com.android.systemui.lineage.LineageModule;
 import com.android.systemui.log.dagger.LogModule;
 import com.android.systemui.log.dagger.MonitorLog;
 import com.android.systemui.log.table.TableLogBuffer;
@@ -255,6 +257,7 @@ import javax.inject.Named;
         KeyboardModule.class,
         KeyguardDataQuickAffordanceModule.class,
         LetterboxModule.class,
+        LineageModule.class,
         LogModule.class,
         MediaProjectionActivitiesModule.class,
         MediaProjectionModule.class,
@@ -313,6 +316,7 @@ import javax.inject.Named;
         LowLightClockModule.class,
         PerDisplayRepositoriesModule.class,
         InputDeviceModule.class,
+        CutoutProgressModule.class,
 },
         subcomponents = {
                 ComplicationComponent.class,

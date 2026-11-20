@@ -62,6 +62,24 @@ constructor(
         }
         get() = repository.shouldShowFrontCamera
 
+    var lowQuality: Boolean
+        set(value) {
+            repository.lowQuality = value
+        }
+        get() = repository.lowQuality
+
+    var longerDuration: Boolean
+        set(value) {
+            repository.longerDuration = value
+        }
+        get() = repository.longerDuration
+
+    var hevc: Boolean
+        set(value) {
+            repository.hevc = value
+        }
+        get() = repository.hevc
+
     val canChangeAudioSource: StateFlow<Boolean> =
         serviceInteractor.status
             .map { it.canChangeAudioSource() }

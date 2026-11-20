@@ -53,6 +53,7 @@ constructor(
     }
 
     val credentialKind: Flow<PromptKind> = promptSelectorInteractor.credentialKind
+    val patternSize: Flow<Byte> = promptSelectorInteractor.patternSize
 
     /**
      * Whether credential is allowed in the prompt True if bp caller requested credential and
@@ -250,10 +251,12 @@ constructor(
      */
     suspend fun checkCredential(
         pattern: List<LockPatternView.Cell>,
+        patternSize: Byte,
         header: CredentialHeaderViewModel,
     ): ByteArray? =
         checkCredential(
-            promptCredentialInteractor.checkCredential(header.asRequest(), pattern = pattern)
+            promptCredentialInteractor.checkCredential(header.asRequest(), pattern = pattern,
+            patternSize = patternSize)
         )
 
     /**

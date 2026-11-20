@@ -20,11 +20,6 @@ import android.content.Intent;
 
 import com.android.systemui.Dependency;
 
-/**
- * @deprecated Don't use this class to listen to Secure Settings. Use {@code SecureSettings} instead
- * or {@code SettingsObserver} to be able to specify the handler.
- */
-@Deprecated
 public abstract class TunerService {
 
     public static final String ACTION_CLEAR = "com.android.systemui.action.CLEAR_TUNER";
@@ -76,6 +71,14 @@ public abstract class TunerService {
     public static boolean parseIntegerSwitch(String value, boolean defaultValue) {
         try {
             return value != null ? Integer.parseInt(value) != 0 : defaultValue;
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    public static int parseInteger(String value, int defaultValue) {
+        try {
+            return value != null ? Integer.parseInt(value) : defaultValue;
         } catch (NumberFormatException e) {
             return defaultValue;
         }
