@@ -7,15 +7,17 @@ package com.android.server.integrity;
 
 import android.content.ContentResolver;
 import android.content.Context;
-import android.os.FileUtils;
+import android.os.Binder;
 import android.os.IBinder;
-import android.os.SystemProperties;
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.security.integrity.IEosIntegrityManager;
 import android.security.integrity.KeyboxSummary;
 import android.security.trickystore.TrickyStoreService;
+import android.system.ErrnoException;
 import android.system.Os;
+import android.system.OsConstants;
 import android.util.Base64;
 import android.util.Slog;
 import android.util.Xml;
@@ -31,17 +33,16 @@ import org.json.JSONObject;
 import org.xmlpull.v1.XmlPullParser;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
@@ -51,7 +52,6 @@ import java.security.Signature;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.spec.X509EncodedKeySpec;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -61,8 +61,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TimeZone;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -70,11 +76,11 @@ import java.util.regex.Pattern;
  * Privileged ExpressiveOS 2.0 Integrity Service (`eos_integrity`).
  *
  * Confines raw attestation keybox private keys inside `/data/system/eos_integrity/` (`0700`
- * `system:system`, `0600` files) instead of `Settings.Secure`, enforces Ed25519 signature
- * verification on signed R2 integrity feeds (`manifest.json` + `manifest.json.sig`), gates all
- * keybox imports/fetches through X.509 + leaf-key-match + Google Hardware Attestation Root CA +
- * CRL revocation checks, filters revoked canary PIF profiles, and performs a deterministic 3-way
- * `target.txt` merge (`user > remote > auto`).
+ * `system:system`, atomic `0600` files) instead of `Settings.Secure`, fetches official keyboxes
+ * and canary PIF profiles using the ExpressiveOS 1.x direct HTTPS + PixelDeviceRepository
+ * workflow, gates all keybox imports/fetches through XmlPullParser + X.509 chain + leaf-key-match
+ * + Google Hardware Attestation Root CA + fail-closed CRL revocation checks, and performs a
+ * deterministic 3-way `target.txt` merge (`user > remote > auto`).
  *
  * @hide
  */
@@ -93,15 +99,12 @@ public final class EosIntegrityService extends SystemService {
     private static final File PATCH_FILE = new File(BASE_DIR, "patch.txt");
     private static final File STATE_FILE = new File(BASE_DIR, "state.json");
 
-    private static final String PROP_FEED_URL = "ro.expressiveos.integrity.feed_url";
-    private static final String PROP_FEED_PUBKEY = "ro.expressiveos.integrity.pubkey_spki";
-    private static final String DEFAULT_FEED_URL =
-            "https://ota-mirror.daryldenson-apps.workers.dev/expressiveos/integrity/manifest.json";
-    private static final String FALLBACK_KEYBOX_URL =
+    private static final String OFFICIAL_KEYBOX_URL =
             "https://ota-mirror.daryldenson-apps.workers.dev/expressiveos/keybox.xml";
     private static final String ROOTS_URL = "https://android.googleapis.com/attestation/root";
     private static final String CRL_URL =
             "https://android.googleapis.com/attestation/status?encrypted=0";
+    private static final String LAST_AUTO_FETCH_KEY = "spoof_pif_last_auto_fetch";
 
     // Pinned Google Hardware Attestation Root CA DER SHA-256 digests (offline fallback).
     private static final Set<String> PINNED_GOOGLE_ROOT_DER_SHA256 = Set.of(
@@ -114,6 +117,8 @@ public final class EosIntegrityService extends SystemService {
     private static final long REVOKED_CACHE_TTL_MS = TimeUnit.DAYS.toMillis(7);
     private static final long EXPIRY_WARN_MS = TimeUnit.DAYS.toMillis(14);
     private static final int HTTP_TIMEOUT_MS = 10_000;
+    private static final long OPERATION_DEADLINE_MS = TimeUnit.SECONDS.toMillis(25);
+    private static final int MAX_HTTP_BYTES = 4 * 1024 * 1024;
 
     private static final String SOURCE_USER = "user";
     private static final String SOURCE_OFFICIAL = "official";
@@ -122,18 +127,32 @@ public final class EosIntegrityService extends SystemService {
             Pattern.compile("^[a-zA-Z0-9._]+[!\\?\\-]?$");
     private static final Pattern PLAIN_DATE_PATTERN =
             Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
-    private static final Pattern KEY_BLOCK_PATTERN =
-            Pattern.compile("<Key\\b[^>]*algorithm=\"([^\"]+)\"[^>]*>([\\s\\S]*?)</Key>");
     private static final Pattern CERT_PEM_PATTERN =
             Pattern.compile("-----BEGIN CERTIFICATE-----([\\s\\S]+?)-----END CERTIFICATE-----");
     private static final Pattern PRIV_PEM_PATTERN =
             Pattern.compile("-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----([\\s\\S]+?)-----END \\1-----");
+    private static final Pattern ZERO_WIDTH_PATTERN =
+            Pattern.compile("[\\u200B-\\u200D\\u2060\\uFEFF]");
 
     private static volatile EosIntegrityService sInstance;
 
     private final Context mContext;
     private final Object mLock = new Object();
     private final SecureRandom mRandom = new SecureRandom();
+    private final ExecutorService mNetworkExecutor = createNetworkExecutor();
+
+    private static ExecutorService createNetworkExecutor() {
+        final ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                2, 2, 30L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(4),
+                r -> {
+                    final Thread t = new Thread(r, "EosIntegrity-Net");
+                    t.setDaemon(true);
+                    return t;
+                });
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
 
     public EosIntegrityService(Context context) {
         super(context);
@@ -218,7 +237,8 @@ public final class EosIntegrityService extends SystemService {
     public static boolean refreshOfficialKeyboxInternal(boolean force) {
         final EosIntegrityService svc = sInstance;
         if (svc == null) return false;
-        final ActionOutcome res = svc.fetchOfficialKeyboxImpl(force);
+        final long deadlineMs = SystemClock.elapsedRealtime() + OPERATION_DEADLINE_MS;
+        final ActionOutcome res = svc.fetchOfficialKeyboxImpl(force, deadlineMs);
         return res.ok;
     }
 
@@ -227,6 +247,30 @@ public final class EosIntegrityService extends SystemService {
         if (svc == null) return false;
         final ActionOutcome res = svc.refreshCanaryPifImpl(force);
         return res.ok;
+    }
+
+    private <T> T runNetworkBounded(Callable<T> task, T timeoutFallback, T busyFallback) {
+        final Future<T> future;
+        try {
+            future = mNetworkExecutor.submit(task);
+        } catch (RejectedExecutionException e) {
+            Slog.w(TAG, "Integrity network executor saturated, rejecting request");
+            return busyFallback;
+        }
+        try {
+            return future.get(OPERATION_DEADLINE_MS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            Slog.w(TAG, "Integrity network operation exceeded " + OPERATION_DEADLINE_MS + "ms deadline");
+            return timeoutFallback;
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            return timeoutFallback;
+        } catch (Exception e) {
+            Slog.w(TAG, "Integrity network operation failed", e);
+            return timeoutFallback;
+        }
     }
 
     // ---- Binder implementation ----------------------------------------------
@@ -249,43 +293,81 @@ public final class EosIntegrityService extends SystemService {
         @Override
         public String importUserKeybox(String rawXml) {
             enforceCallerPermission();
-            return importUserKeyboxImpl(rawXml).toJsonString();
+            final long deadlineMs = SystemClock.elapsedRealtime() + OPERATION_DEADLINE_MS;
+            return runNetworkBounded(
+                    () -> importUserKeyboxImpl(rawXml, deadlineMs),
+                    new ActionOutcome(false, "TIMEOUT", "Keybox validation timed out"),
+                    new ActionOutcome(false, "BUSY", "Integrity operation already in progress")
+            ).toJsonString();
         }
 
         @Override
         public String fetchOfficialKeybox(boolean force) {
             enforceCallerPermission();
-            return fetchOfficialKeyboxImpl(force).toJsonString();
+            final long deadlineMs = SystemClock.elapsedRealtime() + OPERATION_DEADLINE_MS;
+            return runNetworkBounded(
+                    () -> fetchOfficialKeyboxImpl(force, deadlineMs),
+                    new ActionOutcome(false, "TIMEOUT", "Official keybox fetch timed out"),
+                    new ActionOutcome(false, "BUSY", "Integrity operation already in progress")
+            ).toJsonString();
         }
 
         @Override
         public String checkKeyboxRevocation() {
             enforceCallerPermission();
-            return checkKeyboxRevocationImpl().toJsonString();
+            final long deadlineMs = SystemClock.elapsedRealtime() + OPERATION_DEADLINE_MS;
+            final KeyboxSummary fallback;
+            synchronized (mLock) {
+                fallback = buildKeyboxSummaryLocked();
+            }
+            return runNetworkBounded(
+                    () -> checkKeyboxRevocationImpl(deadlineMs),
+                    fallback,
+                    fallback
+            ).toJsonString();
         }
 
         @Override
         public String deleteKeybox() {
             enforceCallerPermission();
-            return deleteKeyboxImpl().toJsonString();
+            final long token = Binder.clearCallingIdentity();
+            try {
+                return deleteKeyboxImpl().toJsonString();
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
         }
 
         @Override
         public String importUserTargets(String rawText) {
             enforceCallerPermission();
-            return importUserTargetsImpl(rawText).toJsonString();
+            final long token = Binder.clearCallingIdentity();
+            try {
+                return importUserTargetsImpl(rawText).toJsonString();
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
         }
 
         @Override
         public String refreshCanaryPif(boolean force) {
             enforceCallerPermission();
-            return refreshCanaryPifImpl(force).toJsonString();
+            return runNetworkBounded(
+                    () -> refreshCanaryPifImpl(force),
+                    new ActionOutcome(false, "TIMEOUT", "Canary PIF refresh timed out"),
+                    new ActionOutcome(false, "BUSY", "Integrity operation already in progress")
+            ).toJsonString();
         }
 
         @Override
         public String resetDefaults() {
             enforceCallerPermission();
-            return resetDefaultsImpl().toJsonString();
+            final long token = Binder.clearCallingIdentity();
+            try {
+                return resetDefaultsImpl().toJsonString();
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
         }
 
         @Override
@@ -337,11 +419,12 @@ public final class EosIntegrityService extends SystemService {
         }
     }
 
-    private ActionOutcome importUserKeyboxImpl(String rawXml) {
+    private ActionOutcome importUserKeyboxImpl(String rawXml, long deadlineMs) {
         if (rawXml == null || rawXml.trim().isEmpty()) {
             return new ActionOutcome(false, "EMPTY", "Keybox XML is empty");
         }
-        final ValidationResult vr = validateKeyboxCandidate(rawXml, /* allowOfflineCrl= */ true);
+        final ValidationResult vr = validateKeyboxCandidate(
+                rawXml, /* allowOfflineCrl= */ true, deadlineMs);
         if (!vr.structurallyValid) {
             return new ActionOutcome(false, vr.status, vr.reason);
         }
@@ -371,7 +454,7 @@ public final class EosIntegrityService extends SystemService {
         return new ActionOutcome(true, changed ? "IMPORTED" : "UNCHANGED", "");
     }
 
-    private ActionOutcome fetchOfficialKeyboxImpl(boolean force) {
+    private ActionOutcome fetchOfficialKeyboxImpl(boolean force, long deadlineMs) {
         synchronized (mLock) {
             final JSONObject st = readStateLocked();
             final String source = st.optString("source", "");
@@ -380,96 +463,58 @@ public final class EosIntegrityService extends SystemService {
             }
         }
 
-        // 1. Try signed R2 feed manifest first; fall back to FALLBACK_KEYBOX_URL with full gate.
-        final List<String> candidateXmls = new ArrayList<>();
-        final JSONObject feed = fetchVerifiedFeedManifest();
-        if (feed != null) {
-            final JSONArray boxes = feed.optJSONArray("keyboxes");
-            if (boxes != null) {
-                for (int i = 0; i < boxes.length(); i++) {
-                    final JSONObject item = boxes.optJSONObject(i);
-                    if (item == null) continue;
-                    final String url = item.optString("url", "");
-                    final String expectedSha = item.optString("sha256", "").toUpperCase(Locale.US);
-                    if (url.isEmpty()) continue;
-                    final byte[] raw = httpGetBytes(url);
-                    if (raw == null || raw.length == 0) continue;
-                    if (!expectedSha.isEmpty() && !sha256Hex(raw).equals(expectedSha)) {
-                        Slog.w(TAG, "Rejected feed keybox due to SHA-256 mismatch");
-                        continue;
-                    }
-                    candidateXmls.add(new String(raw, StandardCharsets.UTF_8));
-                }
-            }
-            // Also refresh remote targets if included in verified feed
-            final String targetsUrl = feed.optString("targets_url", "");
-            final String targetsSha = feed.optString("targets_sha256", "").toUpperCase(Locale.US);
-            if (!targetsUrl.isEmpty()) {
-                final byte[] tRaw = httpGetBytes(targetsUrl);
-                if (tRaw != null && (targetsSha.isEmpty() || sha256Hex(tRaw).equals(targetsSha))) {
-                    updateRemoteTargets(new String(tRaw, StandardCharsets.UTF_8));
-                }
-            }
-        }
-        if (candidateXmls.isEmpty()) {
-            final byte[] fallbackBytes = httpGetBytes(FALLBACK_KEYBOX_URL);
-            if (fallbackBytes != null && fallbackBytes.length > 0) {
-                candidateXmls.add(new String(fallbackBytes, StandardCharsets.UTF_8));
-            }
-        }
-        if (candidateXmls.isEmpty()) {
+        // EOS 1.x method: fetch official keybox directly over HTTPS from OFFICIAL_KEYBOX_URL,
+        // then verify structure, private-key-to-leaf match, Google root CA chain, expiry, and CRL.
+        final byte[] officialBytes = httpGetBytes(OFFICIAL_KEYBOX_URL, deadlineMs);
+        if (officialBytes == null || officialBytes.length == 0) {
             return new ActionOutcome(false, "FETCH_FAILED", "Unable to reach official keybox feed");
         }
+        final String candidate = new String(officialBytes, StandardCharsets.UTF_8);
 
-        String lastFailure = "No unrevoked keybox candidate";
-        for (String candidate : candidateXmls) {
-            final ValidationResult vr = validateKeyboxCandidate(candidate, /* allowOfflineCrl= */ false);
-            if (!vr.structurallyValid) {
-                lastFailure = vr.reason;
-                continue;
-            }
-            if ("REVOKED".equals(vr.status) || "SUSPENDED".equals(vr.status)
-                    || "CHAIN_INVALID".equals(vr.status) || "UNTRUSTED_ROOT".equals(vr.status)) {
-                lastFailure = vr.status + (vr.reason.isEmpty() ? "" : ": " + vr.reason);
-                continue;
-            }
-
-            boolean changed;
-            synchronized (mLock) {
-                ensureStorageDirectoryLocked();
-                // Re-check user ownership under lock
-                final JSONObject st = readStateLocked();
-                if (!force && SOURCE_USER.equals(st.optString("source", "")) && KEYBOX_FILE.isFile()) {
-                    return new ActionOutcome(true, "USER_OWNED", "");
-                }
-                final String existing = readUtf8Quietly(KEYBOX_FILE);
-                changed = existing == null || !sha256Hex(existing.getBytes(StandardCharsets.UTF_8))
-                        .equals(sha256Hex(candidate.getBytes(StandardCharsets.UTF_8)));
-                if (changed) {
-                    writeAtomic0600Locked(KEYBOX_FILE, candidate.getBytes(StandardCharsets.UTF_8));
-                }
-                final long now = System.currentTimeMillis();
-                putQuietly(st, "source", SOURCE_OFFICIAL);
-                putQuietly(st, "revocation_status", vr.status);
-                putQuietly(st, "revocation_reason", vr.reason);
-                putQuietly(st, "last_fetched_ms", now);
-                if (!"UNKNOWN".equals(vr.status)) {
-                    putQuietly(st, "last_checked_ms", now);
-                }
-                putQuietly(st, "leaf_expiry_ms", vr.leafExpiryMs);
-                writeStateLocked(st);
-                scrubLegacyKeyboxSettingLocked();
-            }
-            if (changed) {
-                notifySpoofSubsystem(/* pifChanged= */ false, /* restartGms= */ true);
-                return new ActionOutcome(true, "UPDATED", "");
-            }
-            return new ActionOutcome(true, "UNCHANGED", "");
+        final ValidationResult vr = validateKeyboxCandidate(
+                candidate, /* allowOfflineCrl= */ false, deadlineMs);
+        if (!vr.structurallyValid
+                || "REVOKED".equals(vr.status) || "SUSPENDED".equals(vr.status)
+                || "CHAIN_INVALID".equals(vr.status) || "UNTRUSTED_ROOT".equals(vr.status)
+                || "UNKNOWN".equals(vr.status)) {
+            final String failure = vr.status + (vr.reason.isEmpty() ? "" : ": " + vr.reason);
+            return new ActionOutcome(false, "NO_VALID_KEYBOX", failure);
         }
-        return new ActionOutcome(false, "NO_VALID_KEYBOX", lastFailure);
+
+        boolean changed;
+        synchronized (mLock) {
+            ensureStorageDirectoryLocked();
+            // Re-check user ownership under lock
+            final JSONObject st = readStateLocked();
+            if (!force && SOURCE_USER.equals(st.optString("source", "")) && KEYBOX_FILE.isFile()) {
+                return new ActionOutcome(true, "USER_OWNED", "");
+            }
+            final String existing = readUtf8Quietly(KEYBOX_FILE);
+            changed = existing == null || !sha256Hex(existing.getBytes(StandardCharsets.UTF_8))
+                    .equals(sha256Hex(candidate.getBytes(StandardCharsets.UTF_8)));
+            if (changed) {
+                writeAtomic0600Locked(KEYBOX_FILE, candidate.getBytes(StandardCharsets.UTF_8));
+            }
+            final long now = System.currentTimeMillis();
+            putQuietly(st, "source", SOURCE_OFFICIAL);
+            putQuietly(st, "revocation_status", vr.status);
+            putQuietly(st, "revocation_reason", vr.reason);
+            putQuietly(st, "last_fetched_ms", now);
+            if (!"UNKNOWN".equals(vr.status)) {
+                putQuietly(st, "last_checked_ms", now);
+            }
+            putQuietly(st, "leaf_expiry_ms", vr.leafExpiryMs);
+            writeStateLocked(st);
+            scrubLegacyKeyboxSettingLocked();
+        }
+        if (changed) {
+            notifySpoofSubsystem(/* pifChanged= */ false, /* restartGms= */ true);
+            return new ActionOutcome(true, "UPDATED", "");
+        }
+        return new ActionOutcome(true, "UNCHANGED", "");
     }
 
-    private KeyboxSummary checkKeyboxRevocationImpl() {
+    private KeyboxSummary checkKeyboxRevocationImpl(long deadlineMs) {
         final String xml;
         synchronized (mLock) {
             xml = readUtf8Quietly(KEYBOX_FILE);
@@ -477,7 +522,8 @@ public final class EosIntegrityService extends SystemService {
                 return buildKeyboxSummaryLocked();
             }
         }
-        final ValidationResult vr = validateKeyboxCandidate(xml, /* allowOfflineCrl= */ true);
+        final ValidationResult vr = validateKeyboxCandidate(
+                xml, /* allowOfflineCrl= */ true, deadlineMs);
         boolean shouldAutoReplace = false;
         synchronized (mLock) {
             final JSONObject st = readStateLocked();
@@ -494,7 +540,7 @@ public final class EosIntegrityService extends SystemService {
             }
         }
         if (shouldAutoReplace) {
-            fetchOfficialKeyboxImpl(/* force= */ false);
+            fetchOfficialKeyboxImpl(/* force= */ false, deadlineMs);
         }
         synchronized (mLock) {
             return buildKeyboxSummaryLocked();
@@ -541,16 +587,6 @@ public final class EosIntegrityService extends SystemService {
         return new ActionOutcome(true, "IMPORTED", "");
     }
 
-    private void updateRemoteTargets(String rawText) {
-        final String normalized = normalizeAndValidateTargets(rawText);
-        if (normalized == null) return;
-        synchronized (mLock) {
-            ensureStorageDirectoryLocked();
-            writeAtomic0600Locked(TARGETS_REMOTE_FILE, normalized.getBytes(StandardCharsets.UTF_8));
-            rebuildMergedTargetsLocked(/* syncSettingsMirror= */ true);
-        }
-    }
-
     private ActionOutcome refreshCanaryPifImpl(boolean force) {
         final ContentResolver resolver = mContext.getContentResolver();
         final String existingRaw = Settings.Secure.getStringForUser(
@@ -564,78 +600,38 @@ public final class EosIntegrityService extends SystemService {
             }
         }
 
-        final Set<String> revokedFingerprints = new HashSet<>();
-        JSONObject chosenJson = null;
-        String chosenPatch = null;
-
-        final JSONObject feed = fetchVerifiedFeedManifest();
-        if (feed != null) {
-            final JSONArray rev = feed.optJSONArray("revoked_pif_fingerprints");
-            if (rev != null) {
-                for (int i = 0; i < rev.length(); i++) {
-                    final String fp = rev.optString(i, "").trim();
-                    if (!fp.isEmpty()) revokedFingerprints.add(fp);
-                }
-            }
-            final JSONArray profiles = feed.optJSONArray("pif_profiles");
-            if (profiles != null) {
-                for (int i = 0; i < profiles.length(); i++) {
-                    final JSONObject p = profiles.optJSONObject(i);
-                    if (p == null) continue;
-                    final String status = p.optString("status", "ACTIVE").toUpperCase(Locale.US);
-                    if ("REVOKED".equals(status) || "EXPIRED".equals(status)) continue;
-                    final String fp = p.optString("FINGERPRINT", p.optString("fingerprint", "")).trim();
-                    if (fp.isEmpty() || revokedFingerprints.contains(fp)
-                            || !PixelDeviceRepository.isValidFingerprint(fp)) {
-                        continue;
-                    }
-                    final String expUtc = p.optString("expires_utc", "");
-                    if (!expUtc.isEmpty() && isIsoUtcExpired(expUtc)) {
-                        continue;
-                    }
-                    chosenJson = buildPifFromFeedObject(existingRaw, p, fp);
-                    chosenPatch = chosenJson.optString("SECURITY_PATCH", "");
-                    break;
-                }
+        // EOS 1.x method: resolve canary Pixel profile via PixelDeviceRepository with built-in fallback.
+        List<PixelDeviceRepository.PixelProfile> candidates;
+        try {
+            candidates = PixelDeviceRepository.getProfiles(mContext, true);
+        } catch (Exception e) {
+            candidates = PixelDeviceRepository.FALLBACK_PROFILES;
+        }
+        if (candidates == null || candidates.isEmpty()) {
+            candidates = PixelDeviceRepository.FALLBACK_PROFILES;
+        }
+        PixelDeviceRepository.PixelProfile selected = null;
+        final String preferred = PixelDeviceRepository.getDefaultPifCodename(candidates);
+        for (PixelDeviceRepository.PixelProfile p : candidates) {
+            if (p.codename.equals(preferred)
+                    && PixelDeviceRepository.isValidFingerprint(p.fingerprint)) {
+                selected = p;
+                break;
             }
         }
-
-        // Fallback: PixelDeviceRepository live scrape -> built-in FALLBACK_PROFILES (filtered by revokedFingerprints)
-        if (chosenJson == null) {
-            List<PixelDeviceRepository.PixelProfile> candidates;
-            try {
-                candidates = PixelDeviceRepository.getProfiles(mContext, true);
-            } catch (Exception e) {
-                candidates = PixelDeviceRepository.FALLBACK_PROFILES;
-            }
-            if (candidates == null || candidates.isEmpty()) {
-                candidates = PixelDeviceRepository.FALLBACK_PROFILES;
-            }
-            PixelDeviceRepository.PixelProfile selected = null;
-            final String preferred = PixelDeviceRepository.getDefaultPifCodename(candidates);
+        if (selected == null) {
             for (PixelDeviceRepository.PixelProfile p : candidates) {
-                if (p.codename.equals(preferred)
-                        && PixelDeviceRepository.isValidFingerprint(p.fingerprint)
-                        && !revokedFingerprints.contains(p.fingerprint)) {
+                if (PixelDeviceRepository.isValidFingerprint(p.fingerprint)) {
                     selected = p;
                     break;
                 }
             }
-            if (selected == null) {
-                for (PixelDeviceRepository.PixelProfile p : candidates) {
-                    if (PixelDeviceRepository.isValidFingerprint(p.fingerprint)
-                            && !revokedFingerprints.contains(p.fingerprint)) {
-                        selected = p;
-                        break;
-                    }
-                }
-            }
-            if (selected == null) {
-                return new ActionOutcome(false, "NO_VALID_PIF", "No unrevoked Pixel profile found");
-            }
-            chosenJson = buildPifFromProfile(existingRaw, selected);
-            chosenPatch = selected.securityPatch;
         }
+        if (selected == null) {
+            return new ActionOutcome(false, "NO_VALID_PIF", "No valid Pixel profile found");
+        }
+        final JSONObject chosenJson = buildPifFromProfile(existingRaw, selected);
+        final String chosenPatch = selected.securityPatch;
 
         String formatted;
         try {
@@ -685,12 +681,35 @@ public final class EosIntegrityService extends SystemService {
             // Keep user-imported keybox per spec; rebuild merged targets from remote > auto.
             rebuildMergedTargetsLocked(/* syncSettingsMirror= */ true);
         }
+        final ContentResolver resolver = mContext.getContentResolver();
+        Settings.Secure.putLongForUser(
+                resolver, LAST_AUTO_FETCH_KEY, 0L, UserHandle.USER_SYSTEM);
+        Settings.Secure.putStringForUser(
+                resolver, Settings.Secure.SPOOF_TRICKYSTORE_PATCH, "", UserHandle.USER_SYSTEM);
+        Settings.Secure.putStringForUser(
+                resolver, Settings.Secure.SPOOF_GAMEPROPS_CONFIG, "", UserHandle.USER_SYSTEM);
+        Settings.Secure.putStringForUser(
+                resolver, Settings.Secure.SPOOF_PIF_CONFIG, "", UserHandle.USER_SYSTEM);
+        notifySpoofSubsystem(/* pifChanged= */ true, /* restartGms= */ true);
         return new ActionOutcome(true, "RESET", "");
     }
 
     // ---- Pre-commit cryptographic & CRL validation --------------------------
 
-    private ValidationResult validateKeyboxCandidate(String rawXml, boolean allowOfflineCrl) {
+    private boolean isCachedRevokedSerial(List<String> allSerials, long now) {
+        synchronized (mLock) {
+            final JSONObject st = readStateLocked();
+            final long cachedAt = st.optLong("cached_revoked_at_ms", 0L);
+            final String cachedSerial = st.optString("cached_revoked_serial", "");
+            return cachedAt > 0L
+                    && now - cachedAt <= REVOKED_CACHE_TTL_MS
+                    && !cachedSerial.isEmpty()
+                    && allSerials.contains(cachedSerial);
+        }
+    }
+
+    private ValidationResult validateKeyboxCandidate(
+            String rawXml, boolean allowOfflineCrl, long deadlineMs) {
         final String cleanXml = sanitizeKeyboxXml(rawXml);
         if (!cleanXml.startsWith("<")) {
             return new ValidationResult(false, "CHAIN_INVALID", "Not XML", 0L);
@@ -705,7 +724,7 @@ public final class EosIntegrityService extends SystemService {
             return new ValidationResult(false, "CHAIN_INVALID", "No parseable Key blocks", 0L);
         }
 
-        final Set<PublicKey> liveRootKeys = getTrustedRootPublicKeys();
+        final Set<PublicKey> liveRootKeys = getTrustedRootPublicKeys(deadlineMs);
         long earliestLeafExpiry = Long.MAX_VALUE;
         final List<String> allSerials = new ArrayList<>();
         final long now = System.currentTimeMillis();
@@ -760,22 +779,19 @@ public final class EosIntegrityService extends SystemService {
             }
         }
 
-        // Check Google CRL
-        final byte[] crlBytes = httpGetBytes(CRL_URL + "&_=" + System.nanoTime());
+        // Check Google CRL (always consult offline revocation cache first when unreachable;
+        // fail closed when allowOfflineCrl == false).
+        final byte[] crlBytes = httpGetBytes(CRL_URL + "&_=" + System.nanoTime(), deadlineMs);
         if (crlBytes == null) {
+            if (isCachedRevokedSerial(allSerials, now)) {
+                return new ValidationResult(allowOfflineCrl, "SUSPENDED", "CACHED_OFFLINE",
+                        earliestLeafExpiry);
+            }
             if (!allowOfflineCrl) {
-                return new ValidationResult(true, "UNKNOWN", "CRL_UNREACHABLE", earliestLeafExpiry);
+                return new ValidationResult(false, "UNKNOWN", "CRL_UNREACHABLE",
+                        earliestLeafExpiry);
             }
-            synchronized (mLock) {
-                final JSONObject st = readStateLocked();
-                final long cachedAt = st.optLong("cached_revoked_at_ms", 0L);
-                final String cachedSerial = st.optString("cached_revoked_serial", "");
-                if (cachedAt > 0L && now - cachedAt <= REVOKED_CACHE_TTL_MS
-                        && !cachedSerial.isEmpty() && allSerials.contains(cachedSerial)) {
-                    return new ValidationResult(true, "SUSPENDED", "CACHED_OFFLINE", earliestLeafExpiry);
-                }
-            }
-            return new ValidationResult(true, "UNKNOWN", "", earliestLeafExpiry);
+            return new ValidationResult(true, "UNKNOWN", "CRL_UNREACHABLE", earliestLeafExpiry);
         }
 
         try {
@@ -799,7 +815,12 @@ public final class EosIntegrityService extends SystemService {
                 }
             }
         } catch (Exception e) {
-            return new ValidationResult(true, "UNKNOWN", "CRL_PARSE_ERROR", earliestLeafExpiry);
+            if (isCachedRevokedSerial(allSerials, now)) {
+                return new ValidationResult(allowOfflineCrl, "SUSPENDED", "CACHED_OFFLINE",
+                        earliestLeafExpiry);
+            }
+            return new ValidationResult(allowOfflineCrl, "UNKNOWN", "CRL_PARSE_ERROR",
+                    earliestLeafExpiry);
         }
 
         if (earliestLeafExpiry - now < EXPIRY_WARN_MS) {
@@ -826,24 +847,84 @@ public final class EosIntegrityService extends SystemService {
         final List<KeyChainBundle> out = new ArrayList<>();
         try {
             final CertificateFactory cf = CertificateFactory.getInstance("X.509");
-            final Matcher km = KEY_BLOCK_PATTERN.matcher(xml);
-            while (km.find()) {
-                final String alg = km.group(1).trim().toLowerCase(Locale.US);
-                final String body = km.group(2);
-                final Matcher pm = PRIV_PEM_PATTERN.matcher(body);
-                if (!pm.find()) continue;
-                final String privPem = pm.group(0);
-                final List<X509Certificate> certs = new ArrayList<>();
-                final Matcher cm = CERT_PEM_PATTERN.matcher(body);
-                while (cm.find()) {
-                    final byte[] der = Base64.decode(
-                            cm.group(1).replaceAll("\\s+", ""), Base64.DEFAULT);
-                    certs.add((X509Certificate) cf.generateCertificate(
-                            new ByteArrayInputStream(der)));
+            final XmlPullParser parser = Xml.newPullParser();
+            parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false);
+            parser.setInput(new StringReader(xml));
+
+            boolean inKey = false;
+            boolean inPrivateKey = false;
+            boolean inCertificateChain = false;
+            boolean inCertificate = false;
+            String currentAlg = null;
+            StringBuilder privBuilder = null;
+            StringBuilder certBuilder = null;
+            String privPem = null;
+            List<X509Certificate> certs = new ArrayList<>();
+
+            int eventType = parser.getEventType();
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                final String tag = parser.getName();
+                if (eventType == XmlPullParser.START_TAG) {
+                    if ("Key".equals(tag)) {
+                        inKey = true;
+                        final String rawAlg = parser.getAttributeValue(null, "algorithm");
+                        currentAlg = rawAlg != null ? rawAlg.trim().toLowerCase(Locale.US) : null;
+                        privPem = null;
+                        certs = new ArrayList<>();
+                        privBuilder = null;
+                        certBuilder = null;
+                    } else if ("PrivateKey".equals(tag) && inKey) {
+                        inPrivateKey = true;
+                        privBuilder = new StringBuilder();
+                    } else if ("CertificateChain".equals(tag) && inKey) {
+                        inCertificateChain = true;
+                    } else if ("Certificate".equals(tag) && inCertificateChain) {
+                        inCertificate = true;
+                        certBuilder = new StringBuilder();
+                    }
+                } else if (eventType == XmlPullParser.TEXT) {
+                    final String text = parser.getText();
+                    if (text != null) {
+                        if (inPrivateKey && privBuilder != null) {
+                            privBuilder.append(text);
+                        } else if (inCertificate && certBuilder != null) {
+                            certBuilder.append(text);
+                        }
+                    }
+                } else if (eventType == XmlPullParser.END_TAG) {
+                    if ("PrivateKey".equals(tag)) {
+                        if (privBuilder != null) {
+                            final String raw = privBuilder.toString().trim();
+                            final Matcher pm = PRIV_PEM_PATTERN.matcher(raw);
+                            if (pm.find()) {
+                                privPem = pm.group(0);
+                            }
+                            privBuilder = null;
+                        }
+                        inPrivateKey = false;
+                    } else if ("Certificate".equals(tag)) {
+                        if (certBuilder != null) {
+                            final String raw = certBuilder.toString().trim();
+                            final Matcher cm = CERT_PEM_PATTERN.matcher(raw);
+                            while (cm.find()) {
+                                final byte[] der = Base64.decode(
+                                        cm.group(1).replaceAll("\\s+", ""), Base64.DEFAULT);
+                                certs.add((X509Certificate) cf.generateCertificate(
+                                        new ByteArrayInputStream(der)));
+                            }
+                            certBuilder = null;
+                        }
+                        inCertificate = false;
+                    } else if ("CertificateChain".equals(tag)) {
+                        inCertificateChain = false;
+                    } else if ("Key".equals(tag)) {
+                        inKey = false;
+                        if (currentAlg != null && privPem != null && !certs.isEmpty()) {
+                            out.add(new KeyChainBundle(currentAlg, privPem, certs));
+                        }
+                    }
                 }
-                if (!certs.isEmpty()) {
-                    out.add(new KeyChainBundle(alg, privPem, certs));
-                }
+                eventType = parser.next();
             }
         } catch (Exception e) {
             Slog.w(TAG, "Failed parsing keybox bundles", e);
@@ -956,65 +1037,6 @@ public final class EosIntegrityService extends SystemService {
         return out;
     }
 
-    // ---- Ed25519 Signed Feed ------------------------------------------------
-
-    private JSONObject fetchVerifiedFeedManifest() {
-        final String feedUrl = SystemProperties.get(PROP_FEED_URL, DEFAULT_FEED_URL).trim();
-        final String pubkeySpkiB64 = SystemProperties.get(PROP_FEED_PUBKEY, "").trim();
-        if (feedUrl.isEmpty() || pubkeySpkiB64.isEmpty()) {
-            return null;
-        }
-        final byte[] manifestBytes = httpGetBytes(feedUrl);
-        final byte[] sigRaw = httpGetBytes(feedUrl + ".sig");
-        if (manifestBytes == null || sigRaw == null) {
-            return null;
-        }
-        try {
-            final byte[] sigBytes = decodeEd25519Sig(sigRaw);
-            if (sigBytes == null || sigBytes.length != 64) {
-                Slog.w(TAG, "Invalid Ed25519 signature length on manifest.json.sig");
-                return null;
-            }
-            final byte[] spkiDer = Base64.decode(pubkeySpkiB64, Base64.DEFAULT);
-            final PublicKey pubKey = KeyFactory.getInstance("Ed25519")
-                    .generatePublic(new X509EncodedKeySpec(spkiDer));
-            final Signature verifier = Signature.getInstance("Ed25519");
-            verifier.initVerify(pubKey);
-            verifier.update(manifestBytes);
-            if (!verifier.verify(sigBytes)) {
-                Slog.w(TAG, "Ed25519 verification FAILED for integrity manifest.json");
-                return null;
-            }
-            final JSONObject json = new JSONObject(new String(manifestBytes, StandardCharsets.UTF_8));
-            if (json.optInt("version", 0) != 1) {
-                Slog.w(TAG, "Unsupported integrity manifest schema version");
-                return null;
-            }
-            return json;
-        } catch (Exception e) {
-            Slog.w(TAG, "Failed verifying signed integrity manifest", e);
-            return null;
-        }
-    }
-
-    private static byte[] decodeEd25519Sig(byte[] raw) {
-        if (raw.length == 64) return raw;
-        final String text = new String(raw, StandardCharsets.UTF_8).trim();
-        try {
-            final byte[] b64 = Base64.decode(text, Base64.DEFAULT);
-            if (b64.length == 64) return b64;
-        } catch (Exception ignored) {
-        }
-        if (text.length() == 128) {
-            final byte[] out = new byte[64];
-            for (int i = 0; i < 64; i++) {
-                out[i] = (byte) Integer.parseInt(text.substring(i * 2, i * 2 + 2), 16);
-            }
-            return out;
-        }
-        return null;
-    }
-
     // ---- 3-way target.txt merge (user > remote > auto) ----------------------
 
     private String normalizeAndValidateTargets(String rawText) {
@@ -1122,7 +1144,7 @@ public final class EosIntegrityService extends SystemService {
 
     // ---- Google roots fetch & cache -----------------------------------------
 
-    private Set<PublicKey> getTrustedRootPublicKeys() {
+    private Set<PublicKey> getTrustedRootPublicKeys(long deadlineMs) {
         final long now = System.currentTimeMillis();
         String cachedJson;
         long cachedAt;
@@ -1135,7 +1157,7 @@ public final class EosIntegrityService extends SystemService {
             final Set<PublicKey> parsed = parseRootsPublicKeys(cachedJson);
             if (!parsed.isEmpty()) return parsed;
         }
-        final byte[] live = httpGetBytes(ROOTS_URL + "?_=" + System.nanoTime());
+        final byte[] live = httpGetBytes(ROOTS_URL + "?_=" + System.nanoTime(), deadlineMs);
         if (live != null) {
             final String raw = new String(live, StandardCharsets.UTF_8);
             final Set<PublicKey> parsed = parseRootsPublicKeys(raw);
@@ -1173,27 +1195,93 @@ public final class EosIntegrityService extends SystemService {
 
     private static String sanitizeKeyboxXml(String content) {
         String s = content.trim();
-        if (s.startsWith("\uFEFF")) s = s.substring(1);
+        for (String bom : new String[] {"\uFEFF", "\uFFFE", "\u0000\uFEFF"}) {
+            if (s.startsWith(bom)) {
+                s = s.substring(bom.length());
+            }
+        }
+        s = ZERO_WIDTH_PATTERN.matcher(s).replaceAll("");
         return s.replaceAll("<!--[\\s\\S]*?-->", "").trim();
     }
 
     private static String checkKeyboxStructure(String xml) {
-        if (!xml.contains("<Key algorithm=\"ecdsa\">") && !xml.contains("<Key algorithm=\"rsa\">")) {
-            return "No ECDSA or RSA Key block";
-        }
-        if (!xml.contains("<serial>") && !xml.contains("DeviceID")) {
-            return "No serial or DeviceID";
-        }
+        boolean hasValidKey = false;
+        boolean hasIdentifier = false;
+        int depth = 0;
+        boolean rootClosed = false;
         try {
             final XmlPullParser p = Xml.newPullParser();
+            p.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false);
             p.setInput(new StringReader(xml));
-            while (p.next() != XmlPullParser.END_DOCUMENT) {
-                // Verify well-formed XML
+
+            boolean inKey = false;
+            boolean supportedAlg = false;
+            boolean hasPrivateKey = false;
+            int certCount = 0;
+            StringBuilder textBuf = null;
+
+            int event = p.getEventType();
+            while (event != XmlPullParser.END_DOCUMENT) {
+                final String tag = p.getName();
+                if (event == XmlPullParser.START_TAG) {
+                    depth++;
+                    if ("Keybox".equals(tag)) {
+                        final String devId = p.getAttributeValue(null, "DeviceID");
+                        if (devId != null && !devId.trim().isEmpty()) {
+                            hasIdentifier = true;
+                        }
+                    } else if ("serial".equals(tag) || "DeviceID".equals(tag)) {
+                        hasIdentifier = true;
+                    } else if ("Key".equals(tag)) {
+                        inKey = true;
+                        final String alg = p.getAttributeValue(null, "algorithm");
+                        final String norm = alg != null ? alg.trim().toLowerCase(Locale.US) : "";
+                        supportedAlg = "ec".equals(norm) || "ecdsa".equals(norm) || "rsa".equals(norm);
+                        hasPrivateKey = false;
+                        certCount = 0;
+                    } else if (inKey && ("PrivateKey".equals(tag) || "Certificate".equals(tag))) {
+                        textBuf = new StringBuilder();
+                    }
+                } else if (event == XmlPullParser.TEXT) {
+                    if (textBuf != null && p.getText() != null) {
+                        textBuf.append(p.getText());
+                    }
+                } else if (event == XmlPullParser.END_TAG) {
+                    if (--depth == 0) {
+                        rootClosed = true;
+                    }
+                    if ("PrivateKey".equals(tag) && inKey) {
+                        if (textBuf != null && !textBuf.toString().trim().isEmpty()) {
+                            hasPrivateKey = true;
+                        }
+                        textBuf = null;
+                    } else if ("Certificate".equals(tag) && inKey) {
+                        if (textBuf != null && !textBuf.toString().trim().isEmpty()) {
+                            certCount++;
+                        }
+                        textBuf = null;
+                    } else if ("Key".equals(tag)) {
+                        if (supportedAlg && hasPrivateKey && certCount > 0) {
+                            hasValidKey = true;
+                        }
+                        inKey = false;
+                    }
+                }
+                event = p.next();
             }
-            return null;
         } catch (Exception e) {
             return "Malformed keybox XML";
         }
+        if (!rootClosed) {
+            return "Truncated keybox XML";
+        }
+        if (!hasValidKey) {
+            return "No ECDSA or RSA Key block";
+        }
+        if (!hasIdentifier) {
+            return "No serial or DeviceID";
+        }
+        return null;
     }
 
     private static JSONObject buildPifFromProfile(
@@ -1218,28 +1306,6 @@ public final class EosIntegrityService extends SystemService {
         return out;
     }
 
-    private static JSONObject buildPifFromFeedObject(
-            String existingRaw, JSONObject feedObj, String fp) {
-        final JSONObject out = copyPreservedPifFlags(existingRaw);
-        final String[] keys = {
-                "MANUFACTURER", "BRAND", "MODEL", "PRODUCT", "DEVICE",
-                "RELEASE", "ID", "INCREMENTAL", "TYPE", "TAGS",
-                "SECURITY_PATCH", "DEVICE_INITIAL_SDK_INT",
-                "_canary_month", "_canary_release_date"
-        };
-        for (String k : keys) {
-            final String v = feedObj.optString(k, feedObj.optString(k.toLowerCase(Locale.US), ""));
-            if (!v.isEmpty()) putQuietly(out, k, v);
-        }
-        putQuietly(out, "FINGERPRINT", fp);
-        if (out.optString("DEVICE_INITIAL_SDK_INT", "").isEmpty()) {
-            putQuietly(out, "DEVICE_INITIAL_SDK_INT",
-                    PixelDeviceRepository.getInitialSdkInt(out.optString("DEVICE", "")));
-        }
-        putQuietly(out, "manually_imported", false);
-        return out;
-    }
-
     private static JSONObject copyPreservedPifFlags(String existingRaw) {
         final JSONObject out = new JSONObject();
         if (existingRaw == null || existingRaw.trim().isEmpty()) return out;
@@ -1255,19 +1321,6 @@ public final class EosIntegrityService extends SystemService {
         } catch (Exception ignored) {
         }
         return out;
-    }
-
-    private static boolean isIsoUtcExpired(String isoUtc) {
-        try {
-            final String norm = isoUtc.endsWith("Z")
-                    ? isoUtc.substring(0, isoUtc.length() - 1) : isoUtc;
-            final SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US);
-            sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-            final Date d = sdf.parse(norm);
-            return d != null && d.getTime() < System.currentTimeMillis();
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     // ---- Atomic storage & legacy migration ----------------------------------
@@ -1353,29 +1406,58 @@ public final class EosIntegrityService extends SystemService {
     }
 
     private static void writeAtomic0600Locked(File target, byte[] bytes) {
-        final File tmp = new File(target.getParentFile(), target.getName() + ".tmp");
-        try (FileOutputStream fos = new FileOutputStream(tmp)) {
-            fos.write(bytes);
-            fos.getFD().sync();
-        } catch (IOException e) {
+        final File dir = target.getParentFile();
+        if (dir == null) return;
+        final File tmp = new File(dir, target.getName() + ".tmp");
+        FileDescriptor fd = null;
+        try {
+            fd = Os.open(tmp.getAbsolutePath(),
+                    OsConstants.O_WRONLY | OsConstants.O_CREAT | OsConstants.O_TRUNC,
+                    0600);
+            Os.fchmod(fd, 0600);
+            int offset = 0;
+            while (offset < bytes.length) {
+                final int written = Os.write(fd, bytes, offset, bytes.length - offset);
+                if (written <= 0) {
+                    throw new IOException("Short write to " + tmp);
+                }
+                offset += written;
+            }
+            Os.fsync(fd);
+        } catch (Exception e) {
             Slog.e(TAG, "Failed writing " + tmp, e);
             tmp.delete();
             return;
+        } finally {
+            if (fd != null) {
+                try {
+                    Os.close(fd);
+                } catch (ErrnoException ignored) {
+                }
+            }
         }
         try {
-            Os.chmod(tmp.getAbsolutePath(), 0600);
-            Files.move(tmp.toPath(), target.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            FileUtils.sync(new FileOutputStream(new File(target.getParentFile(), ".dirsync_noop")));
-        } catch (Exception e) {
-            // Clean up any helper file and ensure target permissions
+            Os.rename(tmp.getAbsolutePath(), target.getAbsolutePath());
+        } catch (ErrnoException e) {
+            Slog.e(TAG, "Failed atomic rename " + tmp + " -> " + target, e);
+            tmp.delete();
+            return;
+        }
+        if (dir.isDirectory()) {
+            FileDescriptor dirFd = null;
             try {
-                Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                Os.chmod(target.getAbsolutePath(), 0600);
-            } catch (Exception ignored) {
+                dirFd = Os.open(dir.getAbsolutePath(), OsConstants.O_RDONLY, 0);
+                Os.fsync(dirFd);
+            } catch (ErrnoException e) {
+                Slog.w(TAG, "Failed fsync on directory " + dir, e);
+            } finally {
+                if (dirFd != null) {
+                    try {
+                        Os.close(dirFd);
+                    } catch (ErrnoException ignored) {
+                    }
+                }
             }
-        } finally {
-            new File(target.getParentFile(), ".dirsync_noop").delete();
         }
     }
 
@@ -1390,19 +1472,42 @@ public final class EosIntegrityService extends SystemService {
         }
     }
 
-    private static byte[] httpGetBytes(String urlStr) {
+    private static byte[] httpGetBytes(String urlStr, long deadlineElapsedMs) {
+        final long remainingMs = deadlineElapsedMs - SystemClock.elapsedRealtime();
+        if (remainingMs <= 0L) {
+            return null;
+        }
+        final int timeoutMs = (int) Math.min(HTTP_TIMEOUT_MS, remainingMs);
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setUseCaches(false);
             conn.setRequestProperty("Cache-Control", "no-store");
             conn.setRequestProperty("Accept-Encoding", "identity");
-            conn.setConnectTimeout(HTTP_TIMEOUT_MS);
-            conn.setReadTimeout(HTTP_TIMEOUT_MS);
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
             if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
                 return null;
             }
-            return conn.getInputStream().readAllBytes();
+            try (InputStream in = conn.getInputStream();
+                    ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                final byte[] buf = new byte[8192];
+                int total = 0;
+                int n;
+                while ((n = in.read(buf)) >= 0) {
+                    if (Thread.currentThread().isInterrupted()
+                            || SystemClock.elapsedRealtime() >= deadlineElapsedMs) {
+                        return null;
+                    }
+                    total += n;
+                    if (total > MAX_HTTP_BYTES) {
+                        Slog.w(TAG, "HTTP response exceeded max size (" + MAX_HTTP_BYTES + " bytes)");
+                        return null;
+                    }
+                    out.write(buf, 0, n);
+                }
+                return out.toByteArray();
+            }
         } catch (Exception e) {
             return null;
         } finally {

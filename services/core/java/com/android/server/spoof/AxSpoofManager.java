@@ -661,10 +661,6 @@ public class AxSpoofManager implements IAxSpoofManager {
                 mResolver, PIF_ENABLED_KEY, 1, UserHandle.USER_SYSTEM) == 0) {
             return;
         }
-        if (EosIntegrityService.getInstance() != null
-                && EosIntegrityService.refreshCanaryPifInternal(false)) {
-            return;
-        }
 
         long lastFetch = Settings.Secure.getLongForUser(
                 mResolver, LAST_AUTO_FETCH_KEY, 0L, UserHandle.USER_SYSTEM);
@@ -684,6 +680,17 @@ public class AxSpoofManager implements IAxSpoofManager {
         Long daysLeft = canaryMonth.isEmpty() ? null
                 : PixelDeviceRepository.getDaysUntilExpiry(canaryMonth, releaseDate);
         if (daysLeft != null && daysLeft > REFETCH_WINDOW_DAYS) return;
+
+        if (EosIntegrityService.getInstance() != null) {
+            final Boolean refreshed = runBounded(mFingerprintExecutor,
+                    () -> EosIntegrityService.refreshCanaryPifInternal(false));
+            if (Boolean.TRUE.equals(refreshed)) {
+                Settings.Secure.putLongForUser(
+                        mResolver, LAST_AUTO_FETCH_KEY, System.currentTimeMillis(),
+                        UserHandle.USER_SYSTEM);
+                return;
+            }
+        }
 
         PixelDeviceRepository.PixelProfile matched = runBounded(mFingerprintExecutor, () -> {
             List<PixelDeviceRepository.PixelProfile> profiles =
@@ -767,7 +774,8 @@ public class AxSpoofManager implements IAxSpoofManager {
             return true;
         }
         if (EosIntegrityService.getInstance() != null) {
-            return EosIntegrityService.refreshOfficialKeyboxInternal(false);
+            return Boolean.TRUE.equals(runBounded(mNetworkExecutor,
+                    () -> EosIntegrityService.refreshOfficialKeyboxInternal(false)));
         }
 
         String source = Settings.Secure.getStringForUser(
@@ -1142,10 +1150,14 @@ public class AxSpoofManager implements IAxSpoofManager {
     public void onIntegrityServiceUpdated(boolean pifChanged, boolean restartGms) {
         if (pifChanged) {
             refreshKey(Settings.Secure.SPOOF_PIF_CONFIG);
-            if (mActivated && mPifEnabled) {
-                stagePifPropOverrides(getCached(Settings.Secure.SPOOF_PIF_CONFIG));
+            final String cfg = getCached(Settings.Secure.SPOOF_PIF_CONFIG);
+            if (mActivated && mPifEnabled && !isEmpty(cfg)) {
+                stagePifPropOverrides(cfg);
+            } else {
+                clearPifPropOverrides();
             }
         }
+        refreshKey(Settings.Secure.SPOOF_GAMEPROPS_CONFIG);
         refreshKey(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
         refreshKey(Settings.Secure.SPOOF_TRICKYSTORE_PATCH);
         if (mActivated && restartGms) {

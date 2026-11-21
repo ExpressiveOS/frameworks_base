@@ -34,8 +34,11 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.io.StringReader;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -399,24 +402,158 @@ public final class GamePropsSpoofService {
     }
 
     // -------------------------------------------------------------------------
-    // Reflection helpers
+    // Reflection / Unsafe helpers (matching PlayIntegritySpoofService)
     // -------------------------------------------------------------------------
+
+    private static final Object sUnsafeLock = new Object();
+    private static boolean sUnsafeLookedUp;
+    private static Object sUnsafe;
+    private static Method sPutObject;
+    private static Method sPutInt;
+    private static Method sPutLong;
+    private static Method sPutBoolean;
+    private static Field sFieldOffset;
+    private static Method sFieldGetOffset;
+
+    private static boolean initUnsafe() {
+        synchronized (sUnsafeLock) {
+            if (sUnsafeLookedUp) {
+                return sUnsafe != null && sPutObject != null
+                        && (sFieldOffset != null || sFieldGetOffset != null);
+            }
+            sUnsafeLookedUp = true;
+
+            try {
+                Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+                Object unsafe = null;
+                for (String name : new String[] { "theUnsafe", "THE_ONE" }) {
+                    try {
+                        Field f = unsafeClass.getDeclaredField(name);
+                        f.setAccessible(true);
+                        unsafe = f.get(null);
+                        if (unsafe != null) break;
+                    } catch (Throwable ignored) {
+                    }
+                }
+                if (unsafe == null) {
+                    try {
+                        unsafe = unsafeClass.getMethod("getUnsafe").invoke(null);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                if (unsafe == null) {
+                    Log.w(TAG, "sun.misc.Unsafe instance unavailable");
+                    return false;
+                }
+
+                sPutObject = unsafeClass.getMethod("putObject",
+                        Object.class, long.class, Object.class);
+                sPutInt = unsafeClass.getMethod("putInt", Object.class, long.class, int.class);
+                sPutLong = unsafeClass.getMethod("putLong", Object.class, long.class, long.class);
+                try {
+                    sPutBoolean = unsafeClass.getMethod("putBoolean",
+                            Object.class, long.class, boolean.class);
+                } catch (NoSuchMethodException ignored) {
+                }
+                sUnsafe = unsafe;
+            } catch (Throwable t) {
+                Log.w(TAG, "Failed to resolve sun.misc.Unsafe: " + t);
+                sUnsafe = null;
+                return false;
+            }
+
+            try {
+                Field f = Field.class.getDeclaredField("offset");
+                f.setAccessible(true);
+                sFieldOffset = f;
+            } catch (Throwable ignored) {
+            }
+            if (sFieldOffset == null) {
+                try {
+                    Method m = Field.class.getDeclaredMethod("getOffset");
+                    m.setAccessible(true);
+                    sFieldGetOffset = m;
+                } catch (Throwable ignored) {
+                }
+            }
+            if (sFieldOffset == null && sFieldGetOffset == null) {
+                Log.w(TAG, "Unable to resolve java.lang.reflect.Field offset");
+                return false;
+            }
+            return true;
+        }
+    }
+
+    private static long fieldOffset(Field field) throws ReflectiveOperationException {
+        if (sFieldOffset != null) {
+            return ((Number) sFieldOffset.get(field)).longValue();
+        }
+        return ((Number) sFieldGetOffset.invoke(field)).longValue();
+    }
+
+    private static void putStaticViaUnsafe(Field field, Object value)
+            throws ReflectiveOperationException {
+        if (!initUnsafe()) {
+            throw new IllegalStateException("Unsafe fallback unavailable");
+        }
+        if (!Modifier.isStatic(field.getModifiers())) {
+            throw new IllegalArgumentException(field.getName() + " is not static");
+        }
+
+        Object base = field.getDeclaringClass();
+        long offset = fieldOffset(field);
+        Class<?> type = field.getType();
+
+        if (!type.isPrimitive()) {
+            sPutObject.invoke(sUnsafe, base, offset, value);
+        } else if (type == int.class) {
+            sPutInt.invoke(sUnsafe, base, offset, ((Number) value).intValue());
+        } else if (type == long.class) {
+            sPutLong.invoke(sUnsafe, base, offset, ((Number) value).longValue());
+        } else if (type == boolean.class && sPutBoolean != null) {
+            sPutBoolean.invoke(sUnsafe, base, offset, (Boolean) value);
+        } else {
+            throw new IllegalArgumentException("Unsupported static type " + type);
+        }
+    }
+
+    private static void setStaticField(Field field, Object value) throws Exception {
+        field.setAccessible(true);
+        try {
+            try {
+                field.set(null, value);
+            } catch (IllegalAccessException e) {
+                putStaticViaUnsafe(field, value);
+            }
+            Object now = field.get(null);
+            if (!Objects.equals(now, value)) {
+                throw new IllegalStateException("write to " + field.getName()
+                        + " did not stick (still " + now + ")");
+            }
+        } finally {
+            field.setAccessible(false);
+        }
+    }
 
     private void spoofField(String fieldName, String value, String packageName) {
         if (value == null || value.isEmpty()) {
             if (mDebug) Log.d(TAG, fieldName + " is empty, skipping");
             return;
         }
+        Field field = getDeclaredField(Build.class, fieldName);
+        if (field == null) field = getDeclaredField(Build.VERSION.class, fieldName);
+        if (field == null) {
+            if (mDebug) Log.d(TAG, "Field not found: " + fieldName);
+            return;
+        }
         try {
-            Field field = getDeclaredField(Build.class, fieldName);
-            if (field == null) field = getDeclaredField(Build.VERSION.class, fieldName);
-            if (field == null) {
-                if (mDebug) Log.d(TAG, "Field not found: " + fieldName);
-                return;
-            }
-
             field.setAccessible(true);
-            Object rawOld = field.get(null);
+            Object rawOld;
+            try {
+                rawOld = field.get(null);
+            } finally {
+                field.setAccessible(false);
+            }
             String oldValue = (rawOld != null) ? rawOld.toString() : "";
             if (value.equals(oldValue)) {
                 if (mDebug) Log.d(TAG, "[" + fieldName + "]: " + value + " (unchanged)");
@@ -434,7 +571,7 @@ public final class GamePropsSpoofService {
                 return;
             }
 
-            field.set(null, newValue);
+            setStaticField(field, newValue);
             if (mDebug) Log.d(TAG, "[" + packageName + "][" + fieldName + "]: "
                     + oldValue + " → " + value);
 

@@ -103,9 +103,9 @@ public final class PixelPropsUtils {
     private static final Pattern TENSOR_PIXEL_PATTERN =
             Pattern.compile("^Pixel (([6-9]|[1-9][0-9])[a-zA-Z ]*)$");
 
-    // Mainline (first-party SoC) devices: Pixel 8 and above
+    // Mainline (first-party SoC) devices: Pixel 6 and above (all Tensor Pixels)
     private static final Pattern MAINLINE_PIXEL_PATTERN =
-            Pattern.compile("^Pixel (([89]|[1-9][0-9])([a-zA-Z].*)?)$");
+            Pattern.compile("^Pixel (([6789]|[1-9][0-9])([a-zA-Z ].*)?)$");
 
     // Any supported Pixel: Pixel 3 and above (covers full GMS support window + current)
     private static final Pattern SUPPORTED_PIXEL_PATTERN =
@@ -125,7 +125,7 @@ public final class PixelPropsUtils {
 
     private static final boolean sIsMainlineDevice = detectMainlinePixelDevice();
 
-    private static volatile boolean sPhotosSpoofEnabled = true;
+    private static volatile boolean sPhotosSpoofEnabled = false;
     private static volatile boolean sSnapchatSpoofEnabled = false;
     private static volatile boolean sPixelPropsSpoofEnabled = true;
     private static volatile boolean sInitialized = false;
@@ -188,7 +188,7 @@ public final class PixelPropsUtils {
         final Runnable refresh = () -> {
             try {
                 sPhotosSpoofEnabled = Settings.Secure.getInt(
-                        cr, Settings.Secure.PI_PHOTOS_SPOOF, 1) == 1;
+                        cr, Settings.Secure.PI_PHOTOS_SPOOF, 0) == 1;
                 sSnapchatSpoofEnabled = Settings.Secure.getInt(
                         cr, Settings.Secure.PI_SNAPCHAT_SPOOF, 0) == 1;
                 sPixelPropsSpoofEnabled = Settings.Secure.getInt(

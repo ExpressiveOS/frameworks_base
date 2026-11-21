@@ -102,8 +102,8 @@ public class TrickyStoreService {
     private volatile long mLastPatchRefreshElapsedMs = 0L;
     private static final long REVOCATION_CHECK_COOLDOWN_MS = 24 * 60 * 60 * 1000L;
     private static final long CACHE_TRUST_WINDOW_MS = 7L * 24 * 60 * 60 * 1000L;
-    private static final java.io.File REVOCATION_CACHE_FILE =
-        new java.io.File("/data/system/trickystore/revocation_cache.json");
+    private volatile String mCachedRevokedSerial = null;
+    private volatile long mCachedRevokedAtMs = 0L;
     private volatile PatchConfig mPatchConfig =
             new PatchConfig(null, Collections.emptyMap());
     // Attesting through a hooked process breaks STRONG — always skipped
@@ -621,52 +621,30 @@ public class TrickyStoreService {
     }
 
     /**
-     * Writes [serial] to a small private cache file so a later network
-     * failure can still flag it. Downgrade-only: this cache is only ever
-     * consulted to log a warning, never to assert a keybox is safe.
+     * Records [serial] in process memory so a later network failure can still
+     * flag it without probing or writing to `/data/system/trickystore` from app
+     * processes (persistent CRL caching is owned by EosIntegrityService in
+     * system_server).
      */
     private void writeCachedRevokedSerial(String serial) {
-        try {
-            REVOCATION_CACHE_FILE.getParentFile().mkdirs();
-            org.json.JSONObject obj = new org.json.JSONObject();
-            obj.put("serial", serial);
-            obj.put("cachedAt", System.currentTimeMillis());
-            try (java.io.FileWriter fw = new java.io.FileWriter(REVOCATION_CACHE_FILE)) {
-                fw.write(obj.toString());
-            }
-            android.system.Os.chmod(REVOCATION_CACHE_FILE.getAbsolutePath(), 0600);
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to write revocation cache", e);
-        }
+        mCachedRevokedSerial = serial;
+        mCachedRevokedAtMs = System.currentTimeMillis();
     }
 
     /**
      * Logging-only fallback used when the live revocation fetch fails.
-     * Reads the cached bad serial, if any, and logs a warning if it matches
-     * one of the current keybox's serials and the cache is still within the
-     * trust window. Never mutates keybox state — that decision stays with
-     * the Settings UI layer.
+     * Checks the in-memory cached bad serial, if any, and logs a warning if it
+     * matches one of the current keybox's serials within the trust window.
      */
     private void checkCachedRevocation(List<String> serials) {
-        if (!REVOCATION_CACHE_FILE.exists()) return;
-        try {
-            String content = new String(
-                java.nio.file.Files.readAllBytes(REVOCATION_CACHE_FILE.toPath()),
-                StandardCharsets.UTF_8);
-            org.json.JSONObject obj = new org.json.JSONObject(content);
-            long cachedAt = obj.optLong("cachedAt", 0L);
-            if (cachedAt == 0L ||
-                System.currentTimeMillis() - cachedAt > CACHE_TRUST_WINDOW_MS) {
-                return;
-            }
-            String cachedSerial = obj.optString("serial", "");
-            if (!cachedSerial.isEmpty() && serials.contains(cachedSerial)) {
-                Log.w(TAG, "Keybox serial " + cachedSerial +
-                        " was cached as revoked/suspended (offline fallback,"
-                        + " live check unavailable)");
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to read revocation cache", e);
+        final long cachedAt = mCachedRevokedAtMs;
+        final String cachedSerial = mCachedRevokedSerial;
+        if (cachedAt == 0L || cachedSerial == null || cachedSerial.isEmpty()) return;
+        if (System.currentTimeMillis() - cachedAt > CACHE_TRUST_WINDOW_MS) return;
+        if (serials.contains(cachedSerial)) {
+            Log.w(TAG, "Keybox serial " + cachedSerial +
+                    " was cached as revoked/suspended (offline fallback,"
+                    + " live check unavailable)");
         }
     }
 

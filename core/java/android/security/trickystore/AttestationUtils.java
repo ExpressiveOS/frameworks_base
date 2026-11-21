@@ -12,10 +12,6 @@ import com.android.internal.org.bouncycastle.asn1.ASN1Sequence;
 import com.android.internal.org.bouncycastle.asn1.ASN1TaggedObject;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.security.*;
 import java.security.cert.*;
 
@@ -24,10 +20,6 @@ import java.security.cert.*;
  */
 public final class AttestationUtils {
     private static final String TAG = "AttestationUtils";
-
-    private static final File CONFIG_DIR = new File("/data/adb/tricky_store");
-    private static final File BOOT_KEY_FILE = new File(CONFIG_DIR, "boot_key");
-    private static final File HBK_FILE = new File(CONFIG_DIR, "hbk");
 
     private static volatile byte[] sBootKey;
     private static volatile byte[] sBootHash;
@@ -69,7 +61,7 @@ public final class AttestationUtils {
                     key = getBootKeyFromKeybox();
                     fromKeybox = key != null;
                 }
-                if (key == null) key = loadOrCreatePersisted(BOOT_KEY_FILE);
+                if (key == null) key = generateRandomBytes(32);
                 sBootKeyFallback = fromKeybox;
                 sBootKey = key;
             }
@@ -161,10 +153,8 @@ public final class AttestationUtils {
             hash = sBootHash;
             if (hash == null) {
                 hash = getBootHashFromProp();
-                if (hash == null) hash = readPersisted(HBK_FILE);
                 if (hash == null && !sTeeBroken) {
                     hash = extractBootHashFromTee();
-                    if (hash != null) writePersisted(HBK_FILE, hash);
                 }
                 boolean fromKeybox = false;
                 if (hash == null) {
@@ -172,9 +162,8 @@ public final class AttestationUtils {
                     fromKeybox = hash != null;
                 }
                 if (hash == null) {
-                    Log.w(TAG, "Failed to get boot hash from prop, disk, TEE, and keybox, using random bytes");
+                    Log.w(TAG, "Failed to get boot hash from prop, TEE, and keybox, using in-memory random bytes");
                     hash = generateRandomBytes(32);
-                    writePersisted(HBK_FILE, hash);
                 }
                 sBootHashFallback = fromKeybox;
                 sBootHash = hash;
@@ -191,18 +180,11 @@ public final class AttestationUtils {
             Log.i(TAG, "initBootHash: Boot hash already set from prop: " + bytesToHex(hash));
             return;
         }
-        hash = readPersisted(HBK_FILE);
-        if (hash != null) {
-            sBootHash = hash;
-            Log.i(TAG, "initBootHash: Boot hash loaded from disk: " + bytesToHex(hash));
-            return;
-        }
-        Log.i(TAG, "initBootHash: No prop or disk state, attempting TEE extraction");
+        Log.i(TAG, "initBootHash: No prop state, attempting TEE extraction");
         hash = extractBootHashFromTee();
         if (hash != null) {
             sBootHashFallback = false;
             sBootHash = hash;
-            writePersisted(HBK_FILE, hash);
             Log.i(TAG, "initBootHash: TEE extraction successful, setting prop");
             setVbmetaDigestProp(bytesToHex(hash));
         } else {
@@ -484,59 +466,6 @@ public final class AttestationUtils {
         byte[] bytes = new byte[length];
         new SecureRandom().nextBytes(bytes);
         return bytes;
-    }
-
-    /**
-     * Loads a persisted value from {@code file}, generating and persisting
-     * a fresh 32-byte random value on first run so it stays stable across
-     * daemon restarts and reboots instead of being re-randomized every time.
-     */
-    private static byte[] loadOrCreatePersisted(File file) {
-        byte[] existing = readPersisted(file);
-        if (existing != null) {
-            return existing;
-        }
-        byte[] fresh = generateRandomBytes(32);
-        writePersisted(file, fresh);
-        return fresh;
-    }
-
-    private static byte[] readPersisted(File file) {
-        if (!file.isFile()) {
-            return null;
-        }
-        try {
-            byte[] data = Files.readAllBytes(file.toPath());
-            if (data.length == 32) {
-                return data;
-            }
-            Log.w(TAG, "Persisted value at " + file + " has unexpected length "
-                    + data.length + ", ignoring");
-        } catch (IOException e) {
-            Log.w(TAG, "Failed to read persisted value from " + file, e);
-        }
-        return null;
-    }
-
-    private static void writePersisted(File file, byte[] data) {
-        try {
-            if (!CONFIG_DIR.isDirectory() && !CONFIG_DIR.mkdirs()) {
-                Log.w(TAG, "Failed to create " + CONFIG_DIR);
-                return;
-            }
-            File tmp = new File(CONFIG_DIR, file.getName() + ".tmp");
-            try (FileOutputStream fos = new FileOutputStream(tmp)) {
-                fos.write(data);
-            }
-            if (!tmp.renameTo(file)) {
-                Log.w(TAG, "Failed to rename " + tmp + " to " + file);
-            } else {
-                file.setReadable(true, true);
-                file.setWritable(true, true);
-            }
-        } catch (IOException e) {
-            Log.w(TAG, "Failed to persist value to " + file, e);
-        }
     }
 
     private static byte[] hexStringToByteArray(String hex) {
