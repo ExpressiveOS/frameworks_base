@@ -91,7 +91,7 @@ class RefreshRateTile @Inject constructor(
         }
 
         val display: Display? = mContext.getSystemService(
-                DisplayManager::class.java)!!.getDisplay(Display.DEFAULT_DISPLAY)
+                DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)
         display?.let {
             it.getSupportedModes().forEach({ mode ->
                 mode.refreshRate.let { rr ->
@@ -221,7 +221,10 @@ class RefreshRateTile @Inject constructor(
         private var isObserving = false
 
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            if (!ignoreSettingsChange) updateMode()
+            if (!ignoreSettingsChange) {
+                updateMode()
+                refreshState()
+            }
         }
 
         fun observe() {

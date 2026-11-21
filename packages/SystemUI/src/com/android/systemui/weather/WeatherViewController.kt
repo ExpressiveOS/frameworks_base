@@ -16,8 +16,11 @@
 package com.android.systemui.weather
 
 import android.content.Context
+import android.database.ContentObserver
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import android.net.Uri
+import android.os.Handler
 import android.os.UserHandle
 import android.provider.Settings
 import android.view.View
@@ -42,10 +45,12 @@ class WeatherViewController(
 ) : OmniJawsClient.OmniJawsObserver {
 
     private var weatherInfo: OmniJawsClient.WeatherInfo? = null
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private var scope: CoroutineScope? = null
 
     private var mDozing = false
+    private var isObserving = false
     private val statusBarStateController: StatusBarStateController = Dependency.get(StatusBarStateController::class.java)
+    private val bgHandler: Handler = Handler(Dependency.get(Dependency.BG_LOOPER))
 
     private val statusBarStateListener = object : StatusBarStateController.StateListener {
         override fun onStateChanged(newState: Int) {}
@@ -56,20 +61,65 @@ class WeatherViewController(
         }
     }
 
-    private val weatherSettingsFlow = flow {
-        var previousSettings: WeatherSettings? = null
-        while (true) {
-            val currentSettings = getWeatherSettings()
-            if (currentSettings != previousSettings) {
-                emit(currentSettings)
-                previousSettings = currentSettings
-            }
-            delay(5000)
+    private val weatherSettingsFlow = MutableStateFlow(
+        WeatherSettings(
+            weatherEnabled = false,
+            showWeatherLocation = false,
+            showWeatherText = true,
+            showWindInfo = false,
+            showHumidityInfo = false,
+            customClockWeather = true,
+        )
+    )
+
+    private val refreshSettingsRunnable = Runnable {
+        weatherSettingsFlow.value = getWeatherSettings()
+    }
+
+    private val settingsObserver = object : ContentObserver(bgHandler) {
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            weatherSettingsFlow.value = getWeatherSettings()
         }
-    }.stateIn(scope, SharingStarted.Eagerly, getWeatherSettings())
+    }
 
     fun init() {
-        scope.launch {
+        if (isObserving) return
+        val activeScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+        scope = activeScope
+
+        val resolver = context.contentResolver
+        try {
+            resolver.registerContentObserver(
+                Settings.System.getUriFor(LOCKSCREEN_WEATHER_ENABLED),
+                false, settingsObserver, UserHandle.USER_ALL
+            )
+            resolver.registerContentObserver(
+                Settings.System.getUriFor(LOCKSCREEN_WEATHER_LOCATION),
+                false, settingsObserver, UserHandle.USER_ALL
+            )
+            resolver.registerContentObserver(
+                Settings.System.getUriFor(LOCKSCREEN_WEATHER_TEXT),
+                false, settingsObserver, UserHandle.USER_ALL
+            )
+            resolver.registerContentObserver(
+                Settings.System.getUriFor(LOCKSCREEN_WEATHER_WIND_INFO),
+                false, settingsObserver, UserHandle.USER_ALL
+            )
+            resolver.registerContentObserver(
+                Settings.System.getUriFor(LOCKSCREEN_WEATHER_HUMIDITY_INFO),
+                false, settingsObserver, UserHandle.USER_ALL
+            )
+            resolver.registerContentObserver(
+                Settings.Secure.getUriFor(CUSTOM_CLOCK_WEATHER),
+                false, settingsObserver, UserHandle.USER_ALL
+            )
+            isObserving = true
+        } catch (_: Exception) {
+            isObserving = false
+        }
+
+        bgHandler.post(refreshSettingsRunnable)
+        activeScope.launch {
             weatherSettingsFlow.collectLatest { applyWeatherSettings(it) }
         }
         statusBarStateController.addCallback(statusBarStateListener)
@@ -166,7 +216,7 @@ class WeatherViewController(
     }
 
     private fun showAllViews() {
-        scope.launch {
+        scope?.launch {
             listOf(weatherInfoView, weatherIcon, weatherTemp).forEach {
                 it.visibility = View.VISIBLE
             }
@@ -206,7 +256,16 @@ class WeatherViewController(
     }
 
     fun removeObserver() {
-        scope.cancel()
+        if (isObserving) {
+            try {
+                context.contentResolver.unregisterContentObserver(settingsObserver)
+            } catch (_: Exception) {
+            }
+            isObserving = false
+        }
+        bgHandler.removeCallbacks(refreshSettingsRunnable)
+        scope?.cancel()
+        scope = null
         OmniJawsClient.get().removeObserver(context, this)
         statusBarStateController.removeCallback(statusBarStateListener)
     }

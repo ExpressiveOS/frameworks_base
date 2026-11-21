@@ -59,6 +59,7 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
     private BatteryController mBatteryController;
     private NotificationManager mNotificationManager;
     private Notification mNotification;
+    private boolean mCallbackRegistered;
     private static final String CHANNEL_ID = TILE_SPEC;
     private static final int NOTIFICATION_ID = 273298;
 
@@ -80,18 +81,19 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
     ) {
         super(host, uiEventLogger, backgroundLooper, mainHandler, falsingManager, metricsLogger,
                 statusBarStateController, activityStarter, qsLogger);
+        mBatteryController = batteryController;
+        mNotificationManager = mContext.getSystemService(NotificationManager.class);
         mPowerShare = getPowerShare();
         if (mPowerShare == null) {
             return;
         }
 
-        mBatteryController = batteryController;
-        mNotificationManager = mContext.getSystemService(NotificationManager.class);
-
-        NotificationChannel notificationChannel = new NotificationChannel(CHANNEL_ID,
-                mContext.getString(R.string.quick_settings_powershare_label),
-                NotificationManager.IMPORTANCE_DEFAULT);
-        mNotificationManager.createNotificationChannel(notificationChannel);
+        if (mNotificationManager != null) {
+            NotificationChannel notificationChannel = new NotificationChannel(CHANNEL_ID,
+                    mContext.getString(R.string.quick_settings_powershare_label),
+                    NotificationManager.IMPORTANCE_DEFAULT);
+            mNotificationManager.createNotificationChannel(notificationChannel);
+        }
 
         Notification.Builder builder = new Notification.Builder(mContext, CHANNEL_ID);
         builder.setContentTitle(
@@ -102,7 +104,22 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
         mNotification.flags |= Notification.FLAG_NO_CLEAR | Notification.FLAG_ONGOING_EVENT;
         mNotification.visibility = Notification.VISIBILITY_PUBLIC;
 
-        batteryController.addCallback(this);
+        if (mBatteryController != null) {
+            mBatteryController.addCallback(this);
+            mCallbackRegistered = true;
+        }
+    }
+
+    @Override
+    protected void handleDestroy() {
+        if (mCallbackRegistered && mBatteryController != null) {
+            mBatteryController.removeCallback(this);
+            mCallbackRegistered = false;
+        }
+        if (mNotificationManager != null) {
+            mNotificationManager.cancel(NOTIFICATION_ID);
+        }
+        super.handleDestroy();
     }
 
     @Override
@@ -122,7 +139,7 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
             return;
         }
 
-        if (mBatteryController.isPowerSave()) {
+        if (mBatteryController != null && mBatteryController.isPowerSave()) {
             try {
                 mPowerShare.setEnabled(false);
             } catch (Exception ex) {
@@ -131,10 +148,12 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
         }
 
         try {
-            if (mPowerShare.isEnabled()) {
-                mNotificationManager.notify(NOTIFICATION_ID, mNotification);
-            } else {
-                mNotificationManager.cancel(NOTIFICATION_ID);
+            if (mNotificationManager != null) {
+                if (mPowerShare.isEnabled() && mNotification != null) {
+                    mNotificationManager.notify(NOTIFICATION_ID, mNotification);
+                } else {
+                    mNotificationManager.cancel(NOTIFICATION_ID);
+                }
             }
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -143,6 +162,9 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
 
     @Override
     public boolean isAvailable() {
+        if (mPowerShare == null) {
+            return false;
+        }
         try {
             // Will throw NPE or some other exception if HAL is either missing or broken.
             mPowerShare.isEnabled();
@@ -161,6 +183,9 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
 
     @Override
     public void handleClick(@Nullable Expandable expandable) {
+        if (mPowerShare == null) {
+            return;
+        }
         try {
             mPowerShare.setEnabled(!mPowerShare.isEnabled());
             refreshState();
@@ -176,7 +201,10 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
 
     @Override
     public CharSequence getTileLabel() {
-        if (mBatteryController.isPowerSave()) {
+        if (mPowerShare == null) {
+            return mContext.getString(R.string.quick_settings_powershare_label);
+        }
+        if (mBatteryController != null && mBatteryController.isPowerSave()) {
             return mContext.getString(R.string.quick_settings_powershare_off_powersave_label);
         } else {
             if (getBatteryLevel() < getMinBatteryLevel()) {
@@ -206,7 +234,8 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
         }
         state.label = mContext.getString(R.string.quick_settings_powershare_label);
 
-        if (mBatteryController.isPowerSave() || getBatteryLevel() < getMinBatteryLevel()) {
+        if ((mBatteryController != null && mBatteryController.isPowerSave())
+                || getBatteryLevel() < getMinBatteryLevel()) {
             state.state = Tile.STATE_UNAVAILABLE;
         } else if (!state.value) {
             state.state = Tile.STATE_INACTIVE;
@@ -237,6 +266,9 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
     }
 
     private int getMinBatteryLevel() {
+        if (mPowerShare == null) {
+            return 0;
+        }
         try {
             return mPowerShare.getMinBattery();
         } catch (Exception ex) {
@@ -248,6 +280,9 @@ public class PowerShareTile extends QSTileImpl<BooleanState>
 
     private int getBatteryLevel() {
         BatteryManager bm = mContext.getSystemService(BatteryManager.class);
+        if (bm == null) {
+            return 0;
+        }
         return bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
     }
 }

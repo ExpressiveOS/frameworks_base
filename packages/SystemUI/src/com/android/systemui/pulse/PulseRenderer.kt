@@ -19,6 +19,8 @@ package com.android.systemui.pulse
 
 import android.content.Context
 import android.graphics.*
+import android.os.SystemClock
+import java.util.concurrent.CopyOnWriteArraySet
 import kotlin.math.max
 
 class PulseRenderer(
@@ -39,6 +41,33 @@ class PulseRenderer(
     private var lastDataSize = -1
     private val hsvScratch = FloatArray(3).apply { this[1] = 1f; this[2] = 1f }
 
+    @Volatile
+    private var lastActiveDataMs = 0L
+    @Volatile
+    private var hasActiveAnimation = false
+    private val updateListeners = CopyOnWriteArraySet<() -> Unit>()
+
+    fun addUpdateListener(listener: () -> Unit) {
+        updateListeners.add(listener)
+    }
+
+    fun removeUpdateListener(listener: () -> Unit) {
+        updateListeners.remove(listener)
+    }
+
+    fun isAnimating(): Boolean {
+        if (!settingsRepo.isPulseEnabled()) {
+            hasActiveAnimation = false
+            return false
+        }
+        if (!hasActiveAnimation) return false
+        if (SystemClock.uptimeMillis() - lastActiveDataMs >= DECAY_SETTLE_MS) {
+            hasActiveAnimation = false
+            return false
+        }
+        return true
+    }
+
     fun updateHeights(newHeights: FloatArray) {
         ensureStyleUpToDate()
         val currentBarCount = settingsRepo.getBarCount()
@@ -50,6 +79,32 @@ class PulseRenderer(
             lastDataSize = newHeights.size
         }
         style.onData(newHeights)
+
+        var hasSignal = false
+        for (i in newHeights.indices) {
+            if (newHeights[i] > ACTIVE_HEIGHT_EPSILON) {
+                hasSignal = true
+                break
+            }
+        }
+        if (hasSignal) {
+            lastActiveDataMs = SystemClock.uptimeMillis()
+            hasActiveAnimation = true
+            notifyUpdateListeners()
+        } else if (hasActiveAnimation) {
+            // Still decaying toward baseline; ensure active listeners draw until settled.
+            if (SystemClock.uptimeMillis() - lastActiveDataMs < DECAY_SETTLE_MS) {
+                notifyUpdateListeners()
+            } else {
+                hasActiveAnimation = false
+            }
+        }
+    }
+
+    private fun notifyUpdateListeners() {
+        for (listener in updateListeners) {
+            listener()
+        }
     }
 
     fun onDraw(canvas: Canvas, viewWidth: Int, viewHeight: Int) {
@@ -130,9 +185,20 @@ class PulseRenderer(
 
     fun onMediaColorsChanged(color: Int) {
         mediaColor = color
+        if (hasActiveAnimation) {
+            notifyUpdateListeners()
+        }
     }
 
     fun cleanup() {
+        hasActiveAnimation = false
+        lastActiveDataMs = 0L
+        updateListeners.clear()
         style.cleanup()
+    }
+
+    companion object {
+        private const val ACTIVE_HEIGHT_EPSILON = 0.5f
+        private const val DECAY_SETTLE_MS = 1500L
     }
 }

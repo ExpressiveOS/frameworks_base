@@ -50,7 +50,12 @@ class PulseView @JvmOverloads constructor(
     private var currentAnimator: ValueAnimator? = null
     private var targetVisible = false
 
-    private var checkMediaEnabled: Boolean = false 
+    private var checkMediaEnabled: Boolean = false
+    private val onRendererUpdated: () -> Unit = {
+        if (isAttached && isRenderingAllowed) {
+            postInvalidateOnAnimation()
+        }
+    }
 
     init {
         layoutParams = ViewGroup.LayoutParams(
@@ -65,11 +70,15 @@ class PulseView @JvmOverloads constructor(
         this.settingsRepo = settingsRepo
         captureMode = settingsRepo.getCaptureMode()
 
-        renderer = PulseRenderer(context, settingsRepo)
+        renderer?.removeUpdateListener(onRendererUpdated)
+        val newRenderer = PulseRenderer(context, settingsRepo)
+        renderer = newRenderer
         ownsRenderer = true
+        if (isAttached) {
+            newRenderer.addUpdateListener(onRendererUpdated)
+        }
         engine = PulseEngine(context, settingsRepo) { processedHeights ->
             renderer?.updateHeights(processedHeights)
-            postInvalidate()
         }
     }
 
@@ -85,11 +94,18 @@ class PulseView @JvmOverloads constructor(
         }
 
     fun attachExternalRenderer(renderer: PulseRenderer, settingsRepo: PulseSettingsRepository) {
+        this.renderer?.removeUpdateListener(onRendererUpdated)
         this.renderer = renderer
         this.settingsRepo = settingsRepo
         this.checkMediaEnabled = true
         ownsRenderer = false
         alpha = 1f
+        if (isAttached) {
+            renderer.addUpdateListener(onRendererUpdated)
+            if (isRenderingAllowed && renderer.isAnimating()) {
+                postInvalidateOnAnimation()
+            }
+        }
     }
 
     fun onCaptureModeChanged(mode: PulseAudioDataProcessor.CaptureMode) {
@@ -99,26 +115,35 @@ class PulseView @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         isAttached = true
+        renderer?.addUpdateListener(onRendererUpdated)
+        if (isRenderingAllowed && renderer?.isAnimating() == true) {
+            postInvalidateOnAnimation()
+        }
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         isAttached = false
+        renderer?.removeUpdateListener(onRendererUpdated)
         fadeAnimator?.cancel()
         fadeAnimator = null
+        currentAnimator?.cancel()
+        currentAnimator = null
         visibilityAnimator?.cancel()
         engine?.stop()
         if (ownsRenderer) {
             renderer?.cleanup()
         }
-    
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (isAttached && isRenderingAllowed) {
-            renderer?.onDraw(canvas, width, height)
-            postInvalidateOnAnimation()
+            val activeRenderer = renderer ?: return
+            activeRenderer.onDraw(canvas, width, height)
+            if (activeRenderer.isAnimating()) {
+                postInvalidateOnAnimation()
+            }
         }
     }
 
@@ -151,6 +176,9 @@ class PulseView @JvmOverloads constructor(
             alpha = if (visible) 1f else 0f
             this.visibility = if (visible) VISIBLE else GONE
             renderingRequested = visible
+            if (visible && isAttached && isRenderingAllowed && renderer?.isAnimating() == true) {
+                postInvalidateOnAnimation()
+            }
             return
         }
 

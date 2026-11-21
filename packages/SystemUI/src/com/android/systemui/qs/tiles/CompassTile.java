@@ -20,7 +20,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.Matrix;
+import android.graphics.Color;
+import android.graphics.PorterDuff;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.hardware.Sensor;
@@ -29,6 +30,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.service.quicksettings.Tile;
 
 import androidx.annotation.Nullable;
@@ -55,6 +57,8 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
     public static final String TILE_SPEC = "compass";
 
     private final static float ALPHA = 0.97f;
+    private static final long MIN_UPDATE_INTERVAL_MS = 25L;
+    private static final float MIN_DEGREE_DELTA = 1.0f;
 
     private boolean mActive = false;
 
@@ -64,8 +68,19 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
 
     private float[] mAcceleration;
     private float[] mGeomagnetic;
+    private final float[] mRotationMatrix = new float[9];
+    private final float[] mInclinationMatrix = new float[9];
+    private final float[] mOrientation = new float[3];
 
     private boolean mListeningSensors;
+    private long mLastUpdateTimeMs = 0L;
+    private float mLastReportedDegree = Float.NaN;
+
+    private Drawable mBaseCompassDrawable;
+    private final Bitmap[] mRotatedBitmaps = new Bitmap[2];
+    private final Canvas[] mRotatedCanvases = new Canvas[2];
+    private final BitmapDrawable[] mRotatedDrawables = new BitmapDrawable[2];
+    private int mBufferIndex = 0;
 
     @Inject
     public CompassTile(QSHost host,
@@ -82,8 +97,10 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
                 statusBarStateController, activityStarter, qsLogger);
 
         mSensorManager = (SensorManager) mContext.getSystemService(Context.SENSOR_SERVICE);
-        mAccelerationSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        mGeomagneticFieldSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        if (mSensorManager != null) {
+            mAccelerationSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            mGeomagneticFieldSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+        }
     }
 
     @Override
@@ -98,6 +115,12 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
         super.handleDestroy();
         setListeningSensors(false);
         mSensorManager = null;
+        mBaseCompassDrawable = null;
+        for (int i = 0; i < mRotatedBitmaps.length; i++) {
+            mRotatedBitmaps[i] = null;
+            mRotatedCanvases[i] = null;
+            mRotatedDrawables[i] = null;
+        }
     }
 
     @Override
@@ -119,8 +142,18 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
 
     private void setListeningSensors(boolean listening) {
         if (listening == mListeningSensors) return;
+        if (mSensorManager == null) {
+            mListeningSensors = false;
+            return;
+        }
+        if (listening && (mAccelerationSensor == null || mGeomagneticFieldSensor == null)) {
+            mListeningSensors = false;
+            return;
+        }
         mListeningSensors = listening;
         if (mListeningSensors) {
+            mLastUpdateTimeMs = 0L;
+            mLastReportedDegree = Float.NaN;
             mSensorManager.registerListener(
                     this, mAccelerationSensor, SensorManager.SENSOR_DELAY_GAME);
             mSensorManager.registerListener(
@@ -135,37 +168,43 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
         return mContext.getString(R.string.quick_settings_compass_label);
     }
 
-    private Drawable rotateDrawable(Drawable drawable, float degrees) {
-        // Convert drawable to bitmap
-        Bitmap bitmap = drawableToBitmap(drawable);
-
-        // Create matrix for rotation
-        Matrix matrix = new Matrix();
-        matrix.postRotate(degrees);
-
-        // Create rotated bitmap
-        Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-
-        // Convert rotated bitmap back to drawable
-        return new BitmapDrawable(mContext.getResources(), rotatedBitmap);
-    }
-
-    private Bitmap drawableToBitmap(Drawable drawable) {
-        if (drawable instanceof BitmapDrawable) {
-            return ((BitmapDrawable) drawable).getBitmap();
+    private Drawable getRotatedCompassDrawable(float degrees) {
+        if (mBaseCompassDrawable == null) {
+            mBaseCompassDrawable = mContext.getDrawable(R.drawable.ic_qs_compass);
+            if (mBaseCompassDrawable == null) {
+                return null;
+            }
+            int w = mBaseCompassDrawable.getIntrinsicWidth();
+            int h = mBaseCompassDrawable.getIntrinsicHeight();
+            if (w <= 0) w = 64;
+            if (h <= 0) h = 64;
+            int size = Math.max(w, h);
+            int left = (size - w) / 2;
+            int top = (size - h) / 2;
+            mBaseCompassDrawable.setBounds(left, top, left + w, top + h);
+            for (int i = 0; i < mRotatedBitmaps.length; i++) {
+                mRotatedBitmaps[i] = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+                mRotatedCanvases[i] = new Canvas(mRotatedBitmaps[i]);
+                mRotatedDrawables[i] = new BitmapDrawable(mContext.getResources(), mRotatedBitmaps[i]);
+            }
         }
 
-        // If the drawable is not a BitmapDrawable, create a new bitmap and draw the drawable on a canvas
-        Bitmap bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
-        Canvas canvas = new Canvas(bitmap);
-        drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
-        drawable.draw(canvas);
-        return bitmap;
+        final int idx = mBufferIndex;
+        mBufferIndex ^= 1;
+
+        final Canvas canvas = mRotatedCanvases[idx];
+        final Bitmap bitmap = mRotatedBitmaps[idx];
+        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+        canvas.save();
+        canvas.rotate(degrees, bitmap.getWidth() / 2f, bitmap.getHeight() / 2f);
+        mBaseCompassDrawable.draw(canvas);
+        canvas.restore();
+        return mRotatedDrawables[idx];
     }
 
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
-        final Float degrees = arg == null ? 0 : (Float) arg;
+        final float degrees = arg == null ? 0f : (Float) arg;
 
         state.value = mActive;
 
@@ -180,8 +219,10 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
             state.label = mContext.getString(R.string.quick_settings_compass_label);
             state.state = Tile.STATE_INACTIVE;
         }
-        state.icon = new DrawableIcon(rotateDrawable(
-                mContext.getResources().getDrawable(R.drawable.ic_qs_compass), degrees));
+        Drawable iconDrawable = getRotatedCompassDrawable(degrees);
+        if (iconDrawable != null) {
+            state.icon = new DrawableIcon(iconDrawable);
+        }
     }
 
     @Override
@@ -191,8 +232,8 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
 
     @Override
     public boolean isAvailable() {
-        return mSensorManager != null && mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null
-                && mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD) != null;
+        return mSensorManager != null && mAccelerationSensor != null
+                && mGeomagneticFieldSensor != null;
     }
 
     @Override
@@ -204,11 +245,12 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
     }
 
     private String formatValueWithCardinalDirection(float degree) {
-        int cardinalDirectionIndex = (int) (Math.floor(((degree - 22.5) % 360) / 45) + 1) % 8;
+        float normalized = ((degree % 360f) + 360f) % 360f;
+        int cardinalDirectionIndex = ((int) Math.floor(((normalized + 22.5) % 360) / 45)) % 8;
         String[] cardinalDirections = mContext.getResources().getStringArray(
                 R.array.cardinal_directions);
 
-        return mContext.getString(R.string.quick_settings_compass_value, degree,
+        return mContext.getString(R.string.quick_settings_compass_value, normalized,
                 cardinalDirections[cardinalDirectionIndex]);
     }
 
@@ -239,25 +281,39 @@ public class CompassTile extends QSTileImpl<BooleanState> implements SensorEvent
             return;
         }
 
-        float R[] = new float[9];
-        float I[] = new float[9];
-        if (!SensorManager.getRotationMatrix(R, I, mAcceleration, mGeomagnetic)) {
+        if (!SensorManager.getRotationMatrix(
+                mRotationMatrix, mInclinationMatrix, mAcceleration, mGeomagnetic)) {
             // Rotation matrix couldn't be calculated
             return;
         }
 
         // Get the current orientation
-        float[] orientation = new float[3];
-        SensorManager.getOrientation(R, orientation);
+        SensorManager.getOrientation(mRotationMatrix, mOrientation);
 
         // Convert azimuth to degrees
-        Float newDegree = Float.valueOf((float) Math.toDegrees(orientation[0]));
-        newDegree = (newDegree + 360) % 360;
+        float newDegree = (float) Math.toDegrees(mOrientation[0]);
+        newDegree = (newDegree + 360f) % 360f;
 
         // Convert the angle to one that points north relative to the device
-        newDegree = -newDegree + 360;
+        newDegree = (360f - newDegree) % 360f;
 
-        refreshState(newDegree);
+        final long now = SystemClock.elapsedRealtime();
+        if (!Float.isNaN(mLastReportedDegree)) {
+            if (now - mLastUpdateTimeMs < MIN_UPDATE_INTERVAL_MS) {
+                return;
+            }
+            float delta = Math.abs(newDegree - mLastReportedDegree);
+            if (delta > 180f) {
+                delta = 360f - delta;
+            }
+            if (delta < MIN_DEGREE_DELTA) {
+                return;
+            }
+        }
+        mLastUpdateTimeMs = now;
+        mLastReportedDegree = newDegree;
+
+        refreshState(Float.valueOf(newDegree));
     }
 
     @Override
