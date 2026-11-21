@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 ExpressiveOS
+     SPDX-License-Identifier: Apache-2.0
+
+     Private QPR2 (CP3A/CP4A) stable-ID compatibility stubs for AOSP 17.0.0_r1.
+     Fills unreferenced private value/id slots reserved in framework-res-stable-ids*.txt
+     so prebuilt system/GMS APKs never crash with Resources$NotFoundException on shifted IDs.
+-->
+<resources>
+    <array name="config_allowlistPersonalContextAgentUnderstanders" />
+    <array name="config_cameraSoundForcedLanguage" />
+    <array name="config_defaultGenericFamilies" />
+    <array name="config_enable_2g_for_emergency_call_countries" />
+    <array name="config_executeAppFunctionsKnownSigners" />
+    <array name="config_notificationPriorityLightColorsMap" />
+    <array name="config_primitiveClickWaveformVibePattern" />
+    <array name="config_primitiveLowTickWaveformVibePattern" />
+    <array name="config_primitiveQuickFallPwleVibePattern" />
+    <array name="config_primitiveQuickFallWaveformVibePattern" />
+    <array name="config_primitiveQuickRisePwleVibePattern" />
+    <array name="config_primitiveQuickRiseWaveformVibePattern" />
+    <array name="config_primitiveSlowRisePwleVibePattern" />
+    <array name="config_primitiveSlowRiseWaveformVibePattern" />
+    <array name="config_primitiveSpinPwleVibePattern" />
+    <array name="config_primitiveSpinWaveformVibePattern" />
+    <array name="config_primitiveThudPwleVibePattern" />
+    <array name="config_primitiveThudWaveformVibePattern" />
+    <array name="config_primitiveTickWaveformVibePattern" />
+    <array name="config_testOnly_smallIconPreferredForPromotedNotificationApps" />
+    <bool name="config_allowBypassingContentSafetySandboxing">false</bool>
+    <bool name="config_allowExtendedShutdownBroadcastTimeout">false</bool>
+    <bool name="config_appExternalDisplayBaseModeRefreshRateVoteEnabled">false</bool>
+    <bool name="config_cameraRefreshRateRangeEnabled">false</bool>
+    <bool name="config_cecPlaybackSendStandbyOnSleepDisabled_allowed">false</bool>
+    <bool name="config_cecPlaybackSendStandbyOnSleepDisabled_default">false</bool>
+    <bool name="config_cecPlaybackSendStandbyOnSleepEnabled_allowed">false</bool>
+    <bool name="config_cecPlaybackSendStandbyOnSleepEnabled_default">false</bool>
+    <bool name="config_cecPlaybackSendStandbyOnSleep_userConfigurable">false</bool>
+    <bool name="config_cecSourceAvoidWakeupIfInteractiveDisabled_allowed">false</bool>
+    <bool name="config_cecSourceAvoidWakeupIfInteractiveDisabled_default">false</bool>
+    <bool name="config_cecSourceAvoidWakeupIfInteractiveEnabled_allowed">false</bool>
+    <bool name="config_cecSourceAvoidWakeupIfInteractiveEnabled_default">false</bool>
+    <bool name="config_cecSourceAvoidWakeupIfInteractive_userConfigurable">false</bool>
+    <bool name="config_defer_requests_during_dds_switch">false</bool>
+    <bool name="config_deprioritizeHdmiAudioDefault">false</bool>
+    <bool name="config_desktopForceLauncherLandscape">false</bool>
+    <bool name="config_disableSingleUserDeviceManagementModes">false</bool>
+    <bool name="config_disableSynchronizedInsetsAnimation">false</bool>
+    <bool name="config_dismissInteractiveDreamOnKey">false</bool>
+    <bool name="config_dismissInteractiveDreamOnMouseMove">false</bool>
+    <bool name="config_displayWhiteBalanceHighLightAmbientDisabled">false</bool>
+    <bool name="config_doesAgentTaskFeatureSupportLaunching">false</bool>
+    <bool name="config_enableAppLock">false</bool>
+    <bool name="config_enableContentCaptureProcessing">false</bool>
+    <bool name="config_enableGestureIntentService">false</bool>
+    <bool name="config_enableSurfaceShadow">false</bool>
+    <bool name="config_enableWearActivityPrewarmingService">false</bool>
+    <bool name="config_external_display_auto_enable">false</bool>
+    <bool name="config_freshStartOnReboot">false</bool>
+    <bool name="config_hapticsFallbackToOnOffDirectly">false</bool>
+    <bool name="config_homeGestureOnlyOnPrimaryHome">false</bool>
+    <bool name="config_hsuAsLoginScreen">false</bool>
+    <bool name="config_isAgentTaskFeatureSupported">false</bool>
+    <bool name="config_isAgentTaskSettingEnabledDefault">false</bool>
+    <bool name="config_isCameraCompatOverrideLensFacingTreatmentEnabled">false</bool>
+    <bool name="config_isCameraCompatSimulateRequestedOrientationHeuristicEnabled">false</bool>
+    <bool name="config_personalContextAllowAgentCatchallFallback">false</bool>
+    <bool name="config_personalContextPerAppSettingDefault">false</bool>
+    <bool name="config_profcollectAppProfilingEnabled">false</bool>
+    <bool name="config_rotaryNavigationEnabled">false</bool>
+    <bool name="config_showNotificationSoundPreference">false</bool>
+    <bool name="config_showWallpaperDuringUserSwitch">false</bool>
+    <bool name="config_stk_sms_tp_mr_handling">false</bool>
+    <bool name="config_supportProfilesOnNonMainUser">false</bool>
+    <bool name="config_supportsExtendedModesBehaviors">false</bool>
+    <bool name="config_useSystemUserVisualAppearanceUntilUnlocked">false</bool>
+    <bool name="config_watchlistReportOnBoot">false</bool>
+    <bool name="config_zramWritebackPerProcessForceEnabled">false</bool>
+    <color name="accessibility_color_filter_background">#00000000</color>
+    <color name="config_notificationPriorityLightColorDefault">#00000000</color>
+    <color name="customColorGenWidget">#00000000</color>
+    <color name="customColorSurfaceEffect4">#00000000</color>
+    <color name="frosted_glass_border_gradient_center">#00000000</color>
+    <color name="frosted_glass_border_gradient_start_end">#00000000</color>
+    <color name="frosted_glass_container_scrim">#00000000</color>
+    <color name="shade_panel_fallback">#00000000</color>
+    <color name="system_gen_widget_dark">#00000000</color>
+    <color name="system_gen_widget_light">#00000000</color>
+    <color name="system_surface_effect_4_dark">#00000000</color>
+    <color name="system_surface_effect_4_light">#00000000</color>
+    <dimen name="app_lock_font_size_small">0dp</dimen>
+    <dimen name="app_lock_margin">0dp</dimen>
+    <dimen name="app_lock_margin_bottom">0dp</dimen>
+    <dimen name="app_lock_padding_medium">0dp</dimen>
+    <dimen name="app_lock_permission_app_item_min_height">0dp</dimen>
+    <dimen name="app_lock_spacing_l">0dp</dimen>
+    <dimen name="app_lock_spacing_m">0dp</dimen>
+    <dimen name="app_lock_spacing_s">0dp</dimen>
+    <dimen name="app_lock_spacing_xl">0dp</dimen>
+    <dimen name="app_lock_spacing_xs">0dp</dimen>
+    <dimen name="config_rotaryNavigationThreshold">0dp</dimen>
+    <dimen name="frosted_glass_container_blur_radius">0dp</dimen>
+    <dimen name="large_screen_container_max_long_edge">0dp</dimen>
+    <dimen name="large_screen_container_max_short_edge">0dp</dimen>
+    <dimen name="large_screen_container_min_long_edge">0dp</dimen>
+    <dimen name="large_screen_container_min_short_edge">0dp</dimen>
+    <dimen name="large_screen_container_size_fraction">0dp</dimen>
+    <dimen name="notification_action_list_height">0dp</dimen>
+    <dimen name="notification_action_list_margin_bottom">0dp</dimen>
+    <dimen name="notification_action_list_min_height">0dp</dimen>
+    <dimen name="notification_actions_icon_size">0dp</dimen>
+    <dimen name="notification_actions_margin_start">0dp</dimen>
+    <dimen name="notification_additional_margin">0dp</dimen>
+    <dimen name="notification_badge_baseline">0dp</dimen>
+    <dimen name="notification_badge_margin">0dp</dimen>
+    <dimen name="notification_badge_size">0dp</dimen>
+    <dimen name="notification_collapsed_metric_separating_margin">0dp</dimen>
+    <dimen name="notification_content_margin_end">0dp</dimen>
+    <dimen name="notification_content_margin_start">0dp</dimen>
+    <dimen name="notification_content_margin_start_summarization">0dp</dimen>
+    <dimen name="notification_content_margin_top">0dp</dimen>
+    <dimen name="notification_content_min_height">0dp</dimen>
+    <dimen name="notification_conversation_icon_badge_padding">0dp</dimen>
+    <dimen name="notification_conversation_icon_badge_position">0dp</dimen>
+    <dimen name="notification_conversation_icon_badge_size">0dp</dimen>
+    <dimen name="notification_expand_button_horizontal_icon_padding">0dp</dimen>
+    <dimen name="notification_expand_button_icon_size">0dp</dimen>
+    <dimen name="notification_expand_button_pill_height">0dp</dimen>
+    <dimen name="notification_expand_button_pill_width">0dp</dimen>
+    <dimen name="notification_expand_button_reduced_end_padding">0dp</dimen>
+    <dimen name="notification_expand_button_right_icon_spacing">0dp</dimen>
+    <dimen name="notification_expand_button_vertical_icon_padding">0dp</dimen>
+    <dimen name="notification_extra_space_for_expander">0dp</dimen>
+    <dimen name="notification_face_pile_avatar_size">0dp</dimen>
+    <dimen name="notification_header_height">0dp</dimen>
+    <dimen name="notification_icon_circle_padding">0dp</dimen>
+    <dimen name="notification_icon_circle_size">0dp</dimen>
+    <dimen name="notification_left_icon_size">0dp</dimen>
+    <dimen name="notification_margin">0dp</dimen>
+    <dimen name="notification_max_collapsed_height_templated">0dp</dimen>
+    <dimen name="notification_media_actions_margin_start">0dp</dimen>
+    <dimen name="notification_reduced_margin">0dp</dimen>
+    <dimen name="notification_right_icon_content_margin">0dp</dimen>
+    <dimen name="notification_right_icon_margin_end">0dp</dimen>
+    <dimen name="notification_right_icon_vertical_margin">0dp</dimen>
+    <dimen name="notification_smart_reply_container_margin">0dp</dimen>
+    <dimen name="user_switching_dialog_background_blur">0dp</dimen>
+    <item type="id" name="KEYCODE_CONTEXTUAL_QUERY" />
+    <item type="id" name="KEYCODE_STEM_CROWN" />
+    <item type="id" name="app_lock_edu_scroll_view" />
+    <item type="id" name="app_lock_permission_review_scroll_view" />
+    <item type="id" name="app_lock_promo_activity_layout" />
+    <item type="id" name="app_lock_promo_description" />
+    <item type="id" name="app_lock_promo_dialog_bottom_sheet_divider" />
+    <item type="id" name="app_lock_promo_dialog_scroll_view" />
+    <item type="id" name="app_lock_promo_title" />
+    <item type="id" name="app_lock_settings_promo_dialog_negative_button" />
+    <item type="id" name="app_lock_settings_promo_dialog_positive_button" />
+    <item type="id" name="automotive" />
+    <item type="id" name="avatar_container" />
+    <item type="id" name="avatar_view" />
+    <item type="id" name="flagRequireShortcut" />
+    <item type="id" name="foreground" />
+    <item type="id" name="leanback" />
+    <item type="id" name="locked_app_activity_root_id" />
+    <item type="id" name="lookUpText" />
+    <item type="id" name="mask_view" />
+    <item type="id" name="media_route_bottom_scroll" />
+    <item type="id" name="media_route_consent_container" />
+    <item type="id" name="media_route_consent_text" />
+    <item type="id" name="media_route_list_container" />
+    <item type="id" name="metric_divider_1" />
+    <item type="id" name="metric_divider_2" />
+    <item type="id" name="onlyForPrivateComputeCore" />
+    <item type="id" name="perceptible" />
+    <item type="id" name="ras_dialog_button" />
+    <item type="id" name="ras_dialog_developer_message" />
+    <item type="id" name="ras_dialog_icon" />
+    <item type="id" name="ras_dialog_keep_in_mind_container" />
+    <item type="id" name="ras_dialog_learn_more_message" />
+    <item type="id" name="ras_dialog_message" />
+    <item type="id" name="ras_dialog_settings_message" />
+    <item type="id" name="ras_dialog_terms_message" />
+    <item type="id" name="ras_dialog_title" />
+    <item type="id" name="remote_views_application_info" />
+    <item type="id" name="watch" />
+    <integer name="config_appLockGracePeriodMs">0</integer>
+    <integer name="config_autoBrightnessShortTermModelQueueMaxPoints">0</integer>
+    <integer name="config_brightnessFallbackBehavior">0</integer>
+    <integer name="config_colorFadeDejankFrames">0</integer>
+    <integer name="config_colorFilterDefaultColor">0</integer>
+    <integer name="config_colorFilterDefaultIntensity">0</integer>
+    <integer name="config_computerControlVirtualDisplayDensityDpi">0</integer>
+    <integer name="config_computerControlVirtualDisplayHeight">0</integer>
+    <integer name="config_computerControlVirtualDisplayWidth">0</integer>
+    <integer name="config_customizedMaxEmptyProcesses">0</integer>
+    <integer name="config_defaultExternalDisplayPosition">0</integer>
+    <integer name="config_globalDefaultAppWorkDuration">0</integer>
+    <integer name="config_globalDefaultEarlyWorkDuration">0</integer>
+    <integer name="config_globalDefaultLateWorkDuration">0</integer>
+    <integer name="config_notifAvalancheTimeoutMillis">0</integer>
+    <integer name="config_notifCooldownCounterReset">0</integer>
+    <integer name="config_notifCooldownMuteMillis">0</integer>
+    <integer name="config_notifCooldownPoliteMillis">0</integer>
+    <integer name="config_notifVolumeMutePercentage">0</integer>
+    <integer name="config_notifVolumePolitePercentage">0</integer>
+    <integer name="config_personalContextHintProcessingWorkflowTimeoutMs">0</integer>
+    <integer name="config_pictureInPictureMaxNumberOfOverlayActions">0</integer>
+    <integer name="config_primaryVibratorId">0</integer>
+    <integer name="config_temporaryBrightnessTimeout">0</integer>
+    <integer name="config_zramWritebackDmabufMemThresholdKb">0</integer>
+    <integer name="config_zramWritebackGpuMemThresholdKb">0</integer>
+    <integer name="config_zramWritebackOomAdj">0</integer>
+    <integer name="config_zramWritebackThresholdKb">0</integer>
+    <integer name="config_zramWritebackWaitSeconds">0</integer>
+    <string name="CfMmiAlwaysForward" translatable="false"></string>
+    <string name="CfMmiBusy" translatable="false"></string>
+    <string name="CfMmiConditional" translatable="false"></string>
+    <string name="CfMmiNoReply" translatable="false"></string>
+    <string name="CfMmiNotReachable" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_face_password" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_face_pattern" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_face_pin" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_fp_face_password" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_fp_face_pattern" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_fp_face_pin" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_fp_password" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_fp_pattern" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_fp_pin" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_password" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_pattern" translatable="false"></string>
+    <string name="app_lock_edu_dialog_description_pin" translatable="false"></string>
+    <string name="app_lock_feature_label" translatable="false"></string>
+    <string name="app_lock_permission_review_dialog_subtitle_messages" translatable="false"></string>
+    <string name="app_lock_permission_review_dialog_title_messages" translatable="false"></string>
+    <string name="app_lock_settings_promo_dialog_description" translatable="false"></string>
+    <string name="app_lock_settings_promo_dialog_title" translatable="false"></string>
+    <string name="autofill_inline_suggestion_accessibility_title" translatable="false"></string>
+    <string name="bounce_keys_feature_name" translatable="false"></string>
+    <string name="brightness_unsupported_for_connected_display" translatable="false"></string>
+    <string name="clearDefaultHintMsg_accessibility" translatable="false"></string>
+    <string name="color_filter_feature_name" translatable="false"></string>
+    <string name="computer_control_text_disconnected" translatable="false"></string>
+    <string name="config_allowedContentSafetyPackages" translatable="false"></string>
+    <string name="config_appLockHelpLink" translatable="false"></string>
+    <string name="config_autofillInsightConverterComponent" translatable="false"></string>
+    <string name="config_autofillUiService" translatable="false"></string>
+    <string name="config_brightnessCappingAccessPackage" translatable="false"></string>
+    <string name="config_contentCaptureProcessingConfigurationProviders" translatable="false"></string>
+    <string name="config_defaultGatewayInferenceService" translatable="false"></string>
+    <string name="config_defaultHelpPackage" translatable="false"></string>
+    <string name="config_defaultNpuModelLoadingPolicy" translatable="false"></string>
+    <string name="config_defaultSafetyEvaluatorService" translatable="false"></string>
+    <string name="config_defaultScreenRecorderComponent" translatable="false"></string>
+    <string name="config_defaultSearchEngine" translatable="false"></string>
+    <string name="config_fallbackAutofillUiService" translatable="false"></string>
+    <string name="config_haloBridgeComponent" translatable="false"></string>
+    <string name="config_personalContextVisualizerHostService" translatable="false"></string>
+    <string name="config_profcollectUploaderServicePackage" translatable="false"></string>
+    <string name="config_registeredAppStoreHelpUrl" translatable="false"></string>
+    <string name="config_screenWhisperBridgeComponent" translatable="false"></string>
+    <string name="config_settingsPackageName" translatable="false"></string>
+    <string name="config_setupWizardAssistiveOptionsActivity" translatable="false"></string>
+    <string name="config_shareCastPackage" translatable="false"></string>
+    <string name="config_shareCastRouteId" translatable="false"></string>
+    <string name="config_systemUiSelectionToolbarRenderService2" translatable="false"></string>
+    <string name="content_safety_dialog_message" translatable="false"></string>
+    <string name="content_safety_dialog_message_generic" translatable="false"></string>
+    <string name="cross_device_trust_summary" translatable="false"></string>
+    <string name="cross_device_trust_title" translatable="false"></string>
+    <string name="global_action_exit_guest" translatable="false"></string>
+    <string name="locked_app_biometric_prompt_desc_four_or_more_apps" translatable="false"></string>
+    <string name="locked_app_biometric_prompt_desc_one_app" translatable="false"></string>
+    <string name="locked_app_biometric_prompt_desc_three_apps" translatable="false"></string>
+    <string name="locked_app_biometric_prompt_desc_two_apps" translatable="false"></string>
+    <string name="lookUp" translatable="false"></string>
+    <string name="media_route_chooser_consent_description" translatable="false"></string>
+    <string name="notification_channel_background_user_sound" translatable="false"></string>
+    <string name="notification_channel_sim_desc" translatable="false"></string>
+    <string name="page_size_compat_apk_and_load_not_aligned" translatable="false"></string>
+    <string name="page_size_compat_apk_and_load_warning" translatable="false"></string>
+    <string name="page_size_compat_apk_and_load_warning_4kb" translatable="false"></string>
+    <string name="page_size_compat_apk_and_relro_not_aligned" translatable="false"></string>
+    <string name="page_size_compat_apk_and_relro_warning" translatable="false"></string>
+    <string name="page_size_compat_apk_and_relro_warning_4kb" translatable="false"></string>
+    <string name="page_size_compat_apk_load_and_relro_not_aligned" translatable="false"></string>
+    <string name="page_size_compat_apk_load_and_relro_warning" translatable="false"></string>
+    <string name="page_size_compat_apk_load_and_relro_warning_4kb" translatable="false"></string>
+    <string name="page_size_compat_common_explanation" translatable="false"></string>
+    <string name="page_size_compat_common_explanation_4kb" translatable="false"></string>
+    <string name="page_size_compat_load_and_relro_not_aligned" translatable="false"></string>
+    <string name="page_size_compat_load_and_relro_warning" translatable="false"></string>
+    <string name="page_size_compat_load_and_relro_warning_4kb" translatable="false"></string>
+    <string name="page_size_compat_load_not_aligned" translatable="false"></string>
+    <string name="page_size_compat_load_warning" translatable="false"></string>
+    <string name="page_size_compat_load_warning_4kb" translatable="false"></string>
+    <string name="page_size_compat_prefix" translatable="false"></string>
+    <string name="page_size_compat_relro_not_aligned" translatable="false"></string>
+    <string name="page_size_compat_relro_warning" translatable="false"></string>
+    <string name="page_size_compat_relro_warning_4kb" translatable="false"></string>
+    <string name="pcc_egress_reminder_action_do_not_show_again" translatable="false"></string>
+    <string name="pcc_egress_reminder_substitute_app_name" translatable="false"></string>
+    <string name="pcc_egress_reminder_text" translatable="false"></string>
+    <string name="pcc_egress_reminder_title" translatable="false"></string>
+    <string name="permdesc_nfcPaymentAidCE" translatable="false"></string>
+    <string name="permdesc_nfcPaymentAidReader" translatable="false"></string>
+    <string name="permdesc_readHomeTimeZone" translatable="false"></string>
+    <string name="permdesc_startActivitiesOnLoginScreen" translatable="false"></string>
+    <string name="permdesc_useNpu" translatable="false"></string>
+    <string name="permlab_nfcPaymentAidCE" translatable="false"></string>
+    <string name="permlab_nfcPaymentAidReader" translatable="false"></string>
+    <string name="permlab_readHomeTimeZone" translatable="false"></string>
+    <string name="permlab_startActivitiesOnLoginScreen" translatable="false"></string>
+    <string name="permlab_useNpu" translatable="false"></string>
+    <string name="ras_dialog_button_close" translatable="false"></string>
+    <string name="ras_dialog_button_got_it" translatable="false"></string>
+    <string name="ras_dialog_keep_in_mind_header" translatable="false"></string>
+    <string name="ras_gained_detail_developer" translatable="false"></string>
+    <string name="ras_gained_detail_developer_generic" translatable="false"></string>
+    <string name="ras_gained_detail_learn_more" translatable="false"></string>
+    <string name="ras_gained_detail_registered" translatable="false"></string>
+    <string name="ras_gained_detail_terms" translatable="false"></string>
+    <string name="ras_gained_dialog_title" translatable="false"></string>
+    <string name="ras_lost_detail_permission" translatable="false"></string>
+    <string name="ras_lost_dialog_message" translatable="false"></string>
+    <string name="ras_lost_dialog_message_generic" translatable="false"></string>
+    <string name="ras_lost_dialog_title" translatable="false"></string>
+    <string name="secure_content_cannot_be_displayed" translatable="false"></string>
+    <string name="sim_notifications_substitute_app_name" translatable="false"></string>
+    <string name="sim_protection_notification_text" translatable="false"></string>
+    <string name="sim_protection_title" translatable="false"></string>
+    <string name="sim_protection_title_no_carrier" translatable="false"></string>
+    <string name="sim_protection_view_pin" translatable="false"></string>
+    <string name="slow_keys_feature_name" translatable="false"></string>
+    <string name="sticky_keys_feature_name" translatable="false"></string>
+    <string name="supervision_app_time_limit_set_content_v2" translatable="false"></string>
+    <string name="supervision_app_time_limit_warning_content" translatable="false"></string>
+    <string name="supervision_app_time_limit_warning_title" translatable="false"></string>
+    <string name="supervision_policy_update_title" translatable="false"></string>
+    <string name="supervision_suspended_app_dialog_title" translatable="false"></string>
+    <string name="supervision_suspended_app_time_limits_dialog_button" translatable="false"></string>
+    <string name="supervision_suspended_app_time_limits_dialog_message" translatable="false"></string>
+    <string name="time_zone_change_notification_body_htz_ahead" translatable="false"></string>
+    <string name="time_zone_change_notification_body_htz_behind" translatable="false"></string>
+    <string name="time_zone_change_notification_body_htz_same" translatable="false"></string>
+    <string name="time_zone_offset_change_notification_body_backward_htz_ahead" translatable="false"></string>
+    <string name="time_zone_offset_change_notification_body_backward_htz_behind" translatable="false"></string>
+    <string name="time_zone_offset_change_notification_body_backward_htz_same" translatable="false"></string>
+    <string name="time_zone_offset_change_notification_body_forward_htz_ahead" translatable="false"></string>
+    <string name="time_zone_offset_change_notification_body_forward_htz_behind" translatable="false"></string>
+    <string name="time_zone_offset_change_notification_body_forward_htz_same" translatable="false"></string>
+    <string name="universal_clipboard_clip_accessed_by_app_from_remote_devices" translatable="false"></string>
+    <string name="universal_clipboard_clip_accessed_by_user_from_remote_devices" translatable="false"></string>
+    <string name="universal_clipboard_transferred_to_nearby_devices" translatable="false"></string>
+    <string name="usb_rndis_unsupported_message" translatable="false"></string>
+    <string name="usb_rndis_unsupported_title" translatable="false"></string>
+    <string name="user_switching_message_guest_user" translatable="false"></string>
+    <string name="user_switching_message_new_user" translatable="false"></string>
+    <string name="wifi_tethering_minimum_security_level_changed_text" translatable="false"></string>
+    <string name="wifi_tethering_minimum_security_level_changed_title" translatable="false"></string>
+</resources>

@@ -20,9 +20,12 @@ import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.Slog;
 
+import com.android.internal.util.DumpUtils;
 import com.android.internal.util.expressiveos.DisplayRefreshRateHelper;
 import com.android.server.ServiceThread;
 
+import java.io.FileDescriptor;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 
 import org.expressiveos.display.IRefreshRateListener;
@@ -234,6 +237,15 @@ public final class DisplayRefreshRateController {
             }
             return found;
         }
+
+        @Override
+        protected void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+            if (mSystemExService == null
+                    || !DumpUtils.checkDumpPermission(mSystemExService.getContext(), TAG, pw)) {
+                return;
+            }
+            DisplayRefreshRateController.this.dump(pw);
+        }
     }
 
     private DisplayRefreshRateController() {
@@ -425,6 +437,31 @@ public final class DisplayRefreshRateController {
 
     private static void logD(String msg) {
         Slog.d(TAG, msg);
+    }
+
+    public void dump(PrintWriter pw) {
+        pw.println("DisplayRefreshRateController:");
+        synchronized (mConfigLock) {
+            pw.println("  mExtremeMode=" + mExtremeMode);
+            pw.println("  mRequestedRefreshRate=" + mRequestedRefreshRate);
+            pw.println("  mRequestedMemcRefreshRate=" + mRequestedMemcRefreshRate);
+            pw.println("  maxAllowedRefreshRate=" + getMaxAllowedRefreshRate());
+            if (mHelper != null) {
+                pw.println("  supportedRefreshRates=" + mHelper.getSupportedRefreshRateList());
+                pw.println("  minimumRefreshRate=" + mHelper.getMinimumRefreshRate());
+                pw.println("  peakRefreshRate=" + mHelper.getPeakRefreshRate());
+            } else {
+                pw.println("  mHelper=null");
+            }
+            pw.println("  mAppRefreshRateConfigMap (" + mAppRefreshRateConfigMap.size() + "):");
+            for (int i = 0; i < mAppRefreshRateConfigMap.size(); i++) {
+                pw.println("    " + mAppRefreshRateConfigMap.keyAt(i)
+                        + " -> " + mAppRefreshRateConfigMap.valueAt(i) + " Hz");
+            }
+        }
+        synchronized (mListenerLock) {
+            pw.println("  mListeners=" + mListeners.size());
+        }
     }
 
     private static void logE(String msg) {
