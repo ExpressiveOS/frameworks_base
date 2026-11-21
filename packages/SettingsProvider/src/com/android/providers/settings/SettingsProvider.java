@@ -2399,6 +2399,12 @@ public class SettingsProvider extends ContentProvider {
                 // BluetoothAdapter.getAddress() (see BluetoothManagerService for details).
                     getContext().checkCallingOrSelfPermission(Manifest.permission.LOCAL_MAC_ADDRESS)
                             == PackageManager.PERMISSION_GRANTED;
+            case Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX -> {
+                // Hard read blocklist: never expose legacy keybox private key material
+                // from Settings.Secure to non-system callers (apps, shell, etc.).
+                final int callingUid = Binder.getCallingUid();
+                yield callingUid == Process.SYSTEM_UID || callingUid == Process.ROOT_UID;
+            }
             default -> true;
         };
     }

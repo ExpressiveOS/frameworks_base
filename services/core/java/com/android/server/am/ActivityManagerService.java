@@ -559,6 +559,9 @@ import com.android.server.wm.ActivityServiceConnectionsHolder;
 import com.android.server.wm.ActivityTaskManagerInternal;
 import com.android.server.wm.ActivityTaskManagerService;
 import com.android.server.wm.AxSandboxService;
+import android.security.trickystore.TrickyStoreService;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import com.android.server.wm.WindowManagerInternal;
 import com.android.server.wm.WindowManagerService;
 import com.android.server.wm.WindowProcessController;
@@ -21022,28 +21025,239 @@ public class ActivityManagerService extends IActivityManager.Stub
     }
 
 
+    private static final String PERMISSION_MANAGE_EOS_INTEGRITY =
+            "android.permission.MANAGE_EOS_INTEGRITY";
+    private static final String PIF_GMS_PACKAGE = "com.google.android.gms";
+    private static final String PIF_VENDING_PACKAGE = "com.android.vending";
+
+    private static final class CachedSpoofPackageSet {
+        final String raw;
+        final Set<String> packages;
+
+        CachedSpoofPackageSet(String raw, Set<String> packages) {
+            this.raw = raw;
+            this.packages = packages;
+        }
+    }
+
+    private volatile CachedSpoofPackageSet mCachedTrickyTargets;
+    private volatile CachedSpoofPackageSet mCachedGamePropsPackages;
+
+    private boolean isSystemOrIntegrityManagerCaller(int callingUid) {
+        final int appId = UserHandle.getAppId(callingUid);
+        if (appId == Process.SYSTEM_UID || appId == Process.ROOT_UID) {
+            return true;
+        }
+        return checkCallingPermission(PERMISSION_MANAGE_EOS_INTEGRITY)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    @Nullable
+    private String[] getCallingPackagesForSpoofCheck(int callingUid) {
+        if (Process.isIsolatedUid(callingUid) || Process.isSdkSandboxUid(callingUid)) {
+            return null;
+        }
+        final PackageManager pm = mContext != null ? mContext.getPackageManager() : null;
+        if (pm == null) {
+            return null;
+        }
+        final long token = Binder.clearCallingIdentity();
+        try {
+            return pm.getPackagesForUid(callingUid);
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+    private boolean isCallerPifAllowed(int callingUid) {
+        if (isSystemOrIntegrityManagerCaller(callingUid)) {
+            return true;
+        }
+        final String[] packages = getCallingPackagesForSpoofCheck(callingUid);
+        if (packages == null) {
+            return false;
+        }
+        for (String pkg : packages) {
+            if (PIF_GMS_PACKAGE.equals(pkg) || PIF_VENDING_PACKAGE.equals(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Set<String> getActiveGamePropsPackages(String config) {
+        if (config == null || config.isEmpty()) {
+            return Collections.emptySet();
+        }
+        final CachedSpoofPackageSet cached = mCachedGamePropsPackages;
+        if (cached != null && config.equals(cached.raw)) {
+            return cached.packages;
+        }
+        final Set<String> parsed = new HashSet<>();
+        try {
+            final JSONObject root = new JSONObject(config);
+            if (root.optBoolean("enabled", false)) {
+                final JSONObject games = root.optJSONObject("games");
+                if (games != null) {
+                    final java.util.Iterator<String> keys = games.keys();
+                    while (keys.hasNext()) {
+                        final String pkg = keys.next();
+                        if (pkg != null && !pkg.isEmpty()) {
+                            parsed.add(pkg);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Slog.w(TAG, "Failed to parse GameProps config for caller gating", e);
+            return Collections.emptySet();
+        }
+        final Set<String> result = Collections.unmodifiableSet(parsed);
+        mCachedGamePropsPackages = new CachedSpoofPackageSet(config, result);
+        return result;
+    }
+
+    private boolean isCallerGamePropsAllowed(int callingUid, String config) {
+        if (isSystemOrIntegrityManagerCaller(callingUid)) {
+            return true;
+        }
+        final Set<String> activeGames = getActiveGamePropsPackages(config);
+        if (activeGames.isEmpty()) {
+            return false;
+        }
+        final String[] packages = getCallingPackagesForSpoofCheck(callingUid);
+        if (packages == null) {
+            return false;
+        }
+        for (String pkg : packages) {
+            if (pkg != null && activeGames.contains(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Set<String> getActiveTrickyStoreTargets(String targetConfig) {
+        if (targetConfig == null || targetConfig.isEmpty()) {
+            return Collections.emptySet();
+        }
+        final CachedSpoofPackageSet cached = mCachedTrickyTargets;
+        if (cached != null && targetConfig.equals(cached.raw)) {
+            return cached.packages;
+        }
+        final Set<String> active = new HashSet<>();
+        final String trimmed = targetConfig.trim();
+        try {
+            if (trimmed.startsWith("[")) {
+                final JSONArray array = new JSONArray(trimmed);
+                for (int i = 0; i < array.length(); i++) {
+                    final JSONObject obj = array.optJSONObject(i);
+                    if (obj == null) continue;
+                    final String pkg = obj.optString("package", "").trim();
+                    if (pkg.isEmpty()) continue;
+                    final String mode = obj.optString("mode", "AUTO").trim();
+                    if ("SKIP".equalsIgnoreCase(mode)) {
+                        active.remove(pkg);
+                    } else if (!TrickyStoreService.XPOSED_PACKAGES.contains(pkg)) {
+                        active.add(pkg);
+                    }
+                }
+            } else {
+                for (String rawLine : trimmed.split("\n")) {
+                    final String line = rawLine.trim();
+                    if (line.isEmpty() || line.startsWith("#")) {
+                        continue;
+                    }
+                    if (line.endsWith("-")) {
+                        final String pkg = line.substring(0, line.length() - 1).trim();
+                        if (!pkg.isEmpty()) {
+                            active.remove(pkg);
+                        }
+                    } else if (line.endsWith("!") || line.endsWith("?")) {
+                        final String pkg = line.substring(0, line.length() - 1).trim();
+                        if (!pkg.isEmpty() && !TrickyStoreService.XPOSED_PACKAGES.contains(pkg)) {
+                            active.add(pkg);
+                        }
+                    } else if (!TrickyStoreService.XPOSED_PACKAGES.contains(line)) {
+                        active.add(line);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Slog.w(TAG, "Failed to parse TrickyStore targets for caller gating", e);
+            return Collections.emptySet();
+        }
+        final Set<String> result = Collections.unmodifiableSet(active);
+        mCachedTrickyTargets = new CachedSpoofPackageSet(targetConfig, result);
+        return result;
+    }
+
+    private boolean isCallerTrickyStoreAllowed(int callingUid, @Nullable String targetConfig) {
+        if (isSystemOrIntegrityManagerCaller(callingUid)) {
+            return true;
+        }
+        final Set<String> activeTargets = getActiveTrickyStoreTargets(targetConfig);
+        if (activeTargets.isEmpty()) {
+            return false;
+        }
+        final String[] packages = getCallingPackagesForSpoofCheck(callingUid);
+        if (packages == null) {
+            return false;
+        }
+        for (String pkg : packages) {
+            if (pkg != null && !TrickyStoreService.XPOSED_PACKAGES.contains(pkg)
+                    && activeTargets.contains(pkg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public String getSpoofPifConfig() {
+        if (!isCallerPifAllowed(Binder.getCallingUid())) {
+            return null;
+        }
         return AxExtServiceFactory.getSpoofManager().getPifConfig();
     }
 
     @Override
     public String getSpoofGamePropsConfig() {
-        return AxExtServiceFactory.getSpoofManager().getGamePropsConfig();
+        final int callingUid = Binder.getCallingUid();
+        final String config = AxExtServiceFactory.getSpoofManager().getGamePropsConfig();
+        if (config == null || !isCallerGamePropsAllowed(callingUid, config)) {
+            return null;
+        }
+        return config;
     }
 
     @Override
     public String getSpoofTrickyStoreTarget() {
-        return AxExtServiceFactory.getSpoofManager().getTrickyStoreTarget();
+        final int callingUid = Binder.getCallingUid();
+        final String targets = AxExtServiceFactory.getSpoofManager().getTrickyStoreTarget();
+        if (targets == null || !isCallerTrickyStoreAllowed(callingUid, targets)) {
+            return null;
+        }
+        return targets;
     }
 
     @Override
     public String getSpoofTrickyStoreKeyBox() {
+        final int callingUid = Binder.getCallingUid();
+        final String targets = AxExtServiceFactory.getSpoofManager().getTrickyStoreTarget();
+        if (!isCallerTrickyStoreAllowed(callingUid, targets)) {
+            return null;
+        }
         return AxExtServiceFactory.getSpoofManager().getTrickyStoreKeyBox();
     }
 
     @Override
     public String getSpoofTrickyStorePatch() {
+        final int callingUid = Binder.getCallingUid();
+        final String targets = AxExtServiceFactory.getSpoofManager().getTrickyStoreTarget();
+        if (!isCallerTrickyStoreAllowed(callingUid, targets)) {
+            return null;
+        }
         return AxExtServiceFactory.getSpoofManager().getTrickyStorePatch();
     }
 
