@@ -40,6 +40,7 @@ import java.lang.ref.Cleaner;
 import java.lang.ref.WeakReference;
 import java.util.Comparator;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Retrieve or request app snapshots in system.
@@ -123,7 +124,7 @@ public class TaskSnapshotManager {
             // Create a temporary reference so the snapshot won't be cleared during IPC call.
             previousSnapshot = st != null ? st.mSnapshot.get() : null;
             captureTime = previousSnapshot != null ? st.mCaptureTime : -1;
-            if (st != null) {
+            if (previousSnapshot != null) {
                 st.increaseReference();
             }
         }
@@ -137,7 +138,19 @@ public class TaskSnapshotManager {
                     captureTime, retrieveResolution);
         } catch (RemoteException r) {
             Log.e(TAG, "getTaskSnapshot fail: " + r);
+            if (previousSnapshot != null) {
+                synchronized (mLock) {
+                    mGlobalSnapshotTracker.removeTracker(st, false /* forceRemove */);
+                }
+            }
             throw r;
+        } catch (RuntimeException e) {
+            if (previousSnapshot != null) {
+                synchronized (mLock) {
+                    mGlobalSnapshotTracker.removeTracker(st, false /* forceRemove */);
+                }
+            }
+            throw e;
         } finally {
             if (traceEnabled) {
                 Trace.traceEnd(TRACE_TAG_WINDOW_MANAGER);
@@ -147,8 +160,8 @@ public class TaskSnapshotManager {
             return previousSnapshot;
         }
         synchronized (mLock) {
-            if (st != null) {
-                st.decreaseReference();
+            if (previousSnapshot != null) {
+                mGlobalSnapshotTracker.removeTracker(st, false /* forceRemove */);
             }
             mGlobalSnapshotTracker.createTracker(taskId, t);
         }
@@ -379,6 +392,16 @@ public class TaskSnapshotManager {
             final int taskId = tracker.mTaskId;
             final SingleTaskTracker taskTracker = mSnapshotTrackers.get(taskId);
             if (taskTracker == null) {
+                final TaskSnapshot snapshot = tracker.mSnapshot.get();
+                final int remainReference = tracker.decreaseReference();
+                if (!forceRemove && remainReference > 0 && snapshot != null
+                        && snapshot.isBufferValid()) {
+                    return;
+                }
+                if (snapshot != null) {
+                    snapshot.setSnapshotTracker(null);
+                    snapshot.closeBuffer();
+                }
                 return;
             }
             taskTracker.stopTrack(tracker, forceRemove);
@@ -422,7 +445,9 @@ public class TaskSnapshotManager {
                     } else if (s1.mCaptureTime > s2.mCaptureTime) {
                         return -1;
                     }
-                    return 0;
+                    // Break capture-time ties with a monotonic id so distinct snapshots
+                    // never collide as duplicates in TreeSet (newest sorts first).
+                    return Long.compare(s2.mTrackerId, s1.mTrackerId);
                 }
             };
 
@@ -496,7 +521,9 @@ public class TaskSnapshotManager {
 
     // Tracking the snapshot usage, call getStackTrace() to know where it was created.
     static class SnapshotTracker extends AndroidRuntimeException {
+        private static final AtomicLong sNextTrackerId = new AtomicLong();
         private static final int ROOT_STACK_TRACE_COUNT = 4;
+        final long mTrackerId;
         final int mTaskId;
         final long mSnapshotId;
         final long mCaptureTime;
@@ -506,6 +533,7 @@ public class TaskSnapshotManager {
 
         SnapshotTracker(int taskId, TaskSnapshot snapshot, int referenceCount) {
             super();
+            mTrackerId = sNextTrackerId.incrementAndGet();
             mTaskId = taskId;
             mSnapshotId = snapshot.getId();
             mCaptureTime = snapshot.getCaptureTime();
