@@ -100,7 +100,7 @@ public final class EosIntegrityService extends SystemService {
     private static final File STATE_FILE = new File(BASE_DIR, "state.json");
 
     private static final String OFFICIAL_KEYBOX_URL =
-            "https://ota-mirror.daryldenson-apps.workers.dev/expressiveos/keybox.xml";
+            "https://keybox.kowx712.cc/";
     private static final String ROOTS_URL = "https://android.googleapis.com/attestation/root";
     private static final String CRL_URL =
             "https://android.googleapis.com/attestation/status?encrypted=0";

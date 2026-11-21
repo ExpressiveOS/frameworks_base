@@ -109,7 +109,7 @@ public class AxSpoofManager implements IAxSpoofManager {
     private static final String LAST_REVOCATION_CHECK_KEY =
             "spoof_trickystore_last_revocation_check";
     private static final String OFFICIAL_KEYBOX_URL =
-            "https://ota-mirror.daryldenson-apps.workers.dev/expressiveos/keybox.xml";
+            "https://keybox.kowx712.cc/";
 
     private static final String VENDING_PACKAGE = "com.android.vending";
     private static final String[] GMS_FAMILY = {
