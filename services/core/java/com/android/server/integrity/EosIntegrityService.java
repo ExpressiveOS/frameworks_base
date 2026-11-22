@@ -99,8 +99,9 @@ public final class EosIntegrityService extends SystemService {
     private static final File PATCH_FILE = new File(BASE_DIR, "patch.txt");
     private static final File STATE_FILE = new File(BASE_DIR, "state.json");
 
-    private static final String OFFICIAL_KEYBOX_URL =
-            "https://keybox.kowx712.cc/";
+    // Disabled for background auto-fetch: keybox.kowx712.cc is a browser-interactive
+    // repository; Expressive Studio opens it in the user's browser for manual import.
+    private static final String OFFICIAL_KEYBOX_URL = "";
     private static final String ROOTS_URL = "https://android.googleapis.com/attestation/root";
     private static final String CRL_URL =
             "https://android.googleapis.com/attestation/status?encrypted=0";
@@ -463,7 +464,12 @@ public final class EosIntegrityService extends SystemService {
             }
         }
 
-        // EOS 1.x method: fetch official keybox directly over HTTPS from OFFICIAL_KEYBOX_URL,
+        if (OFFICIAL_KEYBOX_URL.isEmpty()) {
+            return new ActionOutcome(false, "MANUAL_IMPORT_REQUIRED",
+                    "Download keybox.xml in your browser and import it in Expressive Studio");
+        }
+
+        // Fetch official keybox directly over HTTPS from OFFICIAL_KEYBOX_URL,
         // then verify structure, private-key-to-leaf match, Google root CA chain, expiry, and CRL.
         final byte[] officialBytes = httpGetBytes(OFFICIAL_KEYBOX_URL, deadlineMs);
         if (officialBytes == null || officialBytes.length == 0) {
@@ -534,7 +540,8 @@ public final class EosIntegrityService extends SystemService {
             }
             putQuietly(st, "leaf_expiry_ms", vr.leafExpiryMs);
             writeStateLocked(st);
-            if (("REVOKED".equals(vr.status) || "SUSPENDED".equals(vr.status))
+            if (!OFFICIAL_KEYBOX_URL.isEmpty()
+                    && ("REVOKED".equals(vr.status) || "SUSPENDED".equals(vr.status))
                     && !SOURCE_USER.equals(st.optString("source", ""))) {
                 shouldAutoReplace = true;
             }

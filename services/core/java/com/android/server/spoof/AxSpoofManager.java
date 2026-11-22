@@ -108,8 +108,9 @@ public class AxSpoofManager implements IAxSpoofManager {
             "spoof_trickystore_last_revocation_reason";
     private static final String LAST_REVOCATION_CHECK_KEY =
             "spoof_trickystore_last_revocation_check";
-    private static final String OFFICIAL_KEYBOX_URL =
-            "https://keybox.kowx712.cc/";
+    // Disabled for background auto-fetch: keybox.kowx712.cc is browser-interactive;
+    // users download keybox.xml via Expressive Studio and import it manually.
+    private static final String OFFICIAL_KEYBOX_URL = "";
 
     private static final String VENDING_PACKAGE = "com.android.vending";
     private static final String[] GMS_FAMILY = {
@@ -769,6 +770,9 @@ public class AxSpoofManager implements IAxSpoofManager {
      */
     private boolean refreshKeyboxIfStale() throws Exception {
         if (mResolver == null) return true;
+        if (OFFICIAL_KEYBOX_URL.isEmpty()) {
+            return true; // browser-interactive repository; no background HTTP fetch
+        }
         if (Settings.System.getIntForUser(
                 mResolver, TRICKYSTORE_ENABLED_KEY, 1, UserHandle.USER_SYSTEM) == 0) {
             return true;
