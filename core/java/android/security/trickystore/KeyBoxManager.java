@@ -5,16 +5,16 @@ import android.util.Log;
 import com.android.internal.org.bouncycastle.asn1.ASN1InputStream;
 import com.android.internal.org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import com.android.internal.org.bouncycastle.asn1.ASN1Primitive;
+import com.android.internal.org.bouncycastle.asn1.ASN1Object;
 import com.android.internal.org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import com.android.internal.org.bouncycastle.asn1.pkcs.RSAPrivateKey;
 import com.android.internal.org.bouncycastle.asn1.sec.ECPrivateKey;
-import com.android.internal.org.bouncycastle.asn1.x9.ECNamedCurveTable;
-import com.android.internal.org.bouncycastle.asn1.x9.X9ECParameters;
+import com.android.internal.org.bouncycastle.asn1.sec.SECObjectIdentifiers;
+import com.android.internal.org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import com.android.internal.org.bouncycastle.asn1.x9.X9ObjectIdentifiers;
 import com.android.internal.org.bouncycastle.asn1.x500.X500Name;
 import com.android.internal.org.bouncycastle.cert.X509CertificateHolder;
-import com.android.internal.org.bouncycastle.crypto.params.ECDomainParameters;
-import com.android.internal.org.bouncycastle.crypto.params.ECPrivateKeyParameters;
-import com.android.internal.org.bouncycastle.jcajce.provider.asymmetric.ec.BCECPrivateKey;
+import java.security.interfaces.ECPublicKey;
 import com.android.internal.org.bouncycastle.jcajce.provider.asymmetric.ec.KeyFactorySpi.EC;
 import com.android.internal.org.bouncycastle.jcajce.provider.asymmetric.rsa.KeyFactorySpi;
 import com.android.internal.org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -330,7 +330,6 @@ public class KeyBoxManager {
                     normalizedAlgorithm = algorithm;
             }
 
-            PrivateKey privateKey = parsePrivateKey(privateKeyPem, normalizedAlgorithm);
             List<Certificate> certificates = new ArrayList<>();
             CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
 
@@ -341,6 +340,8 @@ public class KeyBoxManager {
             }
 
             if (certificates.isEmpty()) return false;
+            PrivateKey privateKey = parsePrivateKey(
+                    privateKeyPem, normalizedAlgorithm, certificates);
 
             if (!normalizedAlgorithm.equalsIgnoreCase(privateKey.getAlgorithm())) {
                 Log.e(TAG, "Private key has unexpected algorithm: " + normalizedAlgorithm);
@@ -364,21 +365,42 @@ public class KeyBoxManager {
         }
     }
 
+    /**
+     * Signature algorithm matching the issuer key in [keybox]: SHA384withECDSA for P-384
+     * Google Hardware Attestation keys, SHA512withECDSA for P-521, SHA256withECDSA for P-256,
+     * and SHA256withRSA for RSA.
+     */
+    public static String resolveSignatureAlgorithm(KeyBox keybox) {
+        if (keybox == null || !"EC".equals(keybox.algorithm)) {
+            return "SHA256withRSA";
+        }
+        return resolveEcSignatureAlgorithm(
+                keybox.keyPair != null ? keybox.keyPair.getPublic() : null);
+    }
+
+    private static String resolveEcSignatureAlgorithm(PublicKey publicKey) {
+        if (publicKey instanceof ECPublicKey) {
+            java.security.spec.ECParameterSpec spec = ((ECPublicKey) publicKey).getParams();
+            if (spec != null && spec.getCurve() != null && spec.getCurve().getField() != null) {
+                int fieldSize = spec.getCurve().getField().getFieldSize();
+                if (fieldSize > 384) return "SHA512withECDSA";
+                if (fieldSize > 256) return "SHA384withECDSA";
+            }
+        }
+        return "SHA256withECDSA";
+    }
+
     private static void verifyPrivateKey(PrivateKey privateKey, PublicKey publicKey,
             String algorithm) throws Exception {
         boolean ec = "EC".equals(algorithm);
-        String sigAlgorithm = ec ? "SHA256withECDSA" : "SHA256withRSA";
+        String sigAlgorithm = ec ? resolveEcSignatureAlgorithm(publicKey) : "SHA256withRSA";
         byte[] challenge = new byte[32];
         new SecureRandom().nextBytes(challenge);
-        Signature signer = ec
-                ? Signature.getInstance(sigAlgorithm, new BouncyCastleProvider())
-                : Signature.getInstance(sigAlgorithm);
+        Signature signer = Signature.getInstance(sigAlgorithm);
         signer.initSign(privateKey);
         signer.update(challenge);
         byte[] signature = signer.sign();
-        Signature verifier = ec
-                ? Signature.getInstance(sigAlgorithm, new BouncyCastleProvider())
-                : Signature.getInstance(sigAlgorithm);
+        Signature verifier = Signature.getInstance(sigAlgorithm);
         verifier.initVerify(publicKey);
         verifier.update(challenge);
         if (!verifier.verify(signature)) {
@@ -484,13 +506,14 @@ public class KeyBoxManager {
         }
     }
 
-    private PrivateKey parsePrivateKey(String pem, String algorithm) throws Exception {
+    private PrivateKey parsePrivateKey(String pem, String algorithm,
+            List<Certificate> certificates) throws Exception {
         String pemType = detectPemType(pem);
         byte[] keyBytes = parsePemContent(pem);
 
         if ("EC PRIVATE KEY".equals(pemType)
                 || ("EC".equals(algorithm) && pemType == null)) {
-            return parseEcPrivateKey(keyBytes, algorithm);
+            return parseEcPrivateKey(keyBytes, certificates);
         }
 
         if ("RSA PRIVATE KEY".equals(pemType)
@@ -504,7 +527,12 @@ public class KeyBoxManager {
                 return new KeyFactorySpi().generatePrivate(pkInfo);
             }
             if ("EC".equals(algorithm)) {
-                return new EC().generatePrivate(pkInfo);
+                try {
+                    return KeyFactory.getInstance("EC").generatePrivate(
+                            new PKCS8EncodedKeySpec(pkInfo.getEncoded()));
+                } catch (Exception ignored) {
+                    return new EC().generatePrivate(pkInfo);
+                }
             }
             PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
             return KeyFactory.getInstance(algorithm).generatePrivate(spec);
@@ -514,21 +542,55 @@ public class KeyBoxManager {
         return KeyFactory.getInstance(algorithm).generatePrivate(spec);
     }
 
-    private PrivateKey parseEcPrivateKey(byte[] keyBytes, String algorithm) throws Exception {
+    private static ASN1Object inferEcCurveOid(ECPrivateKey ecPrivateKey,
+            List<Certificate> certificates) {
+        ASN1Object paramsObj = ecPrivateKey.getParametersObject();
+        if (paramsObj != null) return paramsObj;
+        if (certificates != null) {
+            for (Certificate c : certificates) {
+                if (c.getPublicKey() instanceof ECPublicKey) {
+                    java.security.spec.ECParameterSpec spec =
+                            ((ECPublicKey) c.getPublicKey()).getParams();
+                    if (spec != null && spec.getCurve() != null
+                            && spec.getCurve().getField() != null) {
+                        int bits = spec.getCurve().getField().getFieldSize();
+                        if (bits > 384) return SECObjectIdentifiers.secp521r1;
+                        if (bits > 256) return SECObjectIdentifiers.secp384r1;
+                        return SECObjectIdentifiers.secp256r1;
+                    }
+                }
+            }
+        }
+        int keyBits = ecPrivateKey.getKey() != null ? ecPrivateKey.getKey().bitLength() : 256;
+        if (keyBits > 384) return SECObjectIdentifiers.secp521r1;
+        if (keyBits > 256) return SECObjectIdentifiers.secp384r1;
+        return SECObjectIdentifiers.secp256r1;
+    }
+
+    private PrivateKey parseEcPrivateKey(byte[] keyBytes, List<Certificate> certificates)
+            throws Exception {
         try (ASN1InputStream asn1In = new ASN1InputStream(keyBytes)) {
             ASN1Primitive asn1 = asn1In.readObject();
             try {
                 ECPrivateKey ecPrivateKey = ECPrivateKey.getInstance(asn1);
-                X9ECParameters ecParams = ECNamedCurveTable.getByOID(
-                        (ASN1ObjectIdentifier) ecPrivateKey.getParameters());
-                ECDomainParameters domainParams = new ECDomainParameters(
-                        ecParams.getCurve(), ecParams.getG(), ecParams.getN(), ecParams.getH());
-                ECPrivateKeyParameters privParams = new ECPrivateKeyParameters(
-                        ecPrivateKey.getKey(), domainParams);
-                return new BCECPrivateKey(algorithm, privParams, null);
+                ASN1Object curveId = inferEcCurveOid(ecPrivateKey, certificates);
+                PrivateKeyInfo pkInfo = new PrivateKeyInfo(
+                        new AlgorithmIdentifier(X9ObjectIdentifiers.id_ecPublicKey, curveId),
+                        ecPrivateKey);
+                try {
+                    return KeyFactory.getInstance("EC").generatePrivate(
+                            new PKCS8EncodedKeySpec(pkInfo.getEncoded()));
+                } catch (Exception ignored) {
+                    return new EC().generatePrivate(pkInfo);
+                }
             } catch (Exception e) {
                 PrivateKeyInfo pkInfo = PrivateKeyInfo.getInstance(asn1);
-                return new EC().generatePrivate(pkInfo);
+                try {
+                    return KeyFactory.getInstance("EC").generatePrivate(
+                            new PKCS8EncodedKeySpec(pkInfo.getEncoded()));
+                } catch (Exception ignored) {
+                    return new EC().generatePrivate(pkInfo);
+                }
             }
         }
     }

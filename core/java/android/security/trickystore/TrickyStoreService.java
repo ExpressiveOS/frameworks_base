@@ -127,12 +127,16 @@ public class TrickyStoreService {
     // rather than keeping a copy.
     public static final String DEFAULT_TARGET_LIST = String.join("\n",
             "android",
-            // GMS and friends, AUTO mode
+            // GMS, RCS/IMS, and friends, AUTO mode
             "com.android.vending",
             "com.google.android.gsf",
             "com.google.android.gms",
+            "com.google.android.rkpdapp",
             "com.google.android.contactkeys",
             "com.google.android.ims",
+            "com.google.android.apps.messaging",
+            "com.android.imsserviceentitlement",
+            "com.android.imsstack",
             "com.google.android.safetycore",
             "com.google.android.apps.walletnfcrel",
             "com.google.android.apps.nbu.paisa.user",

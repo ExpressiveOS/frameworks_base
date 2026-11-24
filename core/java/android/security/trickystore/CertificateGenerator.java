@@ -206,13 +206,9 @@ public final class CertificateGenerator {
 
         // Sign for the keybox's key, which is not the leaf's when the keybox only has the
         // other algorithm (see KeyBoxManager.getKeyboxForLeaf()).
-        boolean ecIssuer = "EC".equals(keybox.algorithm);
-        String sigAlg = ecIssuer ? "SHA256withECDSA" : "SHA256withRSA";
-        JcaContentSignerBuilder signerBuilder = new JcaContentSignerBuilder(sigAlg);
-        if (ecIssuer) {
-            signerBuilder.setProvider(BC_PROVIDER);
-        }
-        ContentSigner signer = signerBuilder.build(keybox.keyPair.getPrivate());
+        String sigAlg = KeyBoxManager.resolveSignatureAlgorithm(keybox);
+        ContentSigner signer = new JcaContentSignerBuilder(sigAlg)
+                .build(keybox.keyPair.getPrivate());
 
         X509CertificateHolder holder = builder.build(signer);
         CertificateFactory certFactory = CertificateFactory.getInstance("X.509");

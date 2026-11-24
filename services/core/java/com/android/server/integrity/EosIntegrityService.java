@@ -420,8 +420,28 @@ public final class EosIntegrityService extends SystemService {
         }
     }
 
-    private ActionOutcome importUserKeyboxImpl(String rawXml, long deadlineMs) {
-        if (rawXml == null || rawXml.trim().isEmpty()) {
+    private static String decodeKeyboxPayload(String payload) {
+        if (payload == null) return null;
+        String trimmed = payload.replace("\uFEFF", "")
+                .replaceAll("[\\u200B-\\u200D\\u2060]", "").trim();
+        if (trimmed.isEmpty()) return null;
+        if (trimmed.startsWith("<")) return trimmed;
+        try {
+            String decoded = new String(
+                    Base64.decode(trimmed, Base64.DEFAULT), StandardCharsets.UTF_8)
+                    .replace("\uFEFF", "")
+                    .replaceAll("[\\u200B-\\u200D\\u2060]", "").trim();
+            if (decoded.startsWith("<") && decoded.contains("Keybox")) {
+                return decoded;
+            }
+        } catch (IllegalArgumentException ignored) {
+        }
+        return trimmed;
+    }
+
+    private ActionOutcome importUserKeyboxImpl(String rawInput, long deadlineMs) {
+        final String rawXml = decodeKeyboxPayload(rawInput);
+        if (rawXml == null || rawXml.isEmpty()) {
             return new ActionOutcome(false, "EMPTY", "Keybox XML is empty");
         }
         final ValidationResult vr = validateKeyboxCandidate(
@@ -475,7 +495,11 @@ public final class EosIntegrityService extends SystemService {
         if (officialBytes == null || officialBytes.length == 0) {
             return new ActionOutcome(false, "FETCH_FAILED", "Unable to reach official keybox feed");
         }
-        final String candidate = new String(officialBytes, StandardCharsets.UTF_8);
+        final String candidate = decodeKeyboxPayload(
+                new String(officialBytes, StandardCharsets.UTF_8));
+        if (candidate == null || candidate.isEmpty()) {
+            return new ActionOutcome(false, "NO_VALID_KEYBOX", "Empty official keybox payload");
+        }
 
         final ValidationResult vr = validateKeyboxCandidate(
                 candidate, /* allowOfflineCrl= */ false, deadlineMs);
@@ -947,9 +971,21 @@ public final class EosIntegrityService extends SystemService {
             final String label = m.group(1);
             final byte[] der = Base64.decode(m.group(2).replaceAll("\\s+", ""), Base64.DEFAULT);
             final boolean isEc = algorithm.contains("ec") || "EC".equalsIgnoreCase(leaf.getPublicKey().getAlgorithm());
-            final PrivateKey privKey = parsePrivateKey(label, der, isEc);
+            final PrivateKey privKey = parsePrivateKey(label, der, isEc, leaf.getPublicKey());
             if (privKey == null) return false;
-            final String sigAlg = isEc ? "SHA256withECDSA" : "SHA256withRSA";
+            String sigAlg = "SHA256withRSA";
+            if (isEc) {
+                sigAlg = "SHA256withECDSA";
+                if (leaf.getPublicKey() instanceof java.security.interfaces.ECPublicKey) {
+                    java.security.spec.ECParameterSpec spec =
+                            ((java.security.interfaces.ECPublicKey) leaf.getPublicKey()).getParams();
+                    if (spec != null && spec.getCurve() != null && spec.getCurve().getField() != null) {
+                        int bits = spec.getCurve().getField().getFieldSize();
+                        if (bits > 384) sigAlg = "SHA512withECDSA";
+                        else if (bits > 256) sigAlg = "SHA384withECDSA";
+                    }
+                }
+            }
             final byte[] challenge = new byte[32];
             mRandom.nextBytes(challenge);
             final Signature signer = Signature.getInstance(sigAlg);
@@ -967,14 +1003,23 @@ public final class EosIntegrityService extends SystemService {
         }
     }
 
-    private static PrivateKey parsePrivateKey(String label, byte[] der, boolean isEc) {
+    private static PrivateKey parsePrivateKey(
+            String label, byte[] der, boolean isEc, PublicKey leafPub) {
         final String kfAlg = isEc ? "EC" : "RSA";
         try {
             if ("PRIVATE KEY".equals(label)) {
                 return KeyFactory.getInstance(kfAlg).generatePrivate(new PKCS8EncodedKeySpec(der));
             }
+            int ecBits = 0;
+            if (isEc && leafPub instanceof java.security.interfaces.ECPublicKey) {
+                java.security.spec.ECParameterSpec spec =
+                        ((java.security.interfaces.ECPublicKey) leafPub).getParams();
+                if (spec != null && spec.getCurve() != null && spec.getCurve().getField() != null) {
+                    ecBits = spec.getCurve().getField().getFieldSize();
+                }
+            }
             // Wrap SEC1 EC PRIVATE KEY or PKCS#1 RSA PRIVATE KEY into PKCS#8 DER
-            final byte[] pkcs8 = isEc ? wrapSec1EcInPkcs8(der) : wrapPkcs1RsaInPkcs8(der);
+            final byte[] pkcs8 = isEc ? wrapSec1EcInPkcs8(der, ecBits) : wrapPkcs1RsaInPkcs8(der);
             return KeyFactory.getInstance(kfAlg).generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
         } catch (Exception e) {
             return null;
@@ -991,13 +1036,18 @@ public final class EosIntegrityService extends SystemService {
     }
 
     private static byte[] wrapSec1EcInPkcs8(byte[] sec1) throws IOException {
-        // Parse curve OID if embedded in SEC1 [1] EXPLICIT, default prime256v1; try prime256v1 then secp384r1
-        final byte[][] curveOids = new byte[][] {
-                // prime256v1 (1.2.840.10045.3.1.7)
-                new byte[] {0x06, 0x08, 0x2a, (byte) 0x86, 0x48, (byte) 0xce, 0x3d, 0x03, 0x01, 0x07},
-                // secp384r1 (1.3.132.0.34)
-                new byte[] {0x06, 0x05, 0x2b, (byte) 0x81, 0x04, 0x00, 0x22},
-        };
+        return wrapSec1EcInPkcs8(sec1, 0);
+    }
+
+    private static byte[] wrapSec1EcInPkcs8(byte[] sec1, int preferredBits) throws IOException {
+        final byte[] p256 = new byte[] {0x06, 0x08, 0x2a, (byte) 0x86, 0x48, (byte) 0xce, 0x3d, 0x03, 0x01, 0x07};
+        final byte[] p384 = new byte[] {0x06, 0x05, 0x2b, (byte) 0x81, 0x04, 0x00, 0x22};
+        final byte[] p521 = new byte[] {0x06, 0x05, 0x2b, (byte) 0x81, 0x04, 0x00, 0x23};
+        final byte[][] curveOids = preferredBits > 384
+                ? new byte[][] {p521, p384, p256}
+                : (preferredBits > 256
+                        ? new byte[][] {p384, p256, p521}
+                        : new byte[][] {p256, p384, p521});
         final byte[] ecPubKeyOid = new byte[] {
                 0x06, 0x07, 0x2a, (byte) 0x86, 0x48, (byte) 0xce, 0x3d, 0x02, 0x01
         };
@@ -1106,6 +1156,7 @@ public final class EosIntegrityService extends SystemService {
      */
     private boolean rebuildMergedTargetsLocked(boolean syncSettingsMirror) {
         final Map<String, String> merged = new LinkedHashMap<>();
+        mergeLayerInto(merged, TrickyStoreService.DEFAULT_TARGET_LIST);
         mergeLayerInto(merged, readUtf8Quietly(TARGETS_AUTO_FILE));
         mergeLayerInto(merged, readUtf8Quietly(TARGETS_REMOTE_FILE));
         mergeLayerInto(merged, readUtf8Quietly(TARGETS_USER_FILE));
