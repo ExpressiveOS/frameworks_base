@@ -98,6 +98,15 @@ public class AxSpoofManager implements IAxSpoofManager {
     private static final long AUTO_FETCH_COOLDOWN_MS = TimeUnit.DAYS.toMillis(1);
     private static final long REFETCH_WINDOW_DAYS = 15L;
     private static final Pattern PLAIN_DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+    private static final Pattern ZERO_WIDTH =
+            Pattern.compile("[\\u200B-\\u200D\\u2060\\uFEFF]");
+    private static final String RCS_TARGETS_MIGRATED_KEY = "spoof_trickystore_rcs_targets_v1";
+    private static final String[] RCS_DEFAULT_TARGETS = {
+            "com.google.android.rkpdapp",
+            "com.google.android.apps.messaging",
+            "com.android.imsserviceentitlement",
+            "com.android.imsstack",
+    };
 
     private static final String KEYBOX_SOURCE_KEY = "spoof_trickystore_keybox_source";
     private static final String KEYBOX_SOURCE_USER = "user";
@@ -512,12 +521,113 @@ public class AxSpoofManager implements IAxSpoofManager {
     private void seedDefaultTargetsIfUnset() {
         String current = Settings.Secure.getStringForUser(
                 mResolver, Settings.Secure.SPOOF_TRICKYSTORE_TARGET, UserHandle.USER_SYSTEM);
-        if (current != null) return;
+        if (current != null) {
+            migrateRcsDefaultTargetsOnce(current);
+            return;
+        }
 
         Settings.Secure.putStringForUser(
                 mResolver, Settings.Secure.SPOOF_TRICKYSTORE_TARGET,
                 TrickyStoreService.DEFAULT_TARGET_LIST, UserHandle.USER_SYSTEM);
+        Settings.Secure.putIntForUser(
+                mResolver, RCS_TARGETS_MIGRATED_KEY, 1, UserHandle.USER_SYSTEM);
+        refreshKey(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
+        TrickyStoreService.getInstance().refreshTargets();
         Log.i(TAG, "Seeded default TrickyStore targets");
+    }
+
+    /**
+     * One-time migration for devices upgrading in place from 1.3 to 1.3.1 whose
+     * SPOOF_TRICKYSTORE_TARGET was already seeded before RCS/IMS/RKPD packages
+     * joined DEFAULT_TARGET_LIST. Preserves an intentionally cleared list ("")
+     * and any existing per-package mode overrides (!, ?, -).
+     */
+    private void migrateRcsDefaultTargetsOnce(String current) {
+        if (Settings.Secure.getIntForUser(
+                mResolver, RCS_TARGETS_MIGRATED_KEY, 0, UserHandle.USER_SYSTEM) != 0) {
+            return;
+        }
+        String trimmed = current.trim();
+        if (trimmed.isEmpty()) {
+            Settings.Secure.putIntForUser(
+                    mResolver, RCS_TARGETS_MIGRATED_KEY, 1, UserHandle.USER_SYSTEM);
+            return;
+        }
+        if (trimmed.startsWith("[")) {
+            try {
+                org.json.JSONArray arr = new org.json.JSONArray(trimmed);
+                java.util.Set<String> present = new java.util.HashSet<>();
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject item = arr.optJSONObject(i);
+                    if (item != null) {
+                        String p = item.optString("package", "").trim();
+                        if (!p.isEmpty()) present.add(p);
+                    }
+                }
+                boolean changed = false;
+                for (String pkg : RCS_DEFAULT_TARGETS) {
+                    if (!present.contains(pkg)) {
+                        JSONObject entry = new JSONObject();
+                        entry.put("package", pkg);
+                        entry.put("mode", "AUTO");
+                        arr.put(entry);
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    String updatedJson = arr.toString();
+                    Settings.Secure.putStringForUser(
+                            mResolver, Settings.Secure.SPOOF_TRICKYSTORE_TARGET,
+                            updatedJson, UserHandle.USER_SYSTEM);
+                    refreshKey(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
+                    TrickyStoreService.getInstance().refreshTargets();
+                    Log.i(TAG, "Migrated RCS/IMS/RKPD TrickyStore JSON targets");
+                }
+                Settings.Secure.putIntForUser(
+                        mResolver, RCS_TARGETS_MIGRATED_KEY, 1, UserHandle.USER_SYSTEM);
+            } catch (Exception e) {
+                Log.w(TAG, "Skipping RCS target migration on custom JSON target list", e);
+                Settings.Secure.putIntForUser(
+                        mResolver, RCS_TARGETS_MIGRATED_KEY, 1, UserHandle.USER_SYSTEM);
+            }
+            return;
+        }
+        if (trimmed.startsWith("{")) {
+            Settings.Secure.putIntForUser(
+                    mResolver, RCS_TARGETS_MIGRATED_KEY, 1, UserHandle.USER_SYSTEM);
+            return;
+        }
+
+        java.util.Set<String> present = new java.util.HashSet<>();
+        for (String raw : current.split("\n")) {
+            String line = raw.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            String bare = line.endsWith("!") || line.endsWith("?") || line.endsWith("-")
+                    ? line.substring(0, line.length() - 1).trim() : line;
+            if (!bare.isEmpty()) present.add(bare);
+        }
+
+        StringBuilder updated = new StringBuilder(current);
+        boolean changed = false;
+        for (String pkg : RCS_DEFAULT_TARGETS) {
+            if (!present.contains(pkg)) {
+                if (updated.length() > 0 && updated.charAt(updated.length() - 1) != '\n') {
+                    updated.append('\n');
+                }
+                updated.append(pkg);
+                changed = true;
+            }
+        }
+        if (changed) {
+            Settings.Secure.putStringForUser(
+                    mResolver, Settings.Secure.SPOOF_TRICKYSTORE_TARGET,
+                    updated.toString(), UserHandle.USER_SYSTEM);
+            refreshKey(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
+            TrickyStoreService.getInstance().refreshTargets();
+            Log.i(TAG, "Migrated RCS/IMS/RKPD TrickyStore default targets");
+        }
+        Settings.Secure.putIntForUser(
+                mResolver, RCS_TARGETS_MIGRATED_KEY, 1, UserHandle.USER_SYSTEM);
     }
 
     /**
@@ -766,7 +876,7 @@ public class AxSpoofManager implements IAxSpoofManager {
             return true; // user manages their own keybox — never overwrite it
         }
 
-        String xml = runBounded(mNetworkExecutor, () -> {
+        String rawBody = runBounded(mNetworkExecutor, () -> {
             HttpURLConnection conn = (HttpURLConnection) new URL(OFFICIAL_KEYBOX_URL).openConnection();
             try {
                 conn.setUseCaches(false);
@@ -779,6 +889,7 @@ public class AxSpoofManager implements IAxSpoofManager {
                 conn.disconnect();
             }
         });
+        String xml = decodeKeyboxXml(rawBody);
         if (xml == null || xml.trim().isEmpty()) return false;
         if (!looksLikeKeybox(xml)) {
             // A captive portal or error page can come back as a 200; never let
@@ -816,11 +927,13 @@ public class AxSpoofManager implements IAxSpoofManager {
     /** Keybox XML from a stored value that is either raw XML or Base64 of it; null if neither. */
     private static String decodeKeyboxXml(String payload) {
         if (payload == null) return null;
-        String trimmed = payload.trim();
+        String trimmed = ZERO_WIDTH.matcher(payload).replaceAll("").trim();
+        if (trimmed.isEmpty()) return null;
         if (trimmed.startsWith("<")) return trimmed;
         try {
-            String xml = new String(Base64.decode(trimmed, Base64.DEFAULT),
-                    StandardCharsets.UTF_8).trim();
+            String xml = ZERO_WIDTH.matcher(new String(
+                    Base64.decode(trimmed, Base64.DEFAULT), StandardCharsets.UTF_8))
+                    .replaceAll("").trim();
             return xml.startsWith("<") ? xml : null;
         } catch (IllegalArgumentException e) {
             return null;

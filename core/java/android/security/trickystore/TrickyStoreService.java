@@ -127,12 +127,16 @@ public class TrickyStoreService {
     // rather than keeping a copy.
     public static final String DEFAULT_TARGET_LIST = String.join("\n",
             "android",
-            // GMS and friends, AUTO mode
+            // GMS, RCS/IMS, and friends, AUTO mode
             "com.android.vending",
             "com.google.android.gsf",
             "com.google.android.gms",
+            "com.google.android.rkpdapp",
             "com.google.android.contactkeys",
             "com.google.android.ims",
+            "com.google.android.apps.messaging",
+            "com.android.imsserviceentitlement",
+            "com.android.imsstack",
             "com.google.android.safetycore",
             "com.google.android.apps.walletnfcrel",
             "com.google.android.apps.nbu.paisa.user",
@@ -380,14 +384,20 @@ public class TrickyStoreService {
         }
     }
 
+    private static final java.util.regex.Pattern ZERO_WIDTH =
+            java.util.regex.Pattern.compile("[\\u200B-\\u200D\\u2060\\uFEFF]");
+
     private String decodeKeybox(String payload) {
-        String trimmed = payload.trim();
+        if (payload == null) return null;
+        String trimmed = ZERO_WIDTH.matcher(payload).replaceAll("").trim();
+        if (trimmed.isEmpty()) return null;
         if (trimmed.startsWith("<")) {
             return trimmed;
         }
         try {
-            byte[] decoded = Base64.getDecoder().decode(trimmed);
-            String asXml = new String(decoded, StandardCharsets.UTF_8).trim();
+            byte[] decoded = android.util.Base64.decode(trimmed, android.util.Base64.DEFAULT);
+            String asXml = ZERO_WIDTH.matcher(
+                    new String(decoded, StandardCharsets.UTF_8)).replaceAll("").trim();
             if (asXml.startsWith("<")) {
                 return asXml;
             }
