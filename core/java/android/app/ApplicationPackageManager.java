@@ -220,7 +220,7 @@ public class ApplicationPackageManager extends PackageManager {
     // Spoof setting caches — refreshed by ContentObserver, avoids per-call Settings reads
     private static volatile boolean sTensorGlobalEnabled = false;
     private static volatile Set<String> sTensorTargets = null;
-    private static volatile boolean sPhotosSpoofEnabled = true;
+    private static volatile boolean sPhotosSpoofEnabled = false;
     private static boolean sSpoofObserverRegistered = false;
 
     UserManager getUserManager() {
@@ -2497,7 +2497,7 @@ public class ApplicationPackageManager extends PackageManager {
                         ? Collections.emptySet()
                         : new ArraySet<>(Arrays.asList(raw.split(",")));
                 sPhotosSpoofEnabled = Settings.Secure.getInt(
-                        cr, Settings.Secure.PI_PHOTOS_SPOOF, 1) == 1;
+                        cr, Settings.Secure.PI_PHOTOS_SPOOF, 0) == 1;
             } catch (Throwable t) {
                 // Settings provider not ready yet; cache stays at safe defaults
             }
