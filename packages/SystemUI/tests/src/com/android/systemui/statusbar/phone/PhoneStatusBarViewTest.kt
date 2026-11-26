@@ -22,6 +22,8 @@ import android.graphics.Insets
 import android.graphics.Rect
 import android.graphics.Region
 import android.hardware.display.DisplayManagerGlobal
+import android.platform.test.annotations.DisableFlags
+import android.platform.test.annotations.EnableFlags
 import android.platform.test.annotations.FlakyTest
 import android.testing.TestableLooper.RunWithLooper
 import android.view.Display
@@ -36,8 +38,10 @@ import android.view.RoundedCorners
 import android.view.View
 import android.view.ViewRootImpl
 import android.view.WindowInsets
+import android.view.flags.Flags as ViewFlags
 import android.widget.FrameLayout
 import androidx.test.filters.SmallTest
+import com.android.systemui.Flags
 import com.android.systemui.Gefingerpoken
 import com.android.systemui.SysuiTestCase
 import com.android.systemui.SysuiTestableContext
@@ -181,6 +185,21 @@ class PhoneStatusBarViewTest : SysuiTestCase() {
         view.setLongPressGestureDetector(longPressGestureDetector)
 
         val event = MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 0f, 0f, 0)
+        view.onTouchEvent(event)
+
+        assertThat(handler.lastEvent).isEqualTo(event)
+        verify(longPressGestureDetector).handleTouch(eq(event))
+    }
+
+    @Test
+    @EnableFlags(ViewFlags.FLAG_SCROLL_TO_TOP)
+    @DisableFlags(Flags.FLAG_STATUS_BAR_EVENT_FORWARDING_MODERNIZATION)
+    fun onTouchEvent_scrollToTopEnabledInLegacyMode_stillNotifiesLongPressGestureDetector() {
+        val handler = TestTouchEventHandler()
+        view.setTouchEventHandler(handler)
+        view.setLongPressGestureDetector(longPressGestureDetector)
+
+        val event = MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 50f, 20f, 0)
         view.onTouchEvent(event)
 
         assertThat(handler.lastEvent).isEqualTo(event)

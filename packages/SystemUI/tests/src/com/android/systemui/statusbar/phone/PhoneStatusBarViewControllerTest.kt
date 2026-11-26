@@ -67,12 +67,14 @@ import com.android.systemui.shade.domain.interactor.shadeModeInteractor
 import com.android.systemui.shade.shared.model.ShadeMode
 import com.android.systemui.statusbar.CommandQueue
 import com.android.systemui.statusbar.gesture.StatusBarLongPressGestureDetector
+import com.android.systemui.statusbar.gesture.StatusBarScrollToTopGestureHandler
 import com.android.systemui.statusbar.layout.mockStatusBarContentInsetsProvider
 import com.android.systemui.statusbar.policy.Clock
 import com.android.systemui.statusbar.policy.mockStatusBarConfigurationController
 import com.android.systemui.statusbar.window.StatusBarWindowControllerStore
 import com.android.systemui.statusbar.window.StatusBarWindowStateController
 import com.android.systemui.testKosmos
+import com.android.systemui.tuner.TunerService
 import com.android.systemui.unfold.util.ScopedUnfoldTransitionProgressProvider
 import com.android.systemui.user.ui.viewmodel.StatusBarUserChipViewModel
 import com.android.systemui.util.view.ViewUtil
@@ -132,6 +134,9 @@ class PhoneStatusBarViewControllerTest(flags: FlagsParameterization) : SysuiTest
         ShadeExpansionTargetDisplayInteractor
     @Mock private lateinit var shadeDisplayRepository: ShadeDisplaysRepository
     @Mock private lateinit var statusBarWindowControllerStore: StatusBarWindowControllerStore
+    @Mock private lateinit var tunerService: TunerService
+    @Mock
+    private lateinit var statusBarScrollToTopGestureHandler: StatusBarScrollToTopGestureHandler
     private lateinit var statusBarWindowStateController: StatusBarWindowStateController
     private lateinit var view: PhoneStatusBarView
     private lateinit var controller: PhoneStatusBarViewController
@@ -286,6 +291,7 @@ class PhoneStatusBarViewControllerTest(flags: FlagsParameterization) : SysuiTest
 
         view.onTouchEvent(event)
 
+        verify(statusBarScrollToTopGestureHandler).onTouchEvent(event, view)
         if (SceneContainerFlag.isEnabled) {
             verify(windowRootView).dispatchTouchEvent(event)
         } else {
@@ -847,6 +853,8 @@ class PhoneStatusBarViewControllerTest(flags: FlagsParameterization) : SysuiTest
                 shadeExpansionTargetDisplayInteractor,
                 { shadeDisplayRepository },
                 statusBarWindowControllerStore,
+                tunerService,
+                statusBarScrollToTopGestureHandler,
             )
             .create(view)
             .also { it.init() }

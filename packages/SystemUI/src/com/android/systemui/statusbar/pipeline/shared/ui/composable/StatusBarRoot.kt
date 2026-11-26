@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
@@ -57,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -120,6 +122,7 @@ import com.android.systemui.statusbar.core.NewStatusBarIcons
 import com.android.systemui.statusbar.core.StatusBarEventForwardingModernization
 import com.android.systemui.statusbar.core.StatusBarForDesktop
 import com.android.systemui.statusbar.events.domain.interactor.SystemStatusEventAnimationInteractor
+import com.android.systemui.statusbar.gesture.StatusBarScrollToTopGestureHandler
 import com.android.systemui.statusbar.layout.ui.viewmodel.AppHandlesViewModel
 import com.android.systemui.statusbar.notification.icon.ui.viewbinder.ConnectedDisplaysStatusBarNotificationIconViewStore
 import com.android.systemui.statusbar.notification.icon.ui.viewbinder.NotificationIconContainerStatusBarViewBinder
@@ -182,6 +185,8 @@ constructor(
     private val statusBarRegionSamplingViewModelFactory: StatusBarRegionSamplingViewModel.Factory,
     private val shadeWindowRootView: WindowRootView,
     private val axDynamicBarChipViewModel: AxDynamicBarChipViewModel,
+    @DisplayAware
+    private val statusBarScrollToTopGestureHandler: StatusBarScrollToTopGestureHandler,
 ) {
     fun create(root: ViewGroup, andThen: (ViewGroup) -> Unit): ComposeView {
         val composeView = ComposeView(root.context)
@@ -206,6 +211,7 @@ constructor(
                         statusBarRegionSamplingViewModelFactory =
                             statusBarRegionSamplingViewModelFactory,
                         axDynamicBarChipViewModel = axDynamicBarChipViewModel,
+                        statusBarScrollToTopGestureHandler = statusBarScrollToTopGestureHandler,
                         onViewCreated = andThen,
                         modifier = Modifier.sysUiResTagContainer(),
                     )
@@ -244,7 +250,8 @@ fun StatusBarRoot(
     darkIconDispatcher: DarkIconDispatcher,
     eventAnimationInteractor: SystemStatusEventAnimationInteractor,
     statusBarRegionSamplingViewModelFactory: StatusBarRegionSamplingViewModel.Factory,
-    axDynamicBarChipViewModel: AxDynamicBarChipViewModel,
+    axDynamicBarChipViewModel: AxDynamicBarChipViewModel? = null,
+    statusBarScrollToTopGestureHandler: StatusBarScrollToTopGestureHandler? = null,
     onViewCreated: (ViewGroup) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -266,6 +273,7 @@ fun StatusBarRoot(
             null
         }
     var touchableExclusionRegionDisposableHandle: DisposableHandle? = null
+    var phoneStatusBarViewRef by remember { mutableStateOf<PhoneStatusBarView?>(null) }
 
     val touchSlop = LocalViewConfiguration.current.touchSlop
 
@@ -306,6 +314,7 @@ fun StatusBarRoot(
                     iconViewStore = iconViewStore,
                     appHandlesViewModel = appHandlesViewModel,
                     axDynamicBarChipViewModel = axDynamicBarChipViewModel,
+                    statusBarScrollToTopGestureHandler = statusBarScrollToTopGestureHandler,
                     context = context,
                     islandBoundsState = islandBoundsState,
                 )
@@ -423,6 +432,7 @@ fun StatusBarRoot(
 
                 val composeView =
                     ComposeView(context).apply {
+                        tag = StatusBarScrollToTopGestureHandler.DYNAMIC_ISLAND_VIEW_TAG
                         layoutParams =
                             LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -628,15 +638,28 @@ fun StatusBarRoot(
                     listener = null,
                 )
                 onViewCreated(phoneStatusBarView)
+                phoneStatusBarViewRef = phoneStatusBarView
                 phoneStatusBarView
             },
             modifier =
                 modifier
                     .thenIf(StatusBarEventForwardingModernization.isEnabled) {
-                        Modifier.pointerInput(Unit) {
+                        Modifier.pointerInput(statusBarScrollToTopGestureHandler) {
                                 if (ViewFlags.scrollToTop()) {
                                     detectTapGesturesStrict(
-                                        onTap = { statusBarViewModel.onStatusBarTap(it.x) },
+                                        onTap = {
+                                            if (
+                                                statusBarScrollToTopGestureHandler == null ||
+                                                    statusBarScrollToTopGestureHandler
+                                                        .shouldAllowTap(
+                                                            it.x,
+                                                            it.y,
+                                                            phoneStatusBarViewRef,
+                                                        )
+                                            ) {
+                                                statusBarViewModel.onStatusBarTap(it.x)
+                                            }
+                                        },
                                         onLongPress = {
                                             statusBarViewModel.onStatusBarLongPressed()
                                         },
@@ -664,7 +687,13 @@ fun StatusBarRoot(
                     .thenIf(headlineViewModel != null) {
                         Modifier.drawWithHeadlineScrim(headlineViewModel!!)
                     },
-            onRelease = { touchableExclusionRegionDisposableHandle?.dispose() },
+            onRelease = {
+                phoneStatusBarViewRef = null
+                statusBarScrollToTopGestureHandler?.updateAxDynamicBarChipBounds(null)
+                statusBarScrollToTopGestureHandler?.updateOngoingActivityChipsBounds(null)
+                statusBarScrollToTopGestureHandler?.updateDynamicIslandBounds(null)
+                touchableExclusionRegionDisposableHandle?.dispose()
+            },
         )
 
         if (StatusBarHeadline.isEnabled && headlineViewModel != null) {
@@ -682,7 +711,8 @@ private fun addStartSideComposable(
     statusBarViewModel: HomeStatusBarViewModel,
     iconViewStore: NotificationIconContainerViewBinder.IconViewStore?,
     appHandlesViewModel: AppHandlesViewModel,
-    axDynamicBarChipViewModel: AxDynamicBarChipViewModel,
+    axDynamicBarChipViewModel: AxDynamicBarChipViewModel?,
+    statusBarScrollToTopGestureHandler: StatusBarScrollToTopGestureHandler?,
     context: Context,
     islandBoundsState: MutableState<Rect>,
 ) {
@@ -795,16 +825,60 @@ private fun addStartSideComposable(
                         )
                     }
 
-                val axEnabled by axDynamicBarChipViewModel.interactor.settings.isEnabled.collectAsState()
-                if (axEnabled) {
-                    AxDynamicBarChip(
-                        viewModel = axDynamicBarChipViewModel,
-                        modifier = Modifier.widthIn(max = chipsMaxWidth),
-                    )
+                if (axDynamicBarChipViewModel != null) {
+                    val axEnabled by
+                        axDynamicBarChipViewModel.interactor.settings.isEnabled.collectAsState()
+                    val axChipState by axDynamicBarChipViewModel.chipState.collectAsState()
+                    LaunchedEffect(axEnabled, axChipState) {
+                        if (!axEnabled || axChipState == null) {
+                            statusBarScrollToTopGestureHandler?.updateAxDynamicBarChipBounds(null)
+                        }
+                    }
+                    DisposableEffect(statusBarScrollToTopGestureHandler) {
+                        onDispose {
+                            statusBarScrollToTopGestureHandler?.updateAxDynamicBarChipBounds(null)
+                        }
+                    }
+                    if (axEnabled) {
+                        AxDynamicBarChip(
+                            viewModel = axDynamicBarChipViewModel,
+                            modifier =
+                                Modifier.widthIn(max = chipsMaxWidth).onLayoutRectChanged {
+                                    relativeBounds ->
+                                    if (axChipState != null) {
+                                        val b = relativeBounds.boundsInScreen
+                                        statusBarScrollToTopGestureHandler
+                                            ?.updateAxDynamicBarChipBounds(
+                                                Rect(b.left, b.top, b.right, b.bottom)
+                                            )
+                                    } else {
+                                        statusBarScrollToTopGestureHandler
+                                            ?.updateAxDynamicBarChipBounds(null)
+                                    }
+                                },
+                        )
+                    }
                 }
                 val chipsVisibilityModel = statusBarViewModel.ongoingActivityChips
                 val shouldHideLegacyScreenRecordChip =
-                    statusBarViewModel.popupChips.any { it.chipId == QuickActionChipId.ScreenRecord }
+                    statusBarViewModel.popupChips.any {
+                        it.chipId == QuickActionChipId.ScreenRecord
+                    }
+                val hasVisibleOngoingChips =
+                    chipsVisibilityModel.areChipsAllowed &&
+                        !shouldHideLegacyScreenRecordChip &&
+                        chipsVisibilityModel.chips.active.any { !it.isHidden }
+                val currentHasVisibleOngoingChips by rememberUpdatedState(hasVisibleOngoingChips)
+                LaunchedEffect(hasVisibleOngoingChips) {
+                    if (!hasVisibleOngoingChips) {
+                        statusBarScrollToTopGestureHandler?.updateOngoingActivityChipsBounds(null)
+                    }
+                }
+                DisposableEffect(statusBarScrollToTopGestureHandler) {
+                    onDispose {
+                        statusBarScrollToTopGestureHandler?.updateOngoingActivityChipsBounds(null)
+                    }
+                }
                 if (chipsVisibilityModel.areChipsAllowed && !shouldHideLegacyScreenRecordChip) {
                     var chipRect by remember { mutableStateOf<Rect?>(null) }
                     val overlapsIsland by remember {
@@ -832,6 +906,18 @@ private fun addStartSideComposable(
                                     if (hideProgress > 0.01f) {
                                         val radius = 6.dp.toPx() * hideProgress
                                         renderEffect = BlurEffect(radius, radius, TileMode.Clamp)
+                                    }
+                                }
+                                .onLayoutRectChanged { relativeBounds ->
+                                    if (currentHasVisibleOngoingChips) {
+                                        val b = relativeBounds.boundsInScreen
+                                        statusBarScrollToTopGestureHandler
+                                            ?.updateOngoingActivityChipsBounds(
+                                                Rect(b.left, b.top, b.right, b.bottom)
+                                            )
+                                    } else {
+                                        statusBarScrollToTopGestureHandler
+                                            ?.updateOngoingActivityChipsBounds(null)
                                     }
                                 }
                                 .onGloballyPositioned { coordinates ->

@@ -35,7 +35,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.accessibility.AccessibilityEvent;
-import android.view.flags.Flags;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
@@ -44,6 +43,7 @@ import androidx.annotation.NonNull;
 import com.android.internal.policy.SystemBarUtils;
 import com.android.systemui.Gefingerpoken;
 import com.android.systemui.res.R;
+import com.android.systemui.statusbar.core.StatusBarEventForwardingModernization;
 import com.android.systemui.statusbar.gesture.StatusBarLongPressGestureDetector;
 import com.android.systemui.statusbar.phone.userswitcher.StatusBarUserSwitcherContainer;
 import com.android.systemui.user.ui.binder.StatusBarUserChipViewBinder;
@@ -291,11 +291,12 @@ public class PhoneStatusBarView extends FrameLayout {
             return false;
         }
 
-        if (mStatusBarLongPressGestureDetector != null && !Flags.scrollToTop()) {
+        if (mStatusBarLongPressGestureDetector != null
+                && !StatusBarEventForwardingModernization.isEnabled()) {
             mStatusBarLongPressGestureDetector.handleTouch(event);
         }
         if (mTouchEventHandler == null) {
-            if (Flags.scrollToTop()) {
+            if (StatusBarEventForwardingModernization.isEnabled()) {
                 return false;
             }
             Log.w(

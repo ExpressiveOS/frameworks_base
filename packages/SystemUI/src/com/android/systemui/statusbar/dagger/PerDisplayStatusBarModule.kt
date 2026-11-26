@@ -49,6 +49,7 @@ import com.android.systemui.statusbar.events.SystemStatusAnimationSchedulerImpl
 import com.android.systemui.statusbar.events.data.repository.SystemStatusEventAnimationRepository
 import com.android.systemui.statusbar.events.data.repository.SystemStatusEventAnimationRepositoryImpl
 import com.android.systemui.statusbar.events.domain.interactor.SystemStatusEventAnimationInteractor
+import com.android.systemui.statusbar.gesture.StatusBarScrollToTopGestureHandler
 import com.android.systemui.statusbar.gesture.SwipeStatusBarAwayGestureHandler
 import com.android.systemui.statusbar.layout.StatusBarContentInsetsProvider
 import com.android.systemui.statusbar.layout.StatusBarContentInsetsProviderImpl
@@ -157,6 +158,20 @@ interface PerDisplayStatusBarModule {
     fun swipeStatusBarAwayGestureHandler(
         impl: SwipeStatusBarAwayGestureHandler
     ): SwipeStatusBarAwayGestureHandler
+
+    @Binds
+    @PerDisplaySingleton
+    @DisplayAware
+    fun statusBarScrollToTopGestureHandler(
+        impl: StatusBarScrollToTopGestureHandler
+    ): StatusBarScrollToTopGestureHandler
+
+    @Binds
+    @IntoSet
+    @DisplayAware
+    fun statusBarScrollToTopGestureHandlerAsLifecycleListener(
+        impl: StatusBarScrollToTopGestureHandler
+    ): SystemUIDisplaySubcomponent.LifecycleListener
 
     @Binds
     @DisplayAware

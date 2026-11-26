@@ -43,6 +43,7 @@ import com.android.systemui.shade.domain.interactor.ShadeModeInteractor
 import com.android.systemui.statusbar.core.StatusBarEventForwardingModernization
 import com.android.systemui.statusbar.data.repository.StatusBarConfigurationController
 import com.android.systemui.statusbar.gesture.StatusBarLongPressGestureDetector
+import com.android.systemui.statusbar.gesture.StatusBarScrollToTopGestureHandler
 import com.android.systemui.statusbar.layout.StatusBarContentInsetsProvider
 import com.android.systemui.statusbar.policy.Clock
 import com.android.systemui.statusbar.policy.ConfigurationController
@@ -89,6 +90,7 @@ private constructor(
     private val lazyShadeDisplaysRepository: Lazy<ShadeDisplaysRepository>,
     private val statusBarWindowControllerStore: StatusBarWindowControllerStore,
     private val tunerService: TunerService,
+    private val statusBarScrollToTopGestureHandler: StatusBarScrollToTopGestureHandler,
 ) : ViewController<PhoneStatusBarView>(view), TunerService.Tunable {
 
     private lateinit var clock: Clock
@@ -282,6 +284,7 @@ private constructor(
 
     @VisibleForTesting
     public override fun onViewDetached() {
+        statusBarScrollToTopGestureHandler.cancelCurrentGesture()
         tunerService.removeTunable(this)
         removeDarkReceivers()
         startSideContainer.setOnHoverListener(null)
@@ -368,6 +371,7 @@ private constructor(
         override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
             StatusBarEventForwardingModernization.assertInLegacyMode()
 
+            statusBarScrollToTopGestureHandler.onInterceptTouchEvent(event)
             if (event.action == MotionEvent.ACTION_DOWN) {
                 dispatchEventToShadeDisplayPolicy(event)
             }
@@ -431,6 +435,7 @@ private constructor(
             // If scene framework is enabled, route the touch to it and
             // ignore the rest of the gesture.
             if (SceneContainerFlag.isEnabled) {
+                statusBarScrollToTopGestureHandler.onTouchEvent(event, mView)
                 windowRootView.get().dispatchTouchEvent(event)
                 return true
             }
@@ -439,6 +444,8 @@ private constructor(
                 // If the view that would receive the touch is disabled, just have status
                 // bar eat the gesture.
                 if (!shadeViewController.isViewEnabled) {
+                    statusBarScrollToTopGestureHandler.onTouchEvent(event, mView)
+                    statusBarScrollToTopGestureHandler.cancelCurrentGesture()
                     shadeLogger.logMotionEvent(
                         event,
                         "onTouchForwardedFromStatusBar: panel view disabled",
@@ -447,11 +454,13 @@ private constructor(
                 }
                 if (panelExpansionInteractor.isFullyCollapsed && event.y < 1f) {
                     // b/235889526 Eat events on the top edge of the phone when collapsed
+                    statusBarScrollToTopGestureHandler.onTouchEvent(event, mView)
                     shadeLogger.logMotionEvent(event, "top edge touch ignored")
                     return true
                 }
             }
 
+            statusBarScrollToTopGestureHandler.onTouchEvent(event, mView)
             return shadeViewController.handleExternalTouch(event)
         }
 
@@ -507,6 +516,8 @@ private constructor(
         private val lazyShadeDisplaysRepository: Lazy<ShadeDisplaysRepository>,
         private val statusBarWindowControllerStore: StatusBarWindowControllerStore,
         private val tunerService: TunerService,
+        @DisplayAware
+        private val statusBarScrollToTopGestureHandler: StatusBarScrollToTopGestureHandler,
     ) {
         fun create(view: PhoneStatusBarView): PhoneStatusBarViewController {
             return PhoneStatusBarViewController(
@@ -533,6 +544,7 @@ private constructor(
                 lazyShadeDisplaysRepository,
                 statusBarWindowControllerStore,
                 tunerService,
+                statusBarScrollToTopGestureHandler,
             )
         }
     }
