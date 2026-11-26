@@ -2136,6 +2136,13 @@ class DatabaseHelper extends SQLiteOpenHelper {
             loadIntegerSetting(stmt, Settings.System.POINTER_SPEED,
                     R.integer.def_pointer_speed);
 
+            loadBooleanSetting(stmt, Settings.System.STATUS_BAR_SCROLL_TO_TOP,
+                    R.bool.def_status_bar_scroll_to_top);
+            loadIntegerSetting(stmt, Settings.System.STATUS_BAR_SCROLL_TO_TOP_ZONE,
+                    R.integer.def_status_bar_scroll_to_top_zone);
+            loadBooleanSetting(stmt, Settings.System.STATUS_BAR_SCROLL_TO_TOP_RESTORE,
+                    R.bool.def_status_bar_scroll_to_top_restore);
+
             /*
              * IMPORTANT: Do not add any more upgrade steps here as the global,
              * secure, and system settings are no longer stored in a database

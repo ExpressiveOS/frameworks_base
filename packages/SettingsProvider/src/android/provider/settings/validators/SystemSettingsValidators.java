@@ -287,5 +287,10 @@ public class SystemSettingsValidators {
         VALIDATORS.put(
                 System.ACCESSIBILITY_FORCE_INVERT_COLOR_OVERRIDE_PACKAGES_TO_DISABLE,
                 new PackageNameListValidator(","));
+        VALIDATORS.put(System.STATUS_BAR_SCROLL_TO_TOP, BOOLEAN_VALIDATOR);
+        VALIDATORS.put(
+                System.STATUS_BAR_SCROLL_TO_TOP_ZONE,
+                new DiscreteValueValidator(new String[] {"0", "1", "2", "3"}));
+        VALIDATORS.put(System.STATUS_BAR_SCROLL_TO_TOP_RESTORE, BOOLEAN_VALIDATOR);
     }
 }

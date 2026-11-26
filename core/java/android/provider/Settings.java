@@ -7337,6 +7337,32 @@ public final class Settings {
         public static final String STATUS_BAR_TRIPLE_TAP_FREEFORM = "status_bar_triple_tap_freeform";
 
         /**
+         * Whether tapping the status bar scrolls the active window's content to the top
+         * (0 = off, 1 = on).
+         * @hide
+         */
+        @Readable
+        public static final String STATUS_BAR_SCROLL_TO_TOP = "status_bar_scroll_to_top";
+
+        /**
+         * Active status bar tap zone for scroll-to-top:
+         * 0 = full status bar, 1 = center / camera cutout,
+         * 2 = left side (LTR) / right side (RTL), 3 = right side (LTR) / left side (RTL).
+         * @hide
+         */
+        @Readable
+        public static final String STATUS_BAR_SCROLL_TO_TOP_ZONE = "status_bar_scroll_to_top_zone";
+
+        /**
+         * Whether tapping the status bar again within 5 seconds after scrolling to top restores
+         * the prior scroll position (0 = off, 1 = on).
+         * @hide
+         */
+        @Readable
+        public static final String STATUS_BAR_SCROLL_TO_TOP_RESTORE =
+                "status_bar_scroll_to_top_restore";
+
+        /**
          * Whether to enable the ripple animation on fingerprint unlock
          * @hide
          */

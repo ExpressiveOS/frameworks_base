@@ -4578,20 +4578,54 @@ public class SettingsProvider extends ContentProvider {
              * switch shows.
              */
             private void ensureExpressiveOsDefaultsLocked() {
+                final Resources res = getContext().getResources();
                 final SettingsState secureSettings = getSettingsLocked(
                         SETTINGS_TYPE_SECURE, mUserId, mDeviceId);
-                if (secureSettings == null || !secureSettings.getSettingLocked(
+                if (secureSettings != null && secureSettings.getSettingLocked(
                         Settings.Secure.SEARCH_ALL_ENTRYPOINTS_ENABLED).isNull()) {
-                    return;
+                    final boolean onByDefault = res.getBoolean(
+                            com.android.internal.R.bool.config_searchAllEntrypointsEnabledDefault);
+                    secureSettings.insertSettingOverrideableByRestoreLocked(
+                            Settings.Secure.SEARCH_ALL_ENTRYPOINTS_ENABLED,
+                            onByDefault ? "1" : "0",
+                            null,
+                            true,
+                            SettingsState.SYSTEM_PACKAGE_NAME);
                 }
-                final boolean onByDefault = getContext().getResources().getBoolean(
-                        com.android.internal.R.bool.config_searchAllEntrypointsEnabledDefault);
-                secureSettings.insertSettingOverrideableByRestoreLocked(
-                        Settings.Secure.SEARCH_ALL_ENTRYPOINTS_ENABLED,
-                        onByDefault ? "1" : "0",
-                        null,
-                        true,
-                        SettingsState.SYSTEM_PACKAGE_NAME);
+
+                final SettingsState systemSettings = getSettingsLocked(
+                        SETTINGS_TYPE_SYSTEM, mUserId, mDeviceId);
+                if (systemSettings != null) {
+                    if (systemSettings.getSettingLocked(
+                            Settings.System.STATUS_BAR_SCROLL_TO_TOP).isNull()) {
+                        systemSettings.insertSettingOverrideableByRestoreLocked(
+                                Settings.System.STATUS_BAR_SCROLL_TO_TOP,
+                                res.getBoolean(R.bool.def_status_bar_scroll_to_top) ? "1" : "0",
+                                null,
+                                true,
+                                SettingsState.SYSTEM_PACKAGE_NAME);
+                    }
+                    if (systemSettings.getSettingLocked(
+                            Settings.System.STATUS_BAR_SCROLL_TO_TOP_ZONE).isNull()) {
+                        systemSettings.insertSettingOverrideableByRestoreLocked(
+                                Settings.System.STATUS_BAR_SCROLL_TO_TOP_ZONE,
+                                Integer.toString(
+                                        res.getInteger(R.integer.def_status_bar_scroll_to_top_zone)),
+                                null,
+                                true,
+                                SettingsState.SYSTEM_PACKAGE_NAME);
+                    }
+                    if (systemSettings.getSettingLocked(
+                            Settings.System.STATUS_BAR_SCROLL_TO_TOP_RESTORE).isNull()) {
+                        systemSettings.insertSettingOverrideableByRestoreLocked(
+                                Settings.System.STATUS_BAR_SCROLL_TO_TOP_RESTORE,
+                                res.getBoolean(R.bool.def_status_bar_scroll_to_top_restore)
+                                        ? "1" : "0",
+                                null,
+                                true,
+                                SettingsState.SYSTEM_PACKAGE_NAME);
+                    }
+                }
             }
 
             private SettingsState getGlobalSettingsLocked() {

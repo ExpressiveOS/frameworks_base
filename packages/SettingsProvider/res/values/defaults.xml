@@ -364,4 +364,9 @@
     <!-- Default for Settings.Global.RESTRICTED_NETWORKING_MODE.
          The per-app network access switch only works with this mode on. -->
     <bool name="def_restricted_networking_mode">true</bool>
+
+    <!-- Defaults for ExpressiveOS status bar tap-to-scroll-to-top -->
+    <bool name="def_status_bar_scroll_to_top">true</bool>
+    <integer name="def_status_bar_scroll_to_top_zone">0</integer>
+    <bool name="def_status_bar_scroll_to_top_restore">true</bool>
 </resources>

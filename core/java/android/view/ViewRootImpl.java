@@ -7089,6 +7089,7 @@ public final class ViewRootImpl implements ViewParent,
         setAccessibilityFocus(null, null);
 
         mInsetsController.cancelExistingAnimations();
+        ExpressiveScrollToTopHelper.onDetachedFromWindow(this);
 
         mView.assignParent(null);
         mView = null;
@@ -8555,6 +8556,10 @@ public final class ViewRootImpl implements ViewParent,
             if (q.mEvent instanceof KeyEvent) {
                 return processKeyEvent(q);
             } else {
+                if (q.mEvent instanceof MotionEvent
+                        && ((MotionEvent) q.mEvent).getActionMasked() == MotionEvent.ACTION_DOWN) {
+                    ExpressiveScrollToTopHelper.onUserTouchDown(ViewRootImpl.this);
+                }
                 final int source = q.mEvent.getSource();
                 if ((source & InputDevice.SOURCE_CLASS_POINTER) != 0) {
                     return processPointerEvent(q);
@@ -12955,6 +12960,9 @@ public final class ViewRootImpl implements ViewParent,
         }
     }
 
+    @Nullable
+    ExpressiveScrollToTopHelper mExpressiveScrollToTopHelper;
+
     /**
      * Dispatches a command to scroll the main content to the top.
      *
@@ -12965,7 +12973,7 @@ public final class ViewRootImpl implements ViewParent,
     public void dispatchScrollToTop(int x) {
         mHandler.post(() -> {
             if (mView != null) {
-                mView.dispatchScrollToTop(x);
+                ExpressiveScrollToTopHelper.handleScrollToTop(this, mView, x);
             }
         });
     }
