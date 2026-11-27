@@ -23,4 +23,7 @@
     <string name="global_actions_restart_title">Restart</string>
     <string name="global_actions_cancel">Cancel</string>
     <string name="global_actions_add_actions">Add actions</string>
+
+    <string name="volume_panel_mute_stream">Mute %1$s</string>
+    <string name="volume_panel_unmute_stream">Unmute %1$s</string>
 </resources>

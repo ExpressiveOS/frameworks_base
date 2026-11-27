@@ -41,12 +41,19 @@ object ShadeColors {
         if (!isNightMode) {
             return false
         }
+        val cr = context.contentResolver
         return Settings.Secure.getIntForUser(
-            context.contentResolver,
-            SETTING_BERRY_BLACK_THEME,
+            cr,
+            Settings.Secure.EOS_BLACK_THEME,
             0,
             UserHandle.USER_CURRENT,
-        ) == 1
+        ) == 1 ||
+            Settings.Secure.getIntForUser(
+                cr,
+                SETTING_BERRY_BLACK_THEME,
+                0,
+                UserHandle.USER_CURRENT,
+            ) == 1
     }
 
     /**

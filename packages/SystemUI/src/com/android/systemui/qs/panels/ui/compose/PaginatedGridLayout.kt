@@ -40,8 +40,6 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.integerResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.android.compose.animation.scene.ContentScope
@@ -212,12 +210,10 @@ private fun FooterBar(
             pagerState = pagerState,
             activeColor = MaterialTheme.colorScheme.onSurfaceVariant,
             nonActiveColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .5f),
-            modifier =
-                Modifier.wrapContentWidth().semantics {
-                    contentDescription = pageIndicatorDescription
-                },
+            modifier = Modifier.wrapContentWidth(),
             showArrows = showArrowsInPager,
             clickToCyclePages = !showArrowsInPager,
+            contentDescription = pageIndicatorDescription,
         )
         Row(Modifier.weight(1f)) {
             Spacer(modifier = Modifier.weight(1f))

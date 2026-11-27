@@ -461,12 +461,17 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
         };
         try {
             mContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(Settings.Secure.EOS_BLACK_THEME),
+                    false,
+                    mBlackThemeObserver,
+                    UserHandle.USER_ALL);
+            mContext.getContentResolver().registerContentObserver(
                     Settings.Secure.getUriFor("berry_black_theme"),
                     false,
                     mBlackThemeObserver,
                     UserHandle.USER_ALL);
         } catch (SecurityException | IllegalArgumentException | UnsupportedOperationException e) {
-            Log.w(TAG, "Unable to observe berry_black_theme setting", e);
+            Log.w(TAG, "Unable to observe black theme settings", e);
         }
     }
 

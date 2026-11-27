@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.pageLeft
 import androidx.compose.ui.semantics.pageRight
 import androidx.compose.ui.semantics.semantics
@@ -75,6 +76,8 @@ fun PagerDots(
     showArrows: Boolean = false,
     /** Whether to cycle through pages on click on the pager dots */
     clickToCyclePages: Boolean = false,
+    /** Optional accessibility label attached directly to the interactive pager dots canvas. */
+    contentDescription: String? = null,
 ) {
     if (pagerState.pageCount < 2) return
 
@@ -138,7 +141,7 @@ fun PagerDots(
         Canvas(
             Modifier.width { totalWidth.roundToPx() }
                 .height(dotSize)
-                .pagerDotsSemantics(pagerState, coroutineScope)
+                .pagerDotsSemantics(pagerState, coroutineScope, contentDescription)
                 .thenIf(clickToCyclePages) {
                     Modifier.clickable(onClickLabel = nextPageActionLabel) {
                         coroutineScope.launch {
@@ -211,9 +214,11 @@ private val Boolean.alpha
 private fun Modifier.pagerDotsSemantics(
     pagerState: PagerState,
     coroutineScope: CoroutineScope,
+    indicatorContentDescription: String? = null,
 ): Modifier {
     return then(
         Modifier.semantics {
+            indicatorContentDescription?.let { contentDescription = it }
             pageLeft {
                 if (pagerState.canScrollBackward) {
                     coroutineScope.launch {

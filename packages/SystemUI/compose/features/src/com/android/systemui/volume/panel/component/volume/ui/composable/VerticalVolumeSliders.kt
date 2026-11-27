@@ -16,19 +16,13 @@
 
 package com.android.systemui.volume.panel.component.volume.ui.composable
 
-import android.animation.ValueAnimator
 import android.content.Context
 import android.os.UserHandle
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
-import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,7 +30,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -44,68 +38,76 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon as MaterialIcon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SliderColors
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.setProgress
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.systemui.common.ui.compose.Icon
 import com.android.systemui.compose.modifiers.sysuiResTag
+import com.android.systemui.gradient.GradientColors
+import com.android.systemui.gradient.rememberGradientColors
+import com.android.systemui.gradient.rememberGradientEnabled
+import com.android.systemui.haptics.slider.compose.ui.SliderHapticsViewModel
 import com.android.systemui.qs.ui.compose.borderOnFocus
 import com.android.systemui.res.R
+import com.android.systemui.volume.dialog.sliders.ui.compose.SliderTrack
+import com.android.systemui.volume.haptics.ui.VolumeHapticsConfigsProvider
 import com.android.systemui.volume.panel.component.volume.slider.ui.viewmodel.SliderState
 import com.android.systemui.volume.panel.component.volume.slider.ui.viewmodel.SliderViewModel
-import kotlin.math.abs
-import kotlin.math.roundToInt
+import com.android.systemui.volume.ui.compose.slider.AccessibilityParams
+import com.android.systemui.volume.ui.compose.slider.Haptics
+import com.android.systemui.volume.ui.compose.slider.Slider
+import com.android.systemui.volume.ui.compose.slider.SliderIcon
 
-private val ColumnMinWidth = 52.dp
-private val ColumnScrollWidth = 60.dp
-private val TrackWidth = 54.dp
-private val TrackHeight = 200.dp
-private val TrackCornerRadius = 20.dp
-private val ColumnSpacing = 12.dp
-private val IconButtonTargetSize = 48.dp
-private val IconVisualSize = 24.dp
-private val HandleWidth = 24.dp
-private val HandleHeight = 4.dp
+private val ColumnMinWidth = 60.dp
+private val ColumnScrollWidth = 76.dp
+private val SliderWidth = 52.dp
+private val SliderHeight = 216.dp
+private val TrackWidth = 40.dp
+private val TrackCornerRadius = 12.dp
+private val ThumbWidth = 52.dp
+private val ThumbHeight = 4.dp
+private val InsideTrackIconSize = 20.dp
+private val LabelTargetMinSize = 48.dp
+private val ColumnSpacing = 4.dp
+private val ScrollColumnSpacing = 8.dp
 private const val MaxUnscrolledStreams = 5
 
 /**
- * M3 Expressive vertical volume slider columns for the expanded Volume Panel
+ * Native Android 17 M3 Expressive vertical volume slider columns for the expanded Volume Panel
  * (`Settings.System` key `"volume_panel_vertical_sliders"` == 1).
+ *
+ * Uses the exact same SystemUI [Slider], [SliderTrack], [SliderDefaults.Thumb], gradient tokens,
+ * and [VolumeHapticsConfigsProvider] as horizontal [VolumeSlider] and collapsed
+ * `VolumeDialogSliderViewBinder`, rotated 90 degrees.
  */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun VerticalVolumeSliders(
     viewModels: List<SliderViewModel>,
@@ -114,24 +116,38 @@ fun VerticalVolumeSliders(
     require(viewModels.isNotEmpty())
     val states = viewModels.map { it.slider.collectAsStateWithLifecycle().value }
     val fontScale = LocalDensity.current.fontScale
+    val isGradientEnabled = rememberGradientEnabled(Settings.System.VOLUME_SLIDER_GRADIENT)
+    val gradient: GradientColors? = rememberGradientColors().takeIf { isGradientEnabled }
+    val baseSliderColors = VolumeSliderColors.Defaults
+    val sliderColors =
+        if (gradient != null) {
+            baseSliderColors.copy(activeTrackColor = Color.Transparent)
+        } else {
+            baseSliderColors
+        }
+    val thumbColors =
+        if (gradient != null) {
+            sliderColors.copy(thumbColor = gradient.startColor)
+        } else {
+            sliderColors
+        }
 
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val requiredUnscrolledWidth =
                 ColumnMinWidth * viewModels.size + ColumnSpacing * (viewModels.size - 1)
             val shouldScroll =
                 viewModels.size > MaxUnscrolledStreams ||
-                    fontScale > 1.3f ||
+                    fontScale > 1.25f ||
                     maxWidth < requiredUnscrolledWidth
 
             if (shouldScroll) {
                 Row(
-                    modifier =
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(ColumnSpacing),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(ScrollColumnSpacing),
                     verticalAlignment = Alignment.Top,
                 ) {
                     viewModels.forEachIndexed { index, sliderViewModel ->
@@ -143,6 +159,11 @@ fun VerticalVolumeSliders(
                             },
                             onValueChangeFinished = { sliderViewModel.onValueChangeFinished() },
                             onIconTapped = { sliderViewModel.toggleMuted(sliderState) },
+                            hapticsViewModelFactory =
+                                sliderViewModel.getSliderHapticsViewModelFactory(),
+                            sliderColors = sliderColors,
+                            thumbColors = thumbColors,
+                            gradient = gradient,
                             modifier = Modifier.width(ColumnScrollWidth),
                         )
                     }
@@ -163,6 +184,11 @@ fun VerticalVolumeSliders(
                             },
                             onValueChangeFinished = { sliderViewModel.onValueChangeFinished() },
                             onIconTapped = { sliderViewModel.toggleMuted(sliderState) },
+                            hapticsViewModelFactory =
+                                sliderViewModel.getSliderHapticsViewModelFactory(),
+                            sliderColors = sliderColors,
+                            thumbColors = thumbColors,
+                            gradient = gradient,
                             modifier = Modifier.weight(1f).widthIn(min = ColumnMinWidth),
                         )
                     }
@@ -171,12 +197,15 @@ fun VerticalVolumeSliders(
         }
 
         val disabledMessages =
-            states.mapNotNull { state ->
-                if (!state.isEnabled) state.disabledMessage else null
-            }.distinct()
+            states
+                .mapNotNull { state -> if (!state.isEnabled) state.disabledMessage else null }
+                .distinct()
         disabledMessages.forEach { message ->
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .padding(horizontal = 4.dp)
+                        .testTag(VolumeSlidersMotionTestKeys.DISABLED_MESSAGE_TAG),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -197,287 +226,198 @@ fun VerticalVolumeSliders(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun VerticalVolumeSliderColumn(
     state: SliderState,
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     onIconTapped: () -> Unit,
+    hapticsViewModelFactory: SliderHapticsViewModel.Factory?,
+    sliderColors: SliderColors,
+    thumbColors: SliderColors,
+    gradient: GradientColors?,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    val colorScheme = MaterialTheme.colorScheme
-
-    val latestOnValueChange by rememberUpdatedState(onValueChange)
-    val latestOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
-    val latestOnIconTapped by rememberUpdatedState(onIconTapped)
-    val latestState by rememberUpdatedState(state)
-
-    val minVal = state.valueRange.start
-    val maxVal = state.valueRange.endInclusive
-    val rangeSpan = (maxVal - minVal).takeIf { it > 0f } ?: 1f
-    val externalFraction = ((state.value - minVal) / rangeSpan).coerceIn(0f, 1f)
-
-    var isDragging by remember { mutableStateOf(false) }
-    var dragFraction by remember { mutableFloatStateOf(externalFraction) }
-    var trackHeightPx by remember { mutableIntStateOf(0) }
-    var lastHapticStep by remember { mutableIntStateOf(Int.MIN_VALUE) }
-
-    val targetFraction = if (isDragging) dragFraction else externalFraction
-    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
-    val animatedFraction by
-        animateFloatAsState(
-            targetValue = targetFraction,
-            animationSpec =
-                if (isDragging || !animatorsEnabled) {
-                    snap()
-                } else {
-                    MaterialTheme.motionScheme.fastSpatialSpec()
-                },
-            label = "VerticalVolumeSliderFill",
-        )
-
-    val trackShape = RoundedCornerShape(TrackCornerRadius)
-    val inactiveTrackColor =
-        if (state.isEnabled) {
-            colorScheme.surfaceContainerHighest
-        } else {
-            colorScheme.surfaceContainerHigh.copy(alpha = 0.55f)
-        }
-    val activeTrackColor =
-        if (state.isEnabled) {
-            colorScheme.primary
-        } else {
-            colorScheme.onSurface.copy(alpha = 0.32f)
-        }
-    val handleColor =
-        if (state.isEnabled) {
-            colorScheme.onPrimary.copy(alpha = 0.72f)
-        } else {
-            colorScheme.onSurface.copy(alpha = 0.38f)
-        }
-    val isMuted = externalFraction <= 0.001f
-    val iconContainerColor =
-        when {
-            !state.isEnabled -> colorScheme.surfaceContainerHigh.copy(alpha = 0.55f)
-            isMuted -> colorScheme.surfaceContainerHighest
-            else -> colorScheme.secondaryContainer
-        }
-    val iconTintColor =
-        when {
-            !state.isEnabled -> colorScheme.onSurface.copy(alpha = 0.45f)
-            isMuted -> colorScheme.onSurfaceVariant
-            else -> colorScheme.onSecondaryContainer
-        }
+    val isMuted = (state.value - state.valueRange.start) <= 0.001f
     val labelColor =
         if (state.isEnabled) {
-            colorScheme.onSurface
+            MaterialTheme.colorScheme.onSurface
         } else {
-            colorScheme.onSurface.copy(alpha = 0.60f)
-        }
-
-    fun emitValueForY(yPx: Float, emitBookendHaptic: Boolean) {
-        if (!latestState.isEnabled || trackHeightPx <= 0) return
-        val rawFraction = (1f - (yPx / trackHeightPx.toFloat())).coerceIn(0f, 1f)
-        val rawValue = minVal + rawFraction * rangeSpan
-        val step = latestState.step
-        val quantizedValue =
-            if (step > 0f) {
-                (minVal + ((rawValue - minVal) / step).roundToInt() * step)
-                    .coerceIn(minVal, maxVal)
-            } else {
-                rawValue.coerceIn(minVal, maxVal)
-            }
-        val quantizedFraction = ((quantizedValue - minVal) / rangeSpan).coerceIn(0f, 1f)
-        dragFraction = quantizedFraction
-
-        val stepIndex =
-            if (step > 0f) {
-                ((quantizedValue - minVal) / step).roundToInt()
-            } else {
-                (quantizedFraction * 20f).roundToInt()
-            }
-        if (stepIndex != lastHapticStep) {
-            lastHapticStep = stepIndex
-            if (isHapticFeedbackEnabled(context)) {
-                val atBookend =
-                    emitBookendHaptic &&
-                        (abs(quantizedFraction) <= 0.001f || abs(quantizedFraction - 1f) <= 0.001f)
-                view.performHapticFeedback(
-                    if (atBookend) {
-                        HapticFeedbackConstants.CONFIRM
-                    } else {
-                        HapticFeedbackConstants.CLOCK_TICK
-                    }
-                )
-            }
-        }
-        latestOnValueChange(quantizedValue)
-    }
-
-    val stepsCount =
-        if (state.step > 0f) {
-            ((maxVal - minVal) / state.step).roundToInt().coerceAtLeast(1) - 1
-        } else {
-            0
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f)
         }
 
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (state is SliderState.Empty) {
-            Spacer(modifier = Modifier.size(width = TrackWidth, height = TrackHeight))
-            Spacer(modifier = Modifier.size(IconButtonTargetSize))
+            Spacer(modifier = Modifier.size(width = SliderWidth, height = SliderHeight))
+            Spacer(modifier = Modifier.height(LabelTargetMinSize))
         } else {
-            // Vertical M3 Expressive pill slider track
-            Box(
-                modifier =
-                    Modifier.width(TrackWidth)
-                        .height(TrackHeight)
-                        .sysuiResTag(state.label)
-                        .borderOnFocus(
-                            color = colorScheme.secondary,
-                            cornerSize = CornerSize(TrackCornerRadius),
-                        )
-                        .clip(trackShape)
-                        .background(inactiveTrackColor)
-                        .border(
-                            width = 1.dp,
-                            color = colorScheme.outlineVariant.copy(alpha = 0.35f),
-                            shape = trackShape,
-                        )
-                        .onSizeChanged { size -> trackHeightPx = size.height }
-                        .semantics(mergeDescendants = true) {
-                            contentDescription =
-                                state.a11yContentDescription.ifEmpty { state.label }
-                            stateDescription =
-                                state.a11yStateDescription
-                                    ?: "${(externalFraction * 100f).roundToInt()}%"
-                            progressBarRangeInfo =
-                                ProgressBarRangeInfo(
-                                    current = state.value,
-                                    range = state.valueRange,
-                                    steps = stepsCount.coerceAtLeast(0),
-                                )
-                            if (!state.isEnabled) {
-                                disabled()
-                            }
-                            setProgress(label = state.label) { targetValue ->
-                                if (!latestState.isEnabled) {
-                                    false
-                                } else {
-                                    val clamped = targetValue.coerceIn(minVal, maxVal)
-                                    latestOnValueChange(clamped)
-                                    latestOnValueChangeFinished()
-                                    true
-                                }
-                            }
-                        }
-                        .pointerInput(state.isEnabled, minVal, maxVal, state.step) {
-                            if (!state.isEnabled) return@pointerInput
-                            detectTapGestures(
-                                onTap = { offset ->
-                                    lastHapticStep = Int.MIN_VALUE
-                                    emitValueForY(offset.y, emitBookendHaptic = true)
-                                    latestOnValueChangeFinished()
-                                }
-                            )
-                        }
-                        .pointerInput(state.isEnabled, minVal, maxVal, state.step) {
-                            if (!state.isEnabled) return@pointerInput
-                            detectVerticalDragGestures(
-                                onDragStart = { offset ->
-                                    isDragging = true
-                                    lastHapticStep = Int.MIN_VALUE
-                                    emitValueForY(offset.y, emitBookendHaptic = false)
-                                },
-                                onVerticalDrag = { change, _ ->
-                                    change.consume()
-                                    emitValueForY(change.position.y, emitBookendHaptic = true)
-                                },
-                                onDragEnd = {
-                                    isDragging = false
-                                    latestOnValueChangeFinished()
-                                },
-                                onDragCancel = {
-                                    isDragging = false
-                                    latestOnValueChangeFinished()
-                                },
-                            )
-                        },
-                contentAlignment = Alignment.BottomCenter,
-            ) {
-                if (animatedFraction > 0.001f) {
-                    Box(
-                        modifier =
-                            Modifier.fillMaxWidth()
-                                .fillMaxHeight(animatedFraction.coerceIn(0f, 1f))
-                                .background(activeTrackColor),
-                        contentAlignment = Alignment.TopCenter,
-                    ) {
-                        if (animatedFraction >= 0.08f) {
-                            Box(
-                                modifier =
-                                    Modifier.padding(top = 8.dp)
-                                        .width(HandleWidth)
-                                        .height(HandleHeight)
-                                        .clip(CircleShape)
-                                        .background(handleColor)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // >= 48dp interactive mute / stream icon button
-            Box(
-                modifier =
-                    Modifier.size(IconButtonTargetSize)
-                        .clip(CircleShape)
-                        .background(iconContainerColor)
-                        .clickable(
-                            enabled = state.isMutable || (!state.isEnabled && state.disabledMessage != null),
-                            role = Role.Button,
-                            onClickLabel = state.a11yClickDescription ?: state.label,
-                            onClick = {
-                                if (!latestState.isEnabled) {
-                                    latestState.disabledMessage?.let { msg ->
-                                        view.announceForAccessibility(msg)
-                                    }
-                                    return@clickable
-                                }
-                                if (isHapticFeedbackEnabled(context)) {
-                                    view.performHapticFeedback(
-                                        HapticFeedbackConstants.CONTEXT_CLICK
+            Slider(
+                value = state.value,
+                valueRange = state.valueRange,
+                onValueChanged = onValueChange,
+                onValueChangeFinished = { onValueChangeFinished() },
+                colors = sliderColors,
+                isEnabled = state.isEnabled,
+                isVertical = true,
+                isReverseDirection = true,
+                stepDistance = state.step,
+                accessibilityParams =
+                    AccessibilityParams(
+                        contentDescription = state.a11yContentDescription.ifEmpty { state.label },
+                        stateDescription = state.a11yStateDescription,
+                    ),
+                track = { sliderState ->
+                    SliderTrack(
+                        sliderState = sliderState,
+                        colors = sliderColors,
+                        isEnabled = state.isEnabled,
+                        isVertical = true,
+                        trackSize = TrackWidth,
+                        trackCornerSize = TrackCornerRadius,
+                        gradient = gradient,
+                        activeTrackEndIcon =
+                            state.icon?.let { icon ->
+                                { iconsState ->
+                                    SliderIcon(
+                                        icon = {
+                                            Icon(
+                                                icon = icon,
+                                                tint = null,
+                                                modifier =
+                                                    Modifier.size(InsideTrackIconSize)
+                                                        .testTag(
+                                                            VolumeSlidersMotionTestKeys
+                                                                .ACTIVE_ICON_TAG
+                                                        ),
+                                            )
+                                        },
+                                        isVisible = !iconsState.isInactiveTrackEndIconVisible,
                                     )
                                 }
-                                latestOnIconTapped()
                             },
-                        ),
+                        inactiveTrackEndIcon =
+                            state.icon?.let { icon ->
+                                { iconsState ->
+                                    SliderIcon(
+                                        icon = {
+                                            Icon(
+                                                icon = icon,
+                                                tint = null,
+                                                modifier =
+                                                    Modifier.size(InsideTrackIconSize)
+                                                        .testTag(
+                                                            VolumeSlidersMotionTestKeys
+                                                                .INACTIVE_ICON_TAG
+                                                        ),
+                                            )
+                                        },
+                                        isVisible = iconsState.isInactiveTrackEndIconVisible,
+                                    )
+                                }
+                            },
+                    )
+                },
+                thumb = { sliderState, interactionSource ->
+                    SliderDefaults.Thumb(
+                        sliderState = sliderState,
+                        interactionSource = interactionSource,
+                        enabled = state.isEnabled,
+                        colors = thumbColors,
+                        thumbSize = DpSize(ThumbWidth, ThumbHeight),
+                    )
+                },
+                haptics =
+                    hapticsViewModelFactory?.let {
+                        Haptics.Enabled(
+                            hapticsViewModelFactory = it,
+                            hapticConfigs =
+                                VolumeHapticsConfigsProvider.continuousConfigs(state.hapticFilter),
+                            orientation = Orientation.Vertical,
+                        )
+                    } ?: Haptics.Disabled,
+                modifier =
+                    Modifier.width(SliderWidth)
+                        .height(SliderHeight)
+                        .borderOnFocus(
+                            color = MaterialTheme.colorScheme.secondary,
+                            cornerSize = CornerSize(TrackCornerRadius),
+                        )
+                        .sysuiResTag(state.label),
+            )
+
+            val canToggleOrAnnounce =
+                state.isMutable || (!state.isEnabled && state.disabledMessage != null)
+            val defaultMuteDescription =
+                if (state.isMutable) {
+                    stringResource(
+                        if (isMuted) {
+                            R.string.volume_panel_unmute_stream
+                        } else {
+                            R.string.volume_panel_mute_stream
+                        },
+                        state.label,
+                    )
+                } else {
+                    state.label
+                }
+            val labelActionDescription =
+                state.a11yClickDescription?.takeIf { it.isNotBlank() } ?: defaultMuteDescription
+
+            Box(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .defaultMinSize(minWidth = LabelTargetMinSize, minHeight = LabelTargetMinSize)
+                        .clip(RoundedCornerShape(12.dp))
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = labelActionDescription
+                            if (canToggleOrAnnounce) {
+                                role = Role.Button
+                            }
+                        }
+                        .then(
+                            if (canToggleOrAnnounce) {
+                                Modifier.clickable(
+                                    role = Role.Button,
+                                    onClickLabel = labelActionDescription,
+                                    onClick = {
+                                        if (!state.isEnabled) {
+                                            state.disabledMessage?.let { msg ->
+                                                view.announceForAccessibility(msg)
+                                            }
+                                            return@clickable
+                                        }
+                                        if (isHapticFeedbackEnabled(context)) {
+                                            view.performHapticFeedback(
+                                                HapticFeedbackConstants.CONTEXT_CLICK
+                                            )
+                                        }
+                                        onIconTapped()
+                                    },
+                                )
+                            } else {
+                                Modifier
+                            }
+                        )
+                        .padding(horizontal = 2.dp, vertical = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                state.icon?.let { icon ->
-                    Icon(
-                        icon = icon,
-                        tint = iconTintColor,
-                        modifier = Modifier.size(IconVisualSize),
-                    )
-                }
+                Text(
+                    text = state.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = labelColor,
+                    maxLines = 2,
+                    softWrap = true,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
             }
-
-            Text(
-                text = state.label,
-                style = MaterialTheme.typography.labelMedium,
-                color = labelColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().clearAndSetSemantics {},
-            )
         }
     }
 }
