@@ -27,6 +27,7 @@ import android.content.Context;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.Bundle;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -47,7 +48,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -80,9 +80,18 @@ public final class ExpressiveScrollToTopHelper {
     /** Maximum virtual accessibility page/scroll actions per Choreographer frame. */
     public static final int A11Y_ACTIONS_PER_FRAME = 4;
 
-    /** Maximum total virtual accessibility page/scroll actions per scroll-to-top burst. */
-    public static final int MAX_A11Y_BURST_STEPS = 32;
+    /** Maximum virtual accessibility actions per frame on Jetpack Compose hosts. */
+    public static final int COMPOSE_A11Y_ACTIONS_PER_FRAME = 1;
 
+    /** Wall-clock time cap for multi-frame virtual accessibility scroll-to-top bursts. */
+    public static final long MAX_A11Y_BURST_DURATION_MS = 1_200L;
+
+    /** Hard safety cap on total virtual accessibility steps per burst. */
+    public static final int MAX_A11Y_BURST_STEPS = 256;
+
+    private static final int MAX_A11Y_STALL_FRAMES = 3;
+    private static final int MAX_SYNC_A11Y_SETTLE_STEPS = 32;
+    private static final int MAX_A11Y_COLLECTION_INSPECT_CHILDREN = 16;
     private static final long SCROLL_Y_ANIM_DURATION_MS = 250L;
     private static final int MAX_SYNC_SCROLL_BY_STEPS = 64;
     private static final int OBFUSCATED_SMOOTH_FRAMES = 8;
@@ -95,12 +104,27 @@ public final class ExpressiveScrollToTopHelper {
     private static final WeakHashMap<View, ExpressiveScrollToTopHelper> sDetachedHelpers =
             new WeakHashMap<>();
 
-    private static final ConcurrentHashMap<Class<?>, ViewReflectionInfo> sViewReflectionCache =
-            new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<Class<?>, LayoutManagerReflectionInfo>
-            sLayoutManagerCache = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<Class<?>, AppBarReflectionInfo> sAppBarCache =
-            new ConcurrentHashMap<>();
+    private static final ClassValue<ViewReflectionInfo> sViewReflectionCache =
+            new ClassValue<ViewReflectionInfo>() {
+                @Override
+                protected ViewReflectionInfo computeValue(Class<?> type) {
+                    return new ViewReflectionInfo(type);
+                }
+            };
+    private static final ClassValue<LayoutManagerReflectionInfo> sLayoutManagerCache =
+            new ClassValue<LayoutManagerReflectionInfo>() {
+                @Override
+                protected LayoutManagerReflectionInfo computeValue(Class<?> type) {
+                    return new LayoutManagerReflectionInfo(type);
+                }
+            };
+    private static final ClassValue<AppBarReflectionInfo> sAppBarCache =
+            new ClassValue<AppBarReflectionInfo>() {
+                @Override
+                protected AppBarReflectionInfo computeValue(Class<?> type) {
+                    return new AppBarReflectionInfo(type);
+                }
+            };
 
     private final LongSupplier mUptimeMillisSupplier;
     private final BooleanSupplier mAnimatorsEnabledSupplier;
@@ -312,17 +336,26 @@ public final class ExpressiveScrollToTopHelper {
 
         if (candidateSnap != null) {
             final View v = candidateSnap.targetRef.get();
-            if (!animatorsEnabled && v != null) {
-                if (v instanceof ScrollView) {
-                    final ScrollView sv = (ScrollView) v;
-                    // Calling smoothScrollBy(0, 0) within ANIMATED_SCROLL_GAP aborts mScroller.
-                    sv.smoothScrollBy(0, 0);
-                    sv.scrollTo(sv.getScrollX(), 0);
-                } else if (v instanceof AbsListView) {
-                    final AbsListView lv = (AbsListView) v;
-                    lv.smoothScrollBy(0, 0);
-                    lv.setSelectionFromTop(0, 0);
+            if (v instanceof ScrollView) {
+                final ScrollView sv = (ScrollView) v;
+                final ScrollUndoSnapshot snapRef = candidateSnap;
+                if (animatorsEnabled && sv.getScrollY() == 0 && candidateSnap.savedScrollY > 0) {
+                    // ScrollView.smoothScrollBy snaps immediately when within ANIMATED_SCROLL_GAP
+                    // (250ms) of mLastScroll; restore pre-dispatch scrollY so the tracked
+                    // ObjectAnimator animates smoothly from the saved position.
+                    sv.setScrollY(candidateSnap.savedScrollY);
                 }
+                animateOrSnapScrollY(
+                        sv,
+                        getViewReflectionInfo(sv.getClass()),
+                        sv.getScrollX(),
+                        0,
+                        animatorsEnabled,
+                        () -> snapRef.settledAtTop = true);
+            } else if (!animatorsEnabled && v instanceof AbsListView) {
+                final AbsListView lv = (AbsListView) v;
+                lv.smoothScrollBy(0, 0);
+                lv.setSelectionFromTop(0, 0);
             }
             if (appBarCollapsed && appBar != null) {
                 setAppBarExpanded(appBar, true, animatorsEnabled);
@@ -419,11 +452,12 @@ public final class ExpressiveScrollToTopHelper {
         final boolean appBarCollapsed = appBar != null && isAppBarCollapsed(appBar);
 
         boolean scrolled = wv.pageUp(true);
+        boolean usedFallbackAnim = false;
         if (!animatorsEnabled && wv.getScrollY() > 0) {
             wv.scrollTo(prevScrollX, 0);
             scrolled = true;
         } else if (!scrolled && prevScrollY > 0) {
-            animateOrSnapScrollY(wv, null, prevScrollX, 0, animatorsEnabled);
+            usedFallbackAnim = true;
             scrolled = true;
         }
 
@@ -434,10 +468,18 @@ public final class ExpressiveScrollToTopHelper {
         if (appBarCollapsed) {
             setAppBarExpanded(appBar, true, animatorsEnabled);
         }
+        ScrollUndoSnapshot snap = null;
         if (prevScrollY > 0 || appBarCollapsed) {
-            mUndoSnapshot = ScrollUndoSnapshot.forWebView(
+            snap = ScrollUndoSnapshot.forWebView(
                     wv, prevScrollX, prevScrollY, appBar, appBarCollapsed,
                     !animatorsEnabled, now);
+            mUndoSnapshot = snap;
+        }
+        if (usedFallbackAnim) {
+            final ScrollUndoSnapshot snapRef = snap;
+            animateOrSnapScrollY(
+                    wv, null, prevScrollX, 0, animatorsEnabled,
+                    snapRef != null ? () -> snapRef.settledAtTop = true : null);
         }
         return true;
     }
@@ -510,13 +552,14 @@ public final class ExpressiveScrollToTopHelper {
         final View appBar = findAssociatedAppBarLayout(v, rootView);
         final boolean appBarCollapsed = appBar != null && isAppBarCollapsed(appBar);
 
-        animateOrSnapScrollY(v, info, prevScrollX, 0, animatorsEnabled);
+        final ScrollUndoSnapshot snap = ScrollUndoSnapshot.forScrollY(
+                v, prevScrollX, prevScrollY, appBar, appBarCollapsed, !animatorsEnabled, now);
+        mUndoSnapshot = snap;
+        animateOrSnapScrollY(v, info, prevScrollX, 0, animatorsEnabled,
+                () -> snap.settledAtTop = true);
         if (appBarCollapsed) {
             setAppBarExpanded(appBar, true, animatorsEnabled);
         }
-
-        mUndoSnapshot = ScrollUndoSnapshot.forScrollY(
-                v, prevScrollX, prevScrollY, appBar, appBarCollapsed, !animatorsEnabled, now);
         return true;
     }
 
@@ -669,14 +712,43 @@ public final class ExpressiveScrollToTopHelper {
             return false;
         }
 
-        final int firstBatchLimit = animatorsEnabled
-                ? A11Y_ACTIONS_PER_FRAME : MAX_A11Y_BURST_STEPS;
+        final ViewReflectionInfo info = getViewReflectionInfo(hostView.getClass());
+        final boolean isCompose = info.isComposeView;
+
+        // Fast path: when ACTION_SCROLL_TO_POSITION is exposed (e.g., indexed virtual lists/grids),
+        // jump directly to (0, 0) in a single IPC instead of bursting.
+        final AccessibilityNodeInfo initialNode =
+                provider.createAccessibilityNodeInfo(best.virtualViewId);
+        if (initialNode != null
+                && hasAction(initialNode, R.id.accessibilityActionScrollToPosition)) {
+            final int[] savedRowCol = findFirstVisibleVirtualRowCol(provider, initialNode);
+            final Bundle args = new Bundle();
+            args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_ROW_INT, 0);
+            args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_COLUMN_INT, 0);
+            if (provider.performAction(
+                    best.virtualViewId, R.id.accessibilityActionScrollToPosition, args)) {
+                final ScrollUndoSnapshot snap = ScrollUndoSnapshot.forVirtualNodePosition(
+                        hostView, best.virtualViewId, savedRowCol[0], savedRowCol[1],
+                        best.hadScrollBackward, isCompose, true /* settledAtTop */, now);
+                mUndoSnapshot = snap;
+                return true;
+            }
+        }
+
+        // Compose virtual scroll actions run asynchronously via coroutines, so dispatch at most
+        // 1 action per Choreographer frame on AndroidComposeView to avoid over-counting undo steps.
+        // Under reduced motion, chunk across frames rather than firing a single-frame 32-IPC spike.
+        final int actionsPerFrame = isCompose
+                ? COMPOSE_A11Y_ACTIONS_PER_FRAME : A11Y_ACTIONS_PER_FRAME;
+        final long initialSig = initialNode != null
+                ? computeVirtualNodeProgressSignature(provider, initialNode) : 0L;
         int stepsExecuted = 0;
         boolean usedPageUp = false;
 
-        for (int i = 0; i < firstBatchLimit; i++) {
-            final AccessibilityNodeInfo current =
-                    provider.createAccessibilityNodeInfo(best.virtualViewId);
+        for (int i = 0; i < actionsPerFrame; i++) {
+            final AccessibilityNodeInfo current = (i == 0 && initialNode != null)
+                    ? initialNode
+                    : provider.createAccessibilityNodeInfo(best.virtualViewId);
             if (current == null || !canVirtualNodeScrollUp(current, best.hadScrollBackward)) {
                 break;
             }
@@ -710,19 +782,28 @@ public final class ExpressiveScrollToTopHelper {
 
         final ScrollUndoSnapshot snap = ScrollUndoSnapshot.forVirtualNode(
                 hostView, best.virtualViewId, stepsExecuted, usedPageUp,
-                best.hadScrollBackward, reachedTop, now);
+                best.hadScrollBackward, isCompose, reachedTop, now);
         mUndoSnapshot = snap;
 
-        if (!reachedTop && animatorsEnabled) {
-            startVirtualScrollUpBurst(provider, snap);
+        if (!reachedTop) {
+            final long postFirstSig = computeVirtualNodeProgressSignature(provider, afterFirstBatch);
+            startVirtualScrollUpBurst(provider, snap, actionsPerFrame, now,
+                    isCompose ? initialSig : postFirstSig);
         }
         return true;
     }
 
     private void startVirtualScrollUpBurst(
-            @NonNull AccessibilityNodeProvider provider, @NonNull ScrollUndoSnapshot snap) {
+            @NonNull AccessibilityNodeProvider provider,
+            @NonNull ScrollUndoSnapshot snap,
+            int actionsPerFrame,
+            long burstStartUptimeMs,
+            long lastProgressSignature) {
         cancelInFlightAnimations();
         final InFlightBurst burst = new InFlightBurst() {
+            private long mLastSignature = lastProgressSignature;
+            private int mStallFrames = 0;
+
             @Override
             public void run() {
                 if (!mRunning) {
@@ -733,8 +814,41 @@ public final class ExpressiveScrollToTopHelper {
                     mRunning = false;
                     return;
                 }
+                final long frameNow = mUptimeMillisSupplier.getAsLong();
+                if ((frameNow - burstStartUptimeMs) >= MAX_A11Y_BURST_DURATION_MS
+                        || snap.savedSteps >= MAX_A11Y_BURST_STEPS) {
+                    mRunning = false;
+                    snap.settledAtTop = true;
+                    return;
+                }
+
+                // For Compose hosts where the previous frame's action ran asynchronously, check
+                // whether the virtual node state changed since the prior frame before dispatching.
+                if (snap.virtualIsCompose) {
+                    final AccessibilityNodeInfo pre =
+                            provider.createAccessibilityNodeInfo(snap.virtualViewId);
+                    if (pre == null || !canVirtualNodeScrollUp(pre, snap.virtualHadScrollBackward)) {
+                        mRunning = false;
+                        snap.settledAtTop = true;
+                        return;
+                    }
+                    final long preSig = computeVirtualNodeProgressSignature(provider, pre);
+                    if (preSig != 0L && preSig == mLastSignature) {
+                        mStallFrames++;
+                        if (mStallFrames >= MAX_A11Y_STALL_FRAMES) {
+                            mRunning = false;
+                            snap.settledAtTop = true;
+                            return;
+                        }
+                    } else {
+                        mStallFrames = 0;
+                        mLastSignature = preSig;
+                    }
+                }
+
                 boolean keepGoing = true;
-                for (int i = 0; i < A11Y_ACTIONS_PER_FRAME
+                final long beforeSig = mLastSignature;
+                for (int i = 0; i < actionsPerFrame
                         && snap.savedSteps < MAX_A11Y_BURST_STEPS; i++) {
                     final AccessibilityNodeInfo current =
                             provider.createAccessibilityNodeInfo(snap.virtualViewId);
@@ -766,7 +880,9 @@ public final class ExpressiveScrollToTopHelper {
                     snap.expiresAtUptimeMillis = mUptimeMillisSupplier.getAsLong() + UNDO_WINDOW_MS;
                 }
 
-                if (!keepGoing || snap.savedSteps >= MAX_A11Y_BURST_STEPS) {
+                if (!keepGoing || snap.savedSteps >= MAX_A11Y_BURST_STEPS
+                        || (mUptimeMillisSupplier.getAsLong() - burstStartUptimeMs)
+                                >= MAX_A11Y_BURST_DURATION_MS) {
                     mRunning = false;
                     snap.settledAtTop = true;
                     return;
@@ -778,6 +894,20 @@ public final class ExpressiveScrollToTopHelper {
                     mRunning = false;
                     snap.settledAtTop = true;
                     return;
+                }
+                if (!snap.virtualIsCompose) {
+                    final long afterSig = computeVirtualNodeProgressSignature(provider, check);
+                    if (afterSig != 0L && afterSig == beforeSig) {
+                        mStallFrames++;
+                        if (mStallFrames >= MAX_A11Y_STALL_FRAMES) {
+                            mRunning = false;
+                            snap.settledAtTop = true;
+                            return;
+                        }
+                    } else {
+                        mStallFrames = 0;
+                        mLastSignature = afterSig;
+                    }
                 }
                 mFrameScheduler.accept(this);
             }
@@ -808,7 +938,9 @@ public final class ExpressiveScrollToTopHelper {
                 return target instanceof AbsListView && isAbsListViewAtTop((AbsListView) target);
             case A11Y_VIRTUAL_NODE: {
                 final AccessibilityNodeProvider provider = target.getAccessibilityNodeProvider();
-                if (provider == null || snap.savedSteps <= 0) {
+                if (provider == null
+                        || (!snap.virtualUsedScrollToPosition && snap.savedSteps <= 0)
+                        || (snap.virtualUsedScrollToPosition && snap.savedPosition <= 0)) {
                     return false;
                 }
                 final AccessibilityNodeInfo node =
@@ -876,8 +1008,20 @@ public final class ExpressiveScrollToTopHelper {
             }
             case A11Y_VIRTUAL_NODE: {
                 final AccessibilityNodeProvider provider = target.getAccessibilityNodeProvider();
-                if (provider != null && snap.savedSteps > 0) {
-                    restored = restoreVirtualNodePosition(target, provider, snap, animate);
+                if (provider != null) {
+                    if (snap.virtualUsedScrollToPosition && snap.savedPosition > 0) {
+                        final Bundle args = new Bundle();
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_ROW_INT,
+                                snap.savedPosition);
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_COLUMN_INT,
+                                snap.savedOffsetPx);
+                        restored = provider.performAction(
+                                snap.virtualViewId,
+                                R.id.accessibilityActionScrollToPosition,
+                                args);
+                    } else if (snap.savedSteps > 0) {
+                        restored = restoreVirtualNodePosition(target, provider, snap, animate);
+                    }
                 }
                 break;
             }
@@ -896,8 +1040,9 @@ public final class ExpressiveScrollToTopHelper {
             @NonNull AccessibilityNodeProvider provider,
             @NonNull ScrollUndoSnapshot snap,
             boolean animate) {
-        final int syncSteps = animate
-                ? Math.min(snap.savedSteps, A11Y_ACTIONS_PER_FRAME) : snap.savedSteps;
+        final int actionsPerFrame = snap.virtualIsCompose
+                ? COMPOSE_A11Y_ACTIONS_PER_FRAME : A11Y_ACTIONS_PER_FRAME;
+        final int syncSteps = Math.min(snap.savedSteps, actionsPerFrame);
         int executed = 0;
         for (int i = 0; i < syncSteps; i++) {
             if (!performDownwardVirtualStep(provider, snap.virtualViewId, snap.virtualUsedPageUp)) {
@@ -909,8 +1054,9 @@ public final class ExpressiveScrollToTopHelper {
             return false;
         }
         final int remaining = snap.savedSteps - executed;
-        if (remaining > 0 && animate) {
+        if (remaining > 0) {
             final WeakReference<View> hostRef = new WeakReference<>(hostView);
+            final long startMs = mUptimeMillisSupplier.getAsLong();
             final InFlightBurst burst = new InFlightBurst() {
                 private int mLeft = remaining;
 
@@ -920,11 +1066,13 @@ public final class ExpressiveScrollToTopHelper {
                         return;
                     }
                     final View h = hostRef.get();
-                    if (h == null || !h.canReceivePointerEvents()) {
+                    if (h == null || !h.canReceivePointerEvents()
+                            || (mUptimeMillisSupplier.getAsLong() - startMs)
+                                    >= MAX_A11Y_BURST_DURATION_MS) {
                         mRunning = false;
                         return;
                     }
-                    for (int i = 0; i < A11Y_ACTIONS_PER_FRAME && mLeft > 0; i++) {
+                    for (int i = 0; i < actionsPerFrame && mLeft > 0; i++) {
                         if (!performDownwardVirtualStep(
                                 provider, snap.virtualViewId, snap.virtualUsedPageUp)) {
                             mRunning = false;
@@ -1016,7 +1164,23 @@ public final class ExpressiveScrollToTopHelper {
             case A11Y_VIRTUAL_NODE: {
                 final AccessibilityNodeProvider provider = target.getAccessibilityNodeProvider();
                 if (provider != null) {
-                    while (snap.savedSteps < MAX_A11Y_BURST_STEPS) {
+                    final AccessibilityNodeInfo initial =
+                            provider.createAccessibilityNodeInfo(snap.virtualViewId);
+                    if (initial != null
+                            && hasAction(initial, R.id.accessibilityActionScrollToPosition)) {
+                        final Bundle args = new Bundle();
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_ROW_INT, 0);
+                        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_COLUMN_INT, 0);
+                        if (provider.performAction(
+                                snap.virtualViewId,
+                                R.id.accessibilityActionScrollToPosition,
+                                args)) {
+                            break;
+                        }
+                    }
+                    final int maxStepLimit = Math.min(
+                            MAX_A11Y_BURST_STEPS, snap.savedSteps + MAX_SYNC_A11Y_SETTLE_STEPS);
+                    while (snap.savedSteps < maxStepLimit) {
                         final AccessibilityNodeInfo node =
                                 provider.createAccessibilityNodeInfo(snap.virtualViewId);
                         if (node == null
@@ -1042,32 +1206,34 @@ public final class ExpressiveScrollToTopHelper {
             int targetX,
             int targetY,
             boolean animate) {
-        if (!animate) {
-            if (target instanceof ScrollView) {
-                ((ScrollView) target).smoothScrollBy(0, 0);
-            } else if (info != null && info.smoothScrollBy != null) {
-                try {
-                    info.smoothScrollBy.invoke(target, 0, 0);
-                } catch (Throwable ignored) {
-                }
-            }
-            target.scrollTo(targetX, targetY);
-            return;
-        }
+        animateOrSnapScrollY(target, info, targetX, targetY, animate, null);
+    }
 
+    private void animateOrSnapScrollY(
+            @NonNull View target,
+            @Nullable ViewReflectionInfo info,
+            int targetX,
+            int targetY,
+            boolean animate,
+            @Nullable Runnable onSettled) {
+        cancelActiveAnimator();
         if (target instanceof ScrollView) {
-            ((ScrollView) target).smoothScrollTo(targetX, targetY);
-            return;
-        }
-        if (info != null && info.smoothScrollTo != null) {
+            ((ScrollView) target).smoothScrollBy(0, 0);
+        } else if (info != null && info.smoothScrollBy != null) {
             try {
-                info.smoothScrollTo.invoke(target, targetX, targetY);
-                return;
+                info.smoothScrollBy.invoke(target, 0, 0);
             } catch (Throwable ignored) {
             }
         }
 
-        cancelActiveAnimator();
+        if (!animate || target.getScrollY() == targetY) {
+            target.scrollTo(targetX, targetY);
+            if (onSettled != null) {
+                onSettled.run();
+            }
+            return;
+        }
+
         if (target.getScrollX() != targetX) {
             target.setScrollX(targetX);
         }
@@ -1076,10 +1242,20 @@ public final class ExpressiveScrollToTopHelper {
         anim.setDuration(SCROLL_Y_ANIM_DURATION_MS);
         anim.setInterpolator(sDecelerateInterpolator);
         anim.addListener(new AnimatorListenerAdapter() {
+            private boolean mCanceled = false;
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                mCanceled = true;
+            }
+
             @Override
             public void onAnimationEnd(Animator animation) {
                 if (mActiveAnimatorRef != null && mActiveAnimatorRef.get() == animation) {
                     mActiveAnimatorRef = null;
+                }
+                if (!mCanceled && onSettled != null) {
+                    onSettled.run();
                 }
             }
         });
@@ -1490,36 +1666,18 @@ public final class ExpressiveScrollToTopHelper {
 
     @NonNull
     private static ViewReflectionInfo getViewReflectionInfo(@NonNull Class<?> cls) {
-        ViewReflectionInfo cached = sViewReflectionCache.get(cls);
-        if (cached != null) {
-            return cached;
-        }
-        cached = new ViewReflectionInfo(cls);
-        sViewReflectionCache.putIfAbsent(cls, cached);
-        return cached;
+        return sViewReflectionCache.get(cls);
     }
 
     @NonNull
     private static LayoutManagerReflectionInfo getLayoutManagerReflectionInfo(
             @NonNull Class<?> cls) {
-        LayoutManagerReflectionInfo cached = sLayoutManagerCache.get(cls);
-        if (cached != null) {
-            return cached;
-        }
-        cached = new LayoutManagerReflectionInfo(cls);
-        sLayoutManagerCache.putIfAbsent(cls, cached);
-        return cached;
+        return sLayoutManagerCache.get(cls);
     }
 
     @NonNull
     private static AppBarReflectionInfo getAppBarReflectionInfo(@NonNull Class<?> cls) {
-        AppBarReflectionInfo cached = sAppBarCache.get(cls);
-        if (cached != null) {
-            return cached;
-        }
-        cached = new AppBarReflectionInfo(cls);
-        sAppBarCache.putIfAbsent(cls, cached);
-        return cached;
+        return sAppBarCache.get(cls);
     }
 
     // =========================================================================================
@@ -1608,6 +1766,56 @@ public final class ExpressiveScrollToTopHelper {
         return false;
     }
 
+    @NonNull
+    private static int[] findFirstVisibleVirtualRowCol(
+            @NonNull AccessibilityNodeProvider provider, @NonNull AccessibilityNodeInfo node) {
+        final int[] result = new int[] { -1, 0 };
+        final int childCount = Math.min(node.getChildCount(), MAX_A11Y_COLLECTION_INSPECT_CHILDREN);
+        for (int i = 0; i < childCount; i++) {
+            final int childId = AccessibilityNodeInfo.getVirtualDescendantId(node.getChildId(i));
+            final AccessibilityNodeInfo child = provider.createAccessibilityNodeInfo(childId);
+            if (child == null) {
+                continue;
+            }
+            final AccessibilityNodeInfo.CollectionItemInfo itemInfo = child.getCollectionItemInfo();
+            if (itemInfo != null && itemInfo.getRowIndex() >= 0) {
+                result[0] = itemInfo.getRowIndex();
+                result[1] = Math.max(0, itemInfo.getColumnIndex());
+                return result;
+            }
+        }
+        return result;
+    }
+
+    private static long computeVirtualNodeProgressSignature(
+            @NonNull AccessibilityNodeProvider provider, @NonNull AccessibilityNodeInfo node) {
+        long sig = 0L;
+        final AccessibilityNodeInfo.RangeInfo range = node.getRangeInfo();
+        if (range != null) {
+            sig = 31L * sig + Float.floatToIntBits(range.getCurrent());
+        }
+        final int childCount = node.getChildCount();
+        if (childCount > 0) {
+            final int firstChildId =
+                    AccessibilityNodeInfo.getVirtualDescendantId(node.getChildId(0));
+            sig = 31L * sig + firstChildId;
+            final AccessibilityNodeInfo firstChild =
+                    provider.createAccessibilityNodeInfo(firstChildId);
+            if (firstChild != null) {
+                final Rect r = new Rect();
+                firstChild.getBoundsInScreen(r);
+                sig = 31L * sig + r.top;
+                sig = 31L * sig + r.bottom;
+                final AccessibilityNodeInfo.CollectionItemInfo item =
+                        firstChild.getCollectionItemInfo();
+                if (item != null) {
+                    sig = 31L * sig + item.getRowIndex();
+                }
+            }
+        }
+        return sig;
+    }
+
     // =========================================================================================
     // System Settings & Choreographer Utilities
     // =========================================================================================
@@ -1672,6 +1880,8 @@ public final class ExpressiveScrollToTopHelper {
         int savedSteps;
         boolean virtualUsedPageUp;
         final boolean virtualHadScrollBackward;
+        final boolean virtualIsCompose;
+        final boolean virtualUsedScrollToPosition;
         final boolean appBarWasCollapsed;
         final long triggeredAtUptimeMillis;
         long expiresAtUptimeMillis;
@@ -1690,6 +1900,8 @@ public final class ExpressiveScrollToTopHelper {
                 int savedSteps,
                 boolean virtualUsedPageUp,
                 boolean virtualHadScrollBackward,
+                boolean virtualIsCompose,
+                boolean virtualUsedScrollToPosition,
                 boolean appBarWasCollapsed,
                 boolean settledAtTop,
                 long now) {
@@ -1705,6 +1917,8 @@ public final class ExpressiveScrollToTopHelper {
             this.savedSteps = savedSteps;
             this.virtualUsedPageUp = virtualUsedPageUp;
             this.virtualHadScrollBackward = virtualHadScrollBackward;
+            this.virtualIsCompose = virtualIsCompose;
+            this.virtualUsedScrollToPosition = virtualUsedScrollToPosition;
             this.appBarWasCollapsed = appBarWasCollapsed;
             this.settledAtTop = settledAtTop;
             this.triggeredAtUptimeMillis = now;
@@ -1716,7 +1930,7 @@ public final class ExpressiveScrollToTopHelper {
                 boolean appBarCollapsed, boolean settledAtTop, long now) {
             return new ScrollUndoSnapshot(
                     target, appBar, TargetKind.SCROLL_Y, scrollX, scrollY, 0, 0, 0,
-                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, appBarCollapsed,
+                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, false, false, appBarCollapsed,
                     settledAtTop, now);
         }
 
@@ -1725,7 +1939,7 @@ public final class ExpressiveScrollToTopHelper {
                 boolean appBarCollapsed, boolean settledAtTop, long now) {
             return new ScrollUndoSnapshot(
                     target, appBar, TargetKind.WEB_VIEW, scrollX, scrollY, 0, 0, 0,
-                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, appBarCollapsed,
+                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, false, false, appBarCollapsed,
                     settledAtTop, now);
         }
 
@@ -1734,7 +1948,7 @@ public final class ExpressiveScrollToTopHelper {
                 boolean appBarCollapsed, boolean settledAtTop, long now) {
             return new ScrollUndoSnapshot(
                     target, appBar, TargetKind.ABS_LIST_VIEW, 0, 0, pos, offsetPx, 0,
-                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, appBarCollapsed,
+                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, false, false, appBarCollapsed,
                     settledAtTop, now);
         }
 
@@ -1743,7 +1957,7 @@ public final class ExpressiveScrollToTopHelper {
                 boolean appBarCollapsed, boolean settledAtTop, long now) {
             return new ScrollUndoSnapshot(
                     target, appBar, TargetKind.RECYCLER_VIEW, 0, 0, pos, offsetPx, 0,
-                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, appBarCollapsed,
+                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, false, false, appBarCollapsed,
                     settledAtTop, now);
         }
 
@@ -1753,22 +1967,32 @@ public final class ExpressiveScrollToTopHelper {
             return new ScrollUndoSnapshot(
                     target, appBar, TargetKind.COMPUTE_OFFSET_SCROLL_BY, 0, 0, 0, 0,
                     scrolledDeltaPx, AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false,
-                    appBarCollapsed, settledAtTop, now);
+                    false, false, appBarCollapsed, settledAtTop, now);
         }
 
         static ScrollUndoSnapshot forAppBarOnly(View appBar, boolean settledAtTop, long now) {
             return new ScrollUndoSnapshot(
                     appBar, null, TargetKind.APP_BAR_ONLY, 0, 0, 0, 0, 0,
-                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, true,
+                    AccessibilityNodeProvider.HOST_VIEW_ID, 0, false, false, false, false, true,
                     settledAtTop, now);
         }
 
         static ScrollUndoSnapshot forVirtualNode(
                 View hostView, int virtualId, int steps, boolean usedPageUp,
-                boolean hadScrollBackward, boolean settledAtTop, long now) {
+                boolean hadScrollBackward, boolean isCompose, boolean settledAtTop, long now) {
             return new ScrollUndoSnapshot(
                     hostView, null, TargetKind.A11Y_VIRTUAL_NODE, 0, 0, 0, 0, 0,
-                    virtualId, steps, usedPageUp, hadScrollBackward, false, settledAtTop, now);
+                    virtualId, steps, usedPageUp, hadScrollBackward, isCompose, false,
+                    false, settledAtTop, now);
+        }
+
+        static ScrollUndoSnapshot forVirtualNodePosition(
+                View hostView, int virtualId, int savedRow, int savedCol,
+                boolean hadScrollBackward, boolean isCompose, boolean settledAtTop, long now) {
+            return new ScrollUndoSnapshot(
+                    hostView, null, TargetKind.A11Y_VIRTUAL_NODE, 0, 0, savedRow, savedCol, 0,
+                    virtualId, 0, false, hadScrollBackward, isCompose, true,
+                    false, settledAtTop, now);
         }
     }
 

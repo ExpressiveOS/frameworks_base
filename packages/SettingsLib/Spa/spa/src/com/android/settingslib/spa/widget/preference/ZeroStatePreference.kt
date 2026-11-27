@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import com.android.settingslib.spa.framework.theme.settingsCardBackground
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -69,7 +70,7 @@ fun ZeroStatePreference(icon: ImageVector, text: String = "", description: Strin
         Box(
             modifier =
                 Modifier.clip(clip)
-                    .background(MaterialTheme.colorScheme.surfaceBright)
+                    .background(MaterialTheme.colorScheme.settingsCardBackground)
                     .size(160.dp),
             contentAlignment = Alignment.Center,
         ) {

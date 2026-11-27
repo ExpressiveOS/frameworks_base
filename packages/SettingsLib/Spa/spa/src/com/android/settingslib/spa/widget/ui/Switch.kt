@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
@@ -46,6 +47,9 @@ internal fun SettingsSwitch(
             modifier = Modifier.contentDescription(contentDescription),
             enabled = changeable(),
             interactionSource = interactionSource,
+            colors = SwitchDefaults.colors(
+                checkedIconColor = MaterialTheme.colorScheme.primary,
+            ),
             thumbContent =
                 if (isSpaExpressiveEnabled) {
                     if (checked) {

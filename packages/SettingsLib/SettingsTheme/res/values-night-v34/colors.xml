@@ -77,4 +77,6 @@
     <color name="settingslib_materialColorSurfaceContainerLowest">@android:color/system_surface_container_lowest_dark</color>
     <color name="settingslib_materialColorSurfaceContainerHigh">@android:color/system_surface_container_high_dark</color>
     <color name="settingslib_materialColorSurfaceContainerHighest">@android:color/system_surface_container_highest_dark</color>
+    <color name="settingslib_expressive_page_background">@color/settingslib_materialColorSurface</color>
+    <color name="settingslib_expressive_card_background">@color/settingslib_materialColorSurfaceContainerHigh</color>
 </resources>

@@ -113,6 +113,7 @@ public class ThemeOverlayApplier implements Dumpable {
     @VisibleForTesting
     static final String OVERLAY_CATEGORY_ICON_THEME_PICKER =
             "android.theme.customization.icon_pack.themepicker";
+    @VisibleForTesting
     static final String OVERLAY_CATEGORY_NAVBAR =
             "android.theme.customization.navbar";
     @VisibleForTesting
@@ -196,14 +197,15 @@ public class ThemeOverlayApplier implements Dumpable {
                 OVERLAY_CATEGORY_SYSTEM_PALETTE, OVERLAY_CATEGORY_ACCENT_COLOR,
                 OVERLAY_CATEGORY_DYNAMIC_COLOR,
                 OVERLAY_CATEGORY_FONT, OVERLAY_CATEGORY_SHAPE,
-                OVERLAY_CATEGORY_ICON_ANDROID));
+                OVERLAY_CATEGORY_ICON_ANDROID,
+                OVERLAY_CATEGORY_ICON_SIGNAL, OVERLAY_CATEGORY_ICON_WIFI));
         mTargetPackageToCategories.put(SYSUI_PACKAGE,
                 Sets.newHashSet(OVERLAY_CATEGORY_ICON_SYSUI, OVERLAY_CATEGORY_BACK_GESTURE,
                         OVERLAY_CATEGORY_CHARGING_ANIMATION, OVERLAY_CATEGORY_BATTERY_STYLE));
         mTargetPackageToCategories.put(SETTINGS_PACKAGE,
                 Sets.newHashSet(OVERLAY_CATEGORY_ICON_SETTINGS));
         mTargetPackageToCategories.put(mLauncherPackage,
-                Sets.newHashSet(OVERLAY_CATEGORY_ICON_LAUNCHER));
+                Sets.newHashSet(OVERLAY_CATEGORY_ICON_LAUNCHER, OVERLAY_CATEGORY_NAVBAR));
         mTargetPackageToCategories.put(mThemePickerPackage,
                 Sets.newHashSet(OVERLAY_CATEGORY_ICON_THEME_PICKER));
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ACCENT_COLOR, ANDROID_PACKAGE);
@@ -211,16 +213,16 @@ public class ThemeOverlayApplier implements Dumpable {
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_FONT, ANDROID_PACKAGE);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_SHAPE, ANDROID_PACKAGE);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_ANDROID, ANDROID_PACKAGE);
+        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_SIGNAL, ANDROID_PACKAGE);
+        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_WIFI, ANDROID_PACKAGE);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_SYSUI, SYSUI_PACKAGE);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_BACK_GESTURE, SYSUI_PACKAGE);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_CHARGING_ANIMATION, SYSUI_PACKAGE);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_BATTERY_STYLE, SYSUI_PACKAGE);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_SETTINGS, SETTINGS_PACKAGE);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_LAUNCHER, mLauncherPackage);
+        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_NAVBAR, mLauncherPackage);
         mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_THEME_PICKER, mThemePickerPackage);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_NAVBAR, SYSUI_PACKAGE);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_SIGNAL, SYSUI_PACKAGE);
-        mCategoryToTargetPackage.put(OVERLAY_CATEGORY_ICON_WIFI, SYSUI_PACKAGE);
 
         dumpManager.registerDumpable(TAG, this);
     }

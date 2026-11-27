@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright (C) 2024 The Android Open Source Project
+  SPDX-FileCopyrightText: 2026 The ExpressiveOS Project
+  SPDX-License-Identifier: Apache-2.0
+-->
+
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true" android:color="@color/settingslib_materialColorSurfaceContainerHighest"/>
+    <item android:state_selected="true" android:color="@color/settingslib_materialColorSurfaceContainerHighest"/>
+    <item android:state_activated="true" android:color="@color/settingslib_materialColorSurfaceContainerHighest"/>
+    <item android:color="@color/settingslib_materialColorSurfaceContainerHigh"/> <!-- not selected -->
+</selector>

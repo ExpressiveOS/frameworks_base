@@ -83,4 +83,6 @@
     <color name="settingslib_colorContentLevel_medium">@color/m3_ref_palette_yellow10</color>
     <color name="settingslib_colorBackgroundLevel_low">@color/m3_ref_palette_green50</color>
     <color name="settingslib_colorContentLevel_low">@color/m3_ref_palette_green100</color>
+    <color name="settingslib_expressive_page_background">@color/settingslib_materialColorSurfaceContainer</color>
+    <color name="settingslib_expressive_card_background">@color/settingslib_materialColorSurfaceBright</color>
 </resources>

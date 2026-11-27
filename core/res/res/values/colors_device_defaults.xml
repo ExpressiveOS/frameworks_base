@@ -50,8 +50,8 @@
     <!-- Background colors -->
     <color name="background_device_default_dark">@color/system_neutral1_900</color>
     <color name="background_device_default_light">@color/system_neutral1_50</color>
-    <color name="background_floating_device_default_dark">@color/background_device_default_dark</color>
-    <color name="background_floating_device_default_light">@color/background_device_default_light</color>
+    <color name="background_floating_device_default_dark">@color/system_surface_container_high_dark</color>
+    <color name="background_floating_device_default_light">@color/system_surface_container_high_light</color>
 
     <!-- Surface colors -->
     <color name="surface_header_dark">@color/system_neutral1_700</color>
@@ -66,8 +66,8 @@
     <color name="foreground_device_default_dark">@color/text_color_primary_device_default_dark</color>
 
     <!-- Error color -->
-    <color name="error_color_device_default_dark">@color/error_color_material_dark</color>
-    <color name="error_color_device_default_light">@color/error_color_material_light</color>
+    <color name="error_color_device_default_dark">@color/system_error_dark</color>
+    <color name="error_color_device_default_light">@color/system_error_light</color>
 
     <color name="list_divider_color_light">@color/system_neutral1_200</color>
     <color name="list_divider_color_dark">@color/system_neutral1_700</color>

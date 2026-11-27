@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import com.android.settingslib.spa.framework.theme.settingsCardBackground
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,7 +53,7 @@ internal fun TwoTargetPreference(
             Modifier.fillMaxWidth()
                 .then(
                     if (isSpaExpressiveEnabled)
-                        Modifier.background(MaterialTheme.colorScheme.surfaceBright)
+                        Modifier.background(MaterialTheme.colorScheme.settingsCardBackground)
                     else Modifier
                 )
                 .padding(end = SettingsDimension.itemPaddingEnd),

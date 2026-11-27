@@ -345,14 +345,17 @@ public class ExpressiveScrollToTopHelperTest {
             verify(rv, never()).smoothScrollToPosition(anyInt());
             verify(appBar).setExpanded(true, false);
 
-            // 3. Compose AccessibilityNodeProvider finishes all 9 steps synchronously in frame 0.
+            // 3. Virtual AccessibilityNodeProvider chunks across frames under reduced motion
+            // rather than firing a single-frame IPC spike, then drains cleanly to page 0.
             mHelper.reset();
             final HapticTrackingRoot composeRoot = new HapticTrackingRoot(mContext, 400, 800);
             final FakeComposeHostView composeHost = new FakeComposeHostView(mContext, 9);
             composeRoot.addView(composeHost, new FrameLayout.LayoutParams(400, 800));
             measureAndLayout(composeRoot, 400, 800);
             assertTrue(mHelper.handleScrollToTop(composeRoot, 200));
-            assertTrue(mScheduledFrames.isEmpty());
+            assertEquals(5, composeHost.getCurrentPage());
+            assertFalse(mScheduledFrames.isEmpty());
+            drainScheduledFrames();
             assertEquals(0, composeHost.getCurrentPage());
         });
     }
@@ -397,13 +400,120 @@ public class ExpressiveScrollToTopHelperTest {
         });
     }
 
+
+    @Test(timeout = 10_000)
+    public void testAndroidComposeView_dispatchesOneActionPerFrameAndSupportsDeepList() {
+        getInstrumentation().runOnMainSync(() -> {
+            final HapticTrackingRoot root = new HapticTrackingRoot(mContext, 400, 800);
+            final FakeAndroidComposeView composeView = new FakeAndroidComposeView(mContext, 40);
+            root.addView(composeView, new FrameLayout.LayoutParams(400, 800));
+            measureAndLayout(root, 400, 800);
+
+            assertEquals(40, composeView.getCurrentPage());
+            assertTrue(mHelper.handleScrollToTop(root, 200));
+            assertEquals(1, root.mClockTickCount);
+            // AndroidComposeView dispatches strictly 1 action per Choreographer frame.
+            assertEquals(39, composeView.getCurrentPage());
+            assertEquals(1, composeView.getPageUpCount());
+
+            drainScheduledFrames();
+            assertEquals(0, composeView.getCurrentPage());
+            assertEquals(40, composeView.getPageUpCount());
+
+            // 5-second jump-back restores all 40 pages at 1 action per frame.
+            mNowUptimeMs.addAndGet(600L);
+            assertTrue(mHelper.handleScrollToTop(root, 200));
+            assertEquals(1, composeView.getCurrentPage());
+            drainScheduledFrames();
+            assertEquals(40, composeView.getCurrentPage());
+            assertEquals(2, root.mClockTickCount);
+        });
+    }
+
+    @Test(timeout = 10_000)
+    public void testVirtualAccessibilityNodeProvider_burstDurationCapStopsCleanly() {
+        getInstrumentation().runOnMainSync(() -> {
+            final HapticTrackingRoot root = new HapticTrackingRoot(mContext, 400, 800);
+            final FakeAndroidComposeView composeView = new FakeAndroidComposeView(mContext, 200);
+            root.addView(composeView, new FrameLayout.LayoutParams(400, 800));
+            measureAndLayout(root, 400, 800);
+
+            assertTrue(mHelper.handleScrollToTop(root, 200));
+            assertEquals(199, composeView.getCurrentPage());
+            assertFalse(mScheduledFrames.isEmpty());
+
+            // Advance past MAX_A11Y_BURST_DURATION_MS; next scheduled frame terminates cleanly.
+            mNowUptimeMs.addAndGet(ExpressiveScrollToTopHelper.MAX_A11Y_BURST_DURATION_MS + 16L);
+            final Runnable nextFrame = mScheduledFrames.poll();
+            nextFrame.run();
+            assertTrue(mScheduledFrames.isEmpty());
+            assertEquals(199, composeView.getCurrentPage());
+        });
+    }
+
+    @Test(timeout = 10_000)
+    public void testVirtualAccessibilityNodeProvider_scrollToPositionFastPathAndUndo() {
+        getInstrumentation().runOnMainSync(() -> {
+            final HapticTrackingRoot root = new HapticTrackingRoot(mContext, 400, 800);
+            final FakeIndexedVirtualHostView indexedHost =
+                    new FakeIndexedVirtualHostView(mContext, 85, 2);
+            root.addView(indexedHost, new FrameLayout.LayoutParams(400, 800));
+            measureAndLayout(root, 400, 800);
+
+            assertTrue(mHelper.handleScrollToTop(root, 200));
+            assertEquals(0, indexedHost.getCurrentRow());
+            assertEquals(0, indexedHost.getCurrentCol());
+            assertTrue(mScheduledFrames.isEmpty());
+            assertEquals(1, indexedHost.getScrollToPositionCount());
+
+            // 5-second jump-back restores saved (row=85, col=2) via ACTION_SCROLL_TO_POSITION.
+            mNowUptimeMs.addAndGet(700L);
+            assertTrue(mHelper.handleScrollToTop(root, 200));
+            assertEquals(85, indexedHost.getCurrentRow());
+            assertEquals(2, indexedHost.getCurrentCol());
+            assertEquals(2, indexedHost.getScrollToPositionCount());
+            assertEquals(2, root.mClockTickCount);
+        });
+    }
+
+    @Test(timeout = 10_000)
+    public void testScrollView_tracksAnimatorDuringMidFlightTapAndPreservesUndo() {
+        getInstrumentation().runOnMainSync(() -> {
+            final HapticTrackingRoot root = new HapticTrackingRoot(mContext, 400, 800);
+            final ScrollView scrollView = new ScrollView(mContext);
+            final View tallChild = new View(mContext);
+            tallChild.setMinimumWidth(400);
+            tallChild.setMinimumHeight(3000);
+            scrollView.addView(tallChild, new FrameLayout.LayoutParams(400, 3000));
+            root.addView(scrollView, new FrameLayout.LayoutParams(400, 800));
+            measureAndLayout(root, 400, 800);
+
+            scrollView.scrollTo(0, 900);
+            assertTrue(mHelper.handleScrollToTop(root, 200));
+            assertEquals(1, root.mClockTickCount);
+
+            // Second tap while animator is running settles instantly at 0 and keeps undo intact.
+            mNowUptimeMs.addAndGet(100L);
+            assertFalse(mHelper.handleScrollToTop(root, 200));
+            assertEquals(0, scrollView.getScrollY());
+            assertEquals(1, root.mClockTickCount);
+
+            // Third tap within 5s restores saved scrollY=900 cleanly under reduced motion.
+            mAnimatorsEnabled.set(false);
+            mNowUptimeMs.addAndGet(600L);
+            assertTrue(mHelper.handleScrollToTop(root, 200));
+            assertEquals(900, scrollView.getScrollY());
+            assertEquals(2, root.mClockTickCount);
+        });
+    }
+
     // =========================================================================================
     // Test Helpers & Doubles
     // =========================================================================================
 
     private void drainScheduledFrames() {
         int guard = 0;
-        while (!mScheduledFrames.isEmpty() && guard++ < 64) {
+        while (!mScheduledFrames.isEmpty() && guard++ < 128) {
             mNowUptimeMs.addAndGet(16L);
             final Runnable frame = mScheduledFrames.poll();
             if (frame != null) {
@@ -784,6 +894,185 @@ public class ExpressiveScrollToTopHelperTest {
 
         int getPageDownCount() {
             return mPageDownCount;
+        }
+
+        @Override
+        public AccessibilityNodeProvider getAccessibilityNodeProvider() {
+            return mProvider;
+        }
+    }
+
+    /**
+     * Simulates Jetpack Compose's {@code AndroidComposeView} with progress range reporting.
+     */
+    private static final class FakeAndroidComposeView extends View {
+        private static final int VIRTUAL_LAZY_COLUMN_ID = 77;
+        private final int mTotalPages;
+        private int mCurrentPage;
+        private int mPageUpCount = 0;
+
+        private final AccessibilityNodeProvider mProvider = new AccessibilityNodeProvider() {
+            @Override
+            public AccessibilityNodeInfo createAccessibilityNodeInfo(int virtualViewId) {
+                if (virtualViewId == HOST_VIEW_ID) {
+                    final AccessibilityNodeInfo root =
+                            new AccessibilityNodeInfo(FakeAndroidComposeView.this);
+                    root.setVisibleToUser(true);
+                    root.setBoundsInScreen(new Rect(0, 0, 400, 800));
+                    root.addChild(FakeAndroidComposeView.this, VIRTUAL_LAZY_COLUMN_ID);
+                    return root;
+                }
+                if (virtualViewId == VIRTUAL_LAZY_COLUMN_ID) {
+                    final AccessibilityNodeInfo node = new AccessibilityNodeInfo(
+                            FakeAndroidComposeView.this, VIRTUAL_LAZY_COLUMN_ID);
+                    node.setVisibleToUser(true);
+                    node.setScrollable(true);
+                    node.setBoundsInScreen(new Rect(0, 80, 400, 800));
+                    node.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(
+                            AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT,
+                            0f, mTotalPages, mCurrentPage));
+                    if (mCurrentPage > 0) {
+                        node.addAction(
+                                AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);
+                        node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_UP);
+                    }
+                    if (mCurrentPage < mTotalPages) {
+                        node.addAction(
+                                AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);
+                        node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_DOWN);
+                    }
+                    return node;
+                }
+                return null;
+            }
+
+            @Override
+            public boolean performAction(int virtualViewId, int action, Bundle arguments) {
+                if (virtualViewId != VIRTUAL_LAZY_COLUMN_ID) {
+                    return false;
+                }
+                if (action == R.id.accessibilityActionPageUp
+                        || action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) {
+                    if (mCurrentPage > 0) {
+                        mCurrentPage--;
+                        mPageUpCount++;
+                        return true;
+                    }
+                    return false;
+                }
+                if (action == R.id.accessibilityActionPageDown
+                        || action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) {
+                    if (mCurrentPage < mTotalPages) {
+                        mCurrentPage++;
+                        return true;
+                    }
+                    return false;
+                }
+                return false;
+            }
+        };
+
+        FakeAndroidComposeView(Context context, int initialPage) {
+            super(context);
+            mTotalPages = Math.max(initialPage, 40);
+            mCurrentPage = initialPage;
+        }
+
+        int getCurrentPage() {
+            return mCurrentPage;
+        }
+
+        int getPageUpCount() {
+            return mPageUpCount;
+        }
+
+        @Override
+        public AccessibilityNodeProvider getAccessibilityNodeProvider() {
+            return mProvider;
+        }
+    }
+
+    /**
+     * Simulates an indexed virtual list exposing {@code ACTION_SCROLL_TO_POSITION}.
+     */
+    private static final class FakeIndexedVirtualHostView extends View {
+        private static final int VIRTUAL_LIST_ID = 91;
+        private static final int FIRST_CHILD_ID = 92;
+
+        private int mCurrentRow;
+        private int mCurrentCol;
+        private int mScrollToPositionCount = 0;
+
+        private final AccessibilityNodeProvider mProvider = new AccessibilityNodeProvider() {
+            @Override
+            public AccessibilityNodeInfo createAccessibilityNodeInfo(int virtualViewId) {
+                if (virtualViewId == HOST_VIEW_ID) {
+                    final AccessibilityNodeInfo root =
+                            new AccessibilityNodeInfo(FakeIndexedVirtualHostView.this);
+                    root.setVisibleToUser(true);
+                    root.setBoundsInScreen(new Rect(0, 0, 400, 800));
+                    root.addChild(FakeIndexedVirtualHostView.this, VIRTUAL_LIST_ID);
+                    return root;
+                }
+                if (virtualViewId == VIRTUAL_LIST_ID) {
+                    final AccessibilityNodeInfo node = new AccessibilityNodeInfo(
+                            FakeIndexedVirtualHostView.this, VIRTUAL_LIST_ID);
+                    node.setVisibleToUser(true);
+                    node.setScrollable(true);
+                    node.setBoundsInScreen(new Rect(0, 80, 400, 800));
+                    node.addChild(FakeIndexedVirtualHostView.this, FIRST_CHILD_ID);
+                    node.addAction(
+                            AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_TO_POSITION);
+                    if (mCurrentRow > 0) {
+                        node.addAction(
+                                AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);
+                        node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_UP);
+                    }
+                    return node;
+                }
+                if (virtualViewId == FIRST_CHILD_ID) {
+                    final AccessibilityNodeInfo item = new AccessibilityNodeInfo(
+                            FakeIndexedVirtualHostView.this, FIRST_CHILD_ID);
+                    item.setVisibleToUser(true);
+                    item.setCollectionItemInfo(AccessibilityNodeInfo.CollectionItemInfo.obtain(
+                            mCurrentRow, 1, mCurrentCol, 1, false));
+                    return item;
+                }
+                return null;
+            }
+
+            @Override
+            public boolean performAction(int virtualViewId, int action, Bundle arguments) {
+                if (virtualViewId == VIRTUAL_LIST_ID
+                        && action == R.id.accessibilityActionScrollToPosition
+                        && arguments != null) {
+                    mCurrentRow = Math.max(0,
+                            arguments.getInt(AccessibilityNodeInfo.ACTION_ARGUMENT_ROW_INT, 0));
+                    mCurrentCol = Math.max(0,
+                            arguments.getInt(AccessibilityNodeInfo.ACTION_ARGUMENT_COLUMN_INT, 0));
+                    mScrollToPositionCount++;
+                    return true;
+                }
+                return false;
+            }
+        };
+
+        FakeIndexedVirtualHostView(Context context, int initialRow, int initialCol) {
+            super(context);
+            mCurrentRow = initialRow;
+            mCurrentCol = initialCol;
+        }
+
+        int getCurrentRow() {
+            return mCurrentRow;
+        }
+
+        int getCurrentCol() {
+            return mCurrentCol;
+        }
+
+        int getScrollToPositionCount() {
+            return mScrollToPositionCount;
         }
 
         @Override

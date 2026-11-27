@@ -34,6 +34,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
@@ -91,6 +92,7 @@ import org.mockito.MockitoAnnotations;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.Executor;
 
 @SmallTest
@@ -1131,6 +1133,60 @@ public class ThemeOverlayControllerTest extends SysuiTestCase {
                         + DynamicColors.getFixedColorsMapped().size()
                         + DynamicColors.getCustomColorsMapped().size() * 2)
         ).setResourceValue(any(String.class), eq(TYPE_INT_COLOR_ARGB8), anyInt(), eq(null));
+    }
+
+    @Test(timeout = 10_000)
+    public void createDynamicOverlay_blackThemeEnabled_injectsMonotonicAmoledDarkRamp() {
+        when(mSecureSettings.getIntForUser(
+                eq(Settings.Secure.EOS_BLACK_THEME), eq(0), anyInt())).thenReturn(1);
+
+        WallpaperColors mainColors = new WallpaperColors(Color.valueOf(Color.RED),
+                Color.valueOf(Color.BLUE), null);
+        mColorsListener.getValue().onColorsChanged(mainColors, WallpaperManager.FLAG_SYSTEM,
+                USER_SYSTEM);
+        ArgumentCaptor<FabricatedOverlay[]> themeOverlays =
+                ArgumentCaptor.forClass(FabricatedOverlay[].class);
+
+        verify(mThemeOverlayApplier)
+                .applyCurrentUserOverlays(
+                        any(), themeOverlays.capture(), anyInt(), any(), any(), eq(true));
+
+        FabricatedOverlay dynamic = themeOverlays.getValue()[2];
+        ArgumentCaptor<String> resNames = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Integer> resValues = ArgumentCaptor.forClass(Integer.class);
+        verify(dynamic, atLeastOnce()).setResourceValue(
+                resNames.capture(), eq(TYPE_INT_COLOR_ARGB8), resValues.capture(), eq(null));
+
+        // Capture final winning token value for every resource written to the dynamic overlay.
+        Map<String, Integer> finalColors = new HashMap<>();
+        List<String> names = resNames.getAllValues();
+        List<Integer> values = resValues.getAllValues();
+        for (int i = 0; i < names.size(); i++) {
+            finalColors.put(names.get(i), values.get(i));
+        }
+
+        assertThat(finalColors.get("android:color/system_background_dark"))
+                .isEqualTo(0xFF000000);
+        assertThat(finalColors.get("android:color/system_surface_dark"))
+                .isEqualTo(0xFF000000);
+        assertThat(finalColors.get("android:color/system_surface_dim_dark"))
+                .isEqualTo(0xFF000000);
+        assertThat(finalColors.get("android:color/system_surface_container_lowest_dark"))
+                .isEqualTo(0xFF000000);
+        assertThat(finalColors.get("android:color/system_surface_container_low_dark"))
+                .isEqualTo(0xFF0D0D0D);
+        assertThat(finalColors.get("android:color/system_surface_container_dark"))
+                .isEqualTo(0xFF141414);
+        assertThat(finalColors.get("android:color/system_surface_container_high_dark"))
+                .isEqualTo(0xFF1C1C1C);
+        assertThat(finalColors.get("android:color/system_surface_container_highest_dark"))
+                .isEqualTo(0xFF242424);
+        assertThat(finalColors.get("android:color/system_surface_bright_dark"))
+                .isEqualTo(0xFF2C2C2C);
+        assertThat(finalColors.get("android:color/system_outline_dark"))
+                .isEqualTo(0xFF8E9099);
+        assertThat(finalColors.get("android:color/system_outline_variant_dark"))
+                .isEqualTo(0xFF3A3C42);
     }
 
     private enum TestColorSource {

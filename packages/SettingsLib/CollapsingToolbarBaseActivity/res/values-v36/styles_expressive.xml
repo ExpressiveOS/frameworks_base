@@ -32,7 +32,7 @@
         <item name="extraMultilineHeightEnabled">true</item>
     </style>
     <style name="SettingsLibCollapsingToolbarLayoutStyle.Expressive">
-        <item name="contentScrim">@color/settingslib_materialColorSurfaceContainer</item>
+        <item name="contentScrim">@color/settingslib_expressive_page_background</item>
     </style>
 
     <style name="SettingsLibCollapsingToolbarTitle.Collapsed" parent="@style/TextAppearance.SettingsLib.TitleLarge.Emphasized">

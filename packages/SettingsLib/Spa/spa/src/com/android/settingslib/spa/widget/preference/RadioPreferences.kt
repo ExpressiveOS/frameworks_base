@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
+import com.android.settingslib.spa.framework.theme.settingsCardBackground
 import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.IntState
@@ -66,7 +67,7 @@ fun Radio2(
     onIdSelected: (id: Int) -> Unit,
 ) {
     val selected = option.id == selectedId
-    val surfaceBright = MaterialTheme.colorScheme.surfaceBright
+    val surfaceBright = MaterialTheme.colorScheme.settingsCardBackground
     Row(
         modifier =
             Modifier.fillMaxWidth()

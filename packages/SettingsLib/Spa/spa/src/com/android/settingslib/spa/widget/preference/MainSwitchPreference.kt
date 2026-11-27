@@ -36,9 +36,15 @@ fun MainSwitchPreference(model: SwitchPreferenceModel) {
 
 @Composable
 internal fun MainSwitchPreference(model: SwitchPreferenceModel, modifier: Modifier) {
+    val isChecked = model.checked() == true
     Surface(
         modifier = Modifier.padding(SettingsSpace.small1),
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color =
+            if (isChecked) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor =
+            if (isChecked) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurface,
         shape =
             if (isSpaExpressiveEnabled) SettingsShape.CornerFull
             else SettingsShape.CornerExtraLarge1,

@@ -130,6 +130,17 @@ import javax.inject.Inject;
 @SysUISingleton
 public class ThemeOverlayController implements CoreStartable, Dumpable {
     protected static final String TAG = "ThemeOverlayController";
+
+    // Strictly monotonic AMOLED dark surface ramp injected into the dynamic FabricatedOverlay
+    // when EOS_BLACK_THEME is active (matching AndroidBlackTheme).
+    private static final int BLACK_THEME_SURFACE_DARK = 0xFF000000;
+    private static final int BLACK_THEME_SURFACE_CONTAINER_LOW_DARK = 0xFF0D0D0D;
+    private static final int BLACK_THEME_SURFACE_CONTAINER_DARK = 0xFF141414;
+    private static final int BLACK_THEME_SURFACE_CONTAINER_HIGH_DARK = 0xFF1C1C1C;
+    private static final int BLACK_THEME_SURFACE_CONTAINER_HIGHEST_DARK = 0xFF242424;
+    private static final int BLACK_THEME_SURFACE_BRIGHT_DARK = 0xFF2C2C2C;
+    private static final int BLACK_THEME_OUTLINE_DARK = 0xFF8E9099;
+    private static final int BLACK_THEME_OUTLINE_VARIANT_DARK = 0xFF3A3C42;
     private static final boolean DEBUG = false;
 
     private static final String KEY_COLOR_PALETTE_VERSION = "global_color_palette_version";
@@ -865,6 +876,39 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
         assignColorsToOverlay(mDynamicOverlay, DynamicColors.getFixedColorsMapped(), true);
         // Custom Colors
         assignColorsToOverlay(mDynamicOverlay, DynamicColors.getCustomColorsMapped(), false);
+
+        if (isBlackThemeEnabled(mUserTracker.getUserId())) {
+            applyBlackThemeDarkRamp(mDynamicOverlay);
+        }
+    }
+
+    private boolean isBlackThemeEnabled(int userId) {
+        return mSecureSettings.getIntForUser(Settings.Secure.EOS_BLACK_THEME, 0, userId) == 1;
+    }
+
+    private static void applyBlackThemeDarkRamp(FabricatedOverlay overlay) {
+        overlay.setResourceValue("android:color/system_background_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_DARK, null);
+        overlay.setResourceValue("android:color/system_surface_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_DARK, null);
+        overlay.setResourceValue("android:color/system_surface_dim_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_DARK, null);
+        overlay.setResourceValue("android:color/system_surface_container_lowest_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_DARK, null);
+        overlay.setResourceValue("android:color/system_surface_container_low_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_CONTAINER_LOW_DARK, null);
+        overlay.setResourceValue("android:color/system_surface_container_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_CONTAINER_DARK, null);
+        overlay.setResourceValue("android:color/system_surface_container_high_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_CONTAINER_HIGH_DARK, null);
+        overlay.setResourceValue("android:color/system_surface_container_highest_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_CONTAINER_HIGHEST_DARK, null);
+        overlay.setResourceValue("android:color/system_surface_bright_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_SURFACE_BRIGHT_DARK, null);
+        overlay.setResourceValue("android:color/system_outline_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_OUTLINE_DARK, null);
+        overlay.setResourceValue("android:color/system_outline_variant_dark",
+                TYPE_INT_COLOR_ARGB8, BLACK_THEME_OUTLINE_VARIANT_DARK, null);
     }
 
     private static int applyHueShift(int argb, double degrees) {
@@ -1028,6 +1072,10 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
                     ? mResources : mContext.createContextAsUser(userHandle, 0).getResources();
             Resources.Theme theme = mContext.getTheme();
             MaterialDynamicColors dynamicColors = new MaterialDynamicColors();
+            final boolean useBlackTheme = isBlackThemeEnabled(mUserTracker.getUserId());
+            final int expectedOutlineVariantDark = useBlackTheme
+                    ? BLACK_THEME_OUTLINE_VARIANT_DARK
+                    : dynamicColors.outlineVariant().getArgb(mDarkColorScheme.getMaterialScheme());
             if (!(res.getColor(android.R.color.system_accent1_500, theme)
                     == mColorScheme.getAccent1().getS500()
                     && res.getColor(android.R.color.system_accent2_500, theme)
@@ -1039,7 +1087,7 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
                     && res.getColor(android.R.color.system_neutral2_500, theme)
                     == mColorScheme.getNeutral2().getS500()
                     && res.getColor(android.R.color.system_outline_variant_dark, theme)
-                    == dynamicColors.outlineVariant().getArgb(mDarkColorScheme.getMaterialScheme())
+                    == expectedOutlineVariantDark
                     && res.getColor(android.R.color.system_outline_variant_light, theme)
                     == dynamicColors.outlineVariant().getArgb(mLightColorScheme.getMaterialScheme())
                     && res.getColor(android.R.color.system_primary_container_dark, theme)
@@ -1114,9 +1162,7 @@ public class ThemeOverlayController implements CoreStartable, Dumpable {
             }
         }
 
-        final boolean useBlackTheme = Settings.Secure.getIntForUser(
-                mContext.getContentResolver(), Settings.Secure.EOS_BLACK_THEME,
-                0, currentUser) == 1;
+        final boolean useBlackTheme = isBlackThemeEnabled(currentUser);
 
         // Compatibility with legacy themes, where full packages were defined, instead of just
         // colors.

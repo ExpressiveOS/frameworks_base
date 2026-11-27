@@ -25,6 +25,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 
 @Composable
@@ -50,4 +51,8 @@ val ColorScheme.surfaceTone: Color
 
 /** The overall background color in Settings. */
 val ColorScheme.settingsBackground: Color
-    get() = surfaceContainer
+    get() = if (surface.luminance() < 0.5f) surface else surfaceContainer
+
+/** The elevated card surface color in Settings. */
+val ColorScheme.settingsCardBackground: Color
+    get() = if (surface.luminance() < 0.5f) surfaceContainerHigh else surfaceBright

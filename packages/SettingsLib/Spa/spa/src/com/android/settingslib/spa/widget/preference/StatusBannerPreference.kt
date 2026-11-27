@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GppMaybe
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
+import com.android.settingslib.spa.framework.theme.settingsCardBackground
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -95,7 +96,7 @@ fun StatusBannerPreference(
 ) {
     SettingsCard {
         SettingsCardContent {
-            val surfaceBright = MaterialTheme.colorScheme.surfaceBright
+            val surfaceBright = MaterialTheme.colorScheme.settingsCardBackground
             Row(
                 modifier =
                     Modifier

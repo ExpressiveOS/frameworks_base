@@ -16,7 +16,7 @@
 
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_enabled="false"
-        android:alpha="?android:attr/disabledAlpha"
+        android:alpha="0.68"
         android:color="@color/settingslib_text_color_secondary_device_default"/>
     <item android:color="@color/settingslib_text_color_secondary_device_default"/>
 </selector>

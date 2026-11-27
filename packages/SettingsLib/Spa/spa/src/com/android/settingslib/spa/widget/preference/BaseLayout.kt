@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import com.android.settingslib.spa.framework.theme.settingsCardBackground
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,7 +60,7 @@ internal fun BaseLayout(
     paddingVertical: Dp = SettingsDimension.itemPaddingVertical,
     widget: @Composable () -> Unit = {},
 ) {
-    val surfaceBright = MaterialTheme.colorScheme.surfaceBright
+    val surfaceBright = MaterialTheme.colorScheme.settingsCardBackground
     Row(
         modifier =
             modifier

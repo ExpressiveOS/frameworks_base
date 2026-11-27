@@ -22,8 +22,14 @@ import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_FO
 import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_ICON_ANDROID;
 import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_ICON_LAUNCHER;
 import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_ICON_SETTINGS;
+import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_BACK_GESTURE;
+import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_BATTERY_STYLE;
+import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_CHARGING_ANIMATION;
+import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_ICON_SIGNAL;
 import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_ICON_SYSUI;
 import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_ICON_THEME_PICKER;
+import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_ICON_WIFI;
+import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_NAVBAR;
 import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_SHAPE;
 import static com.android.systemui.theme.ThemeOverlayApplier.OVERLAY_CATEGORY_SYSTEM_PALETTE;
 import static com.android.systemui.theme.ThemeOverlayApplier.SETTINGS_PACKAGE;
@@ -137,13 +143,33 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
                         createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_SHAPE,
                                 ANDROID_PACKAGE, OVERLAY_CATEGORY_SHAPE, true),
                         createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_ICON_ANDROID,
-                                ANDROID_PACKAGE, OVERLAY_CATEGORY_ICON_ANDROID, true)));
+                                ANDROID_PACKAGE, OVERLAY_CATEGORY_ICON_ANDROID, true),
+                        createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_ICON_SIGNAL,
+                                ANDROID_PACKAGE, OVERLAY_CATEGORY_ICON_SIGNAL, false),
+                        createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_ICON_SIGNAL,
+                                ANDROID_PACKAGE, OVERLAY_CATEGORY_ICON_SIGNAL, true),
+                        createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_ICON_WIFI,
+                                ANDROID_PACKAGE, OVERLAY_CATEGORY_ICON_WIFI, false),
+                        createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_ICON_WIFI,
+                                ANDROID_PACKAGE, OVERLAY_CATEGORY_ICON_WIFI, true)));
         when(mOverlayManager.getOverlayInfosForTarget(SYSUI_PACKAGE, UserHandle.SYSTEM))
                 .thenReturn(Lists.newArrayList(
                         createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_ICON_SYSUI,
                                 SYSUI_PACKAGE, OVERLAY_CATEGORY_ICON_SYSUI, false),
                         createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_ICON_SYSUI,
-                                SYSUI_PACKAGE, OVERLAY_CATEGORY_ICON_SYSUI, true)));
+                                SYSUI_PACKAGE, OVERLAY_CATEGORY_ICON_SYSUI, true),
+                        createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_BACK_GESTURE,
+                                SYSUI_PACKAGE, OVERLAY_CATEGORY_BACK_GESTURE, false),
+                        createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_BACK_GESTURE,
+                                SYSUI_PACKAGE, OVERLAY_CATEGORY_BACK_GESTURE, true),
+                        createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_CHARGING_ANIMATION,
+                                SYSUI_PACKAGE, OVERLAY_CATEGORY_CHARGING_ANIMATION, false),
+                        createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_CHARGING_ANIMATION,
+                                SYSUI_PACKAGE, OVERLAY_CATEGORY_CHARGING_ANIMATION, true),
+                        createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_BATTERY_STYLE,
+                                SYSUI_PACKAGE, OVERLAY_CATEGORY_BATTERY_STYLE, false),
+                        createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_BATTERY_STYLE,
+                                SYSUI_PACKAGE, OVERLAY_CATEGORY_BATTERY_STYLE, true)));
         when(mOverlayManager.getOverlayInfosForTarget(SETTINGS_PACKAGE, UserHandle.SYSTEM))
                 .thenReturn(Lists.newArrayList(
                         createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_ICON_SETTINGS,
@@ -155,7 +181,11 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
                         createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_ICON_LAUNCHER,
                                 LAUNCHER_PACKAGE, OVERLAY_CATEGORY_ICON_LAUNCHER, false),
                         createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_ICON_LAUNCHER,
-                                LAUNCHER_PACKAGE, OVERLAY_CATEGORY_ICON_LAUNCHER, true)));
+                                LAUNCHER_PACKAGE, OVERLAY_CATEGORY_ICON_LAUNCHER, true),
+                        createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_NAVBAR,
+                                LAUNCHER_PACKAGE, OVERLAY_CATEGORY_NAVBAR, false),
+                        createOverlayInfo(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_NAVBAR,
+                                LAUNCHER_PACKAGE, OVERLAY_CATEGORY_NAVBAR, true)));
         when(mOverlayManager.getOverlayInfosForTarget(THEMEPICKER_PACKAGE, UserHandle.SYSTEM))
                 .thenReturn(Lists.newArrayList(
                         createOverlayInfo(TEST_DISABLED_PREFIX + OVERLAY_CATEGORY_ICON_THEME_PICKER,
@@ -179,7 +209,7 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
     @Test
     public void allCategoriesSpecified_allEnabledExclusively() {
         mManager.applyCurrentUserOverlays(ALL_CATEGORIES_MAP, null, TEST_USER.getIdentifier(),
-                TEST_USER_HANDLES, null);
+                TEST_USER_HANDLES, null, false);
         verify(mOverlayManager).commit(any());
 
         for (OverlayIdentifier overlayPackage : ALL_CATEGORIES_MAP.values()) {
@@ -191,7 +221,7 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
     @Test
     public void allCategoriesSpecified_sysuiCategoriesAlsoAppliedToSysuiUser() {
         mManager.applyCurrentUserOverlays(ALL_CATEGORIES_MAP, null, TEST_USER.getIdentifier(),
-                TEST_USER_HANDLES, null);
+                TEST_USER_HANDLES, null, false);
 
         for (Map.Entry<String, OverlayIdentifier> entry : ALL_CATEGORIES_MAP.entrySet()) {
             if (SYSTEM_USER_CATEGORIES.contains(entry.getKey())) {
@@ -208,7 +238,7 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
     public void allCategoriesSpecified_enabledForAllUserHandles() {
         Set<UserHandle> userHandles = Sets.newHashSet(TEST_USER_HANDLES);
         mManager.applyCurrentUserOverlays(ALL_CATEGORIES_MAP, null, TEST_USER.getIdentifier(),
-                userHandles, null);
+                userHandles, null, false);
 
         for (OverlayIdentifier overlayPackage : ALL_CATEGORIES_MAP.values()) {
             verify(mTransactionBuilder).setEnabled(eq(overlayPackage), eq(true),
@@ -225,7 +255,7 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
 
         Set<UserHandle> userHandles = Sets.newHashSet(TEST_USER_HANDLES);
         mManager.applyCurrentUserOverlays(ALL_CATEGORIES_MAP, null, TEST_USER.getIdentifier(),
-                userHandles, null);
+                userHandles, null, false);
 
         for (OverlayIdentifier overlayPackage : ALL_CATEGORIES_MAP.values()) {
             verify(mTransactionBuilder, never()).setEnabled(eq(overlayPackage), eq(true),
@@ -239,7 +269,7 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
                 mock(FabricatedOverlay.class)
         };
         mManager.applyCurrentUserOverlays(ALL_CATEGORIES_MAP, pendingCreation,
-                TEST_USER.getIdentifier(), TEST_USER_HANDLES, null);
+                TEST_USER.getIdentifier(), TEST_USER_HANDLES, null, false);
 
         for (FabricatedOverlay overlay : pendingCreation) {
             verify(mTransactionBuilder).registerFabricatedOverlay(eq(overlay));
@@ -253,7 +283,7 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
         categoryToPackage.remove(OVERLAY_CATEGORY_ICON_ANDROID);
 
         mManager.applyCurrentUserOverlays(categoryToPackage, null, TEST_USER.getIdentifier(),
-                TEST_USER_HANDLES, null);
+                TEST_USER_HANDLES, null, false);
 
         for (OverlayIdentifier overlayPackage : categoryToPackage.values()) {
             verify(mTransactionBuilder).setEnabled(eq(overlayPackage), eq(true),
@@ -270,7 +300,7 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
     @Test
     public void zeroCategoriesSpecified_allDisabled() {
         mManager.applyCurrentUserOverlays(Maps.newArrayMap(), null, TEST_USER.getIdentifier(),
-                TEST_USER_HANDLES, null);
+                TEST_USER_HANDLES, null, false);
 
         for (String category : THEME_CATEGORIES) {
             verify(mTransactionBuilder).setEnabled(
@@ -285,7 +315,7 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
         categoryToPackage.put("blah.category", new OverlayIdentifier("com.example.blah.category"));
 
         mManager.applyCurrentUserOverlays(categoryToPackage, null, TEST_USER.getIdentifier(),
-                TEST_USER_HANDLES, null);
+                TEST_USER_HANDLES, null, false);
 
         verify(mTransactionBuilder, never()).setEnabled(
                 eq(new OverlayIdentifier("com.example.blah.category")), eq(false),
@@ -293,6 +323,27 @@ public class ThemeOverlayApplierTest extends SysuiTestCase {
         verify(mTransactionBuilder, never()).setEnabled(
                 eq(new OverlayIdentifier("com.example.blah.category")), eq(true),
                 eq(TEST_USER.getIdentifier()));
+    }
+
+    @Test
+    public void signalWifiNavbarCategories_switchedOrReset_previousOverlaysDisabled() {
+        Map<String, OverlayIdentifier> categoryToPackage = new HashMap<>(ALL_CATEGORIES_MAP);
+        categoryToPackage.remove(OVERLAY_CATEGORY_ICON_SIGNAL);
+        categoryToPackage.remove(OVERLAY_CATEGORY_ICON_WIFI);
+        categoryToPackage.remove(OVERLAY_CATEGORY_NAVBAR);
+
+        mManager.applyCurrentUserOverlays(categoryToPackage, null, TEST_USER.getIdentifier(),
+                TEST_USER_HANDLES, null, false);
+
+        verify(mTransactionBuilder).setEnabled(
+                eq(new OverlayIdentifier(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_ICON_SIGNAL)),
+                eq(false), eq(TEST_USER.getIdentifier()));
+        verify(mTransactionBuilder).setEnabled(
+                eq(new OverlayIdentifier(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_ICON_WIFI)),
+                eq(false), eq(TEST_USER.getIdentifier()));
+        verify(mTransactionBuilder).setEnabled(
+                eq(new OverlayIdentifier(TEST_ENABLED_PREFIX + OVERLAY_CATEGORY_NAVBAR)),
+                eq(false), eq(TEST_USER.getIdentifier()));
     }
 
     private static OverlayInfo createOverlayInfo(String packageName, String targetPackageName,
