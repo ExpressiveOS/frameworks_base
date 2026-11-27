@@ -16,6 +16,7 @@
 
 package com.android.systemui.volume.dialog.settings.ui.binder
 
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.ImageButton
 import com.android.app.tracing.coroutines.launchInTraced
@@ -46,6 +47,9 @@ constructor(
 
         viewModel.icon.onEach { button.setImageDrawable(it) }.launchInTraced("VDSBVB#icon", this)
 
-        button.setOnClickListener { viewModel.onButtonClicked() }
+        button.setOnClickListener { buttonView ->
+            buttonView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            viewModel.onButtonClicked()
+        }
     }
 }

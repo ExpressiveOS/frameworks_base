@@ -108,6 +108,12 @@ class SquigglyProgress : Drawable() {
                 lastFrameTime = SystemClock.uptimeMillis()
             }
             heightAnimator?.cancel()
+            if (!ValueAnimator.areAnimatorsEnabled()) {
+                heightAnimator = null
+                heightFraction = 0f
+                invalidateSelf()
+                return
+            }
             heightAnimator =
                 ValueAnimator.ofFloat(heightFraction, if (animate) 1f else 0f).apply {
                     if (animate) {
@@ -138,7 +144,10 @@ class SquigglyProgress : Drawable() {
     }
 
     private fun drawTraced(canvas: Canvas) {
-        if (animate) {
+        val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
+        if (!animatorsEnabled) {
+            heightFraction = 0f
+        } else if (animate) {
             invalidateSelf()
             val now = SystemClock.uptimeMillis()
             phaseOffset += (now - lastFrameTime) / 1000f * phaseSpeed

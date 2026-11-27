@@ -33,6 +33,7 @@ import android.database.ContentObserver;
 import android.graphics.Rect;
 import android.graphics.Region;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.os.Trace;
@@ -356,7 +357,7 @@ public class NotificationShadeWindowControllerImpl
         }
 
         mLpChanged.copyFrom(mLp);
-        SettingsObserver observer = new SettingsObserver(new Handler());
+        SettingsObserver observer = new SettingsObserver(new Handler(Looper.getMainLooper()));
         observer.observe(mContext);
         onThemeChanged();
 

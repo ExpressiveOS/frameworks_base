@@ -17,7 +17,6 @@
 
 package com.android.systemui.expressiveos.onthego;
 
-import android.app.Dialog;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -29,20 +28,20 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.CompoundButton;
 import android.widget.SeekBar;
-import android.widget.Switch;
 import android.widget.TextView;
 
-import com.android.systemui.res.R;
-
 import com.android.internal.util.expressiveos.OnTheGoUtils;
+import com.android.systemui.res.R;
+import com.android.systemui.statusbar.phone.SystemUIDialog;
 
-public class OnTheGoDialog extends Dialog {
+public class OnTheGoDialog extends SystemUIDialog {
 
     private static final float MIN_ALPHA = 0.15f;
 
@@ -66,7 +65,7 @@ public class OnTheGoDialog extends Dialog {
     };
 
     public OnTheGoDialog(Context ctx) {
-        super(ctx, android.R.style.Theme_DeviceDefault_DayNight);
+        super(ctx);
         mContext = ctx;
         final Resources r = mContext.getResources();
         mOnTheGoDialogLongTimeout =
@@ -79,19 +78,28 @@ public class OnTheGoDialog extends Dialog {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         final Window window = getWindow();
-        window.setType(WindowManager.LayoutParams.TYPE_VOLUME_OVERLAY);
-        window.getAttributes().privateFlags |=
-                WindowManager.LayoutParams.SYSTEM_FLAG_SHOW_FOR_ALL_USERS;
-        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        window.requestFeature(Window.FEATURE_NO_TITLE);
-        // The rounded card supplies its own surface; keep the window transparent.
-        window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        window.setGravity(Gravity.CENTER);
+        if (window != null) {
+            window.setType(WindowManager.LayoutParams.TYPE_VOLUME_OVERLAY);
+            window.getAttributes().privateFlags |=
+                    WindowManager.LayoutParams.SYSTEM_FLAG_SHOW_FOR_ALL_USERS;
+            // The rounded card supplies its own frosted/opaque M3 surface; keep the window transparent.
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setGravity(Gravity.CENTER);
+        }
 
         setContentView(R.layout.quick_settings_onthego_dialog);
         setCanceledOnTouchOutside(true);
 
-        applyDialogWidth(window);
+        if (window != null) {
+            applyDialogWidth(window);
+        }
+        final View surfaceCard = findViewById(R.id.onthego_dialog_container);
+        if (surfaceCard != null) {
+            final float cornerRadiusPx = TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, 28f,
+                    mContext.getResources().getDisplayMetrics());
+            SystemUIDialog.applyFrostedSurfaceBlur(this, surfaceCard, cornerRadiusPx);
+        }
 
         final ContentResolver resolver = mContext.getContentResolver();
 
@@ -128,7 +136,7 @@ public class OnTheGoDialog extends Dialog {
         if (!OnTheGoUtils.hasFrontCamera(getContext())) {
             findViewById(R.id.onthego_category_1).setVisibility(View.GONE);
         } else {
-            final Switch mServiceToggle = (Switch) findViewById(R.id.onthego_service_toggle);
+            final CompoundButton mServiceToggle = findViewById(R.id.onthego_service_toggle);
             final boolean restartService = Settings.System.getInt(resolver,
                     Settings.System.ON_THE_GO_SERVICE_RESTART, 0) == 1;
             mServiceToggle.setChecked(restartService);
@@ -142,7 +150,7 @@ public class OnTheGoDialog extends Dialog {
                 }
             });
 
-            final Switch mCamSwitch = (Switch) findViewById(R.id.onthego_camera_toggle);
+            final CompoundButton mCamSwitch = findViewById(R.id.onthego_camera_toggle);
             final boolean useFrontCam = (Settings.System.getInt(resolver,
                     Settings.System.ON_THE_GO_CAMERA,
                     0) == 1);
@@ -161,14 +169,14 @@ public class OnTheGoDialog extends Dialog {
     }
 
     @Override
-    protected void onStart() {
-        super.onStart();
+    protected void start() {
+        super.start();
         dismissOnTheGoDialog(mOnTheGoDialogLongTimeout);
     }
 
     @Override
-    protected void onStop() {
-        super.onStop();
+    protected void stop() {
+        super.stop();
         removeAllOnTheGoDialogCallbacks();
     }
 

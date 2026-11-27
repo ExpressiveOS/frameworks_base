@@ -17,6 +17,7 @@ package com.android.systemui.statusbar.policy;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.ArrayMap;
 
 import com.android.systemui.dagger.SysUISingleton;
@@ -297,7 +298,7 @@ public class ExtensionControllerImpl implements ExtensionController {
             private final int mDesiredUiMode;
             private final Supplier<T> mSupplier;
             private int mUiMode;
-            private Handler mHandler = new Handler();
+            private Handler mHandler = new Handler(Looper.getMainLooper());
 
             public UiModeItem(int uiMode, Supplier<T> supplier) {
                 mDesiredUiMode = uiMode;

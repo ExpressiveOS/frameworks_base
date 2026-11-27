@@ -223,6 +223,8 @@
                 android:id="@+id/magnifier_zoom_slider"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="8dp"
                 app:progress="0"
                 app:iconStartContentDescription="@string/accessibility_control_zoom_out"
                 app:iconEndContentDescription="@string/accessibility_control_zoom_in"

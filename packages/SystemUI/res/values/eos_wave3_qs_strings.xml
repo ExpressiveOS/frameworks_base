@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 ExpressiveOS
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <!-- Accessibility label for the USB mode picker settings gear button. -->
+    <string name="usb_mode_picker_settings_desc">USB preferences</string>
+    <!-- Accessibility label for the USB mode picker close button. -->
+    <string name="usb_mode_picker_close_desc">Close</string>
+    <!-- Accessibility label for the Quick Settings page indicator dots. -->
+    <string name="qs_page_indicator_content_description">Quick settings page <xliff:g id="page" example="1">%1$d</xliff:g> of <xliff:g id="total" example="2">%2$d</xliff:g></string>
+</resources>

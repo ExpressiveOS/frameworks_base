@@ -36,6 +36,7 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.util.IndentingPrintWriter;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.widget.TextView;
 
@@ -255,19 +256,28 @@ public class FooterView extends StackScrollerDecorView {
 
     /** Set onClickListener for the notification settings button. */
     public void setSettingsButtonClickListener(OnClickListener listener) {
-        mSettingsButton.setOnClickListener(listener);
+        mSettingsButton.setOnClickListener(listener == null ? null : v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);
+            listener.onClick(v);
+        });
     }
 
     /** Set onClickListener for the notification history button. */
     public void setHistoryButtonClickListener(OnClickListener listener) {
-        mHistoryButton.setOnClickListener(listener);
+        mHistoryButton.setOnClickListener(listener == null ? null : v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);
+            listener.onClick(v);
+        });
     }
 
     /** Set onClickListener for the clear all (end) button. */
     public void setClearAllButtonClickListener(OnClickListener listener) {
         if (mClearAllButtonClickListener == listener) return;
         mClearAllButtonClickListener = listener;
-        mClearAllButton.setOnClickListener(listener);
+        mClearAllButton.setOnClickListener(listener == null ? null : v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.CONFIRM);
+            listener.onClick(v);
+        });
     }
 
     /**

@@ -40,7 +40,16 @@ constructor(
     override fun VolumePanelComposeScope.Content(modifier: Modifier) {
         val sliderViewModels: List<SliderViewModel> by
             viewModel.sliderViewModels.collectAsStateWithLifecycle()
+        val isVerticalSliders: Boolean by
+            viewModel.isVerticalSliders.collectAsStateWithLifecycle()
         if (sliderViewModels.isEmpty()) {
+            return
+        }
+        if (isVerticalSliders) {
+            VerticalVolumeSliders(
+                viewModels = sliderViewModels,
+                modifier = modifier.fillMaxWidth(),
+            )
             return
         }
         if (isLargeScreen) {

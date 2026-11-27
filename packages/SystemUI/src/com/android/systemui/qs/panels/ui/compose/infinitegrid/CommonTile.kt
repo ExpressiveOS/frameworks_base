@@ -16,6 +16,7 @@
 
 package com.android.systemui.qs.panels.ui.compose.infinitegrid
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Matrix
 import android.graphics.Path
@@ -26,6 +27,8 @@ import android.text.TextUtils
 import android.util.PathParser
 import androidx.annotation.VisibleForTesting
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.graphics.res.animatedVectorResource
 import androidx.compose.animation.graphics.res.rememberAnimatedVectorPainter
 import androidx.compose.animation.graphics.vector.AnimatedImageVector
@@ -93,6 +96,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -124,6 +128,15 @@ private const val TEST_TAG_TOGGLE = "qs_tile_toggle_target"
 private const val TEST_TAG_SMALL = "qs_tile_small"
 private const val TEST_TAG_LARGE = "qs_tile_large"
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun tileColorAnimationSpec(): FiniteAnimationSpec<Color> =
+    if (ValueAnimator.areAnimatorsEnabled()) {
+        MaterialTheme.motionScheme.defaultEffectsSpec()
+    } else {
+        snap()
+    }
+
 @Composable
 fun ClassicTileContent(
     label: String,
@@ -152,8 +165,19 @@ fun ClassicTileContent(
         }
     }
 
-    val animatedColor by animateColorAsState(colors.background, label = "QSTileCircleBgColor")
-    val animatedOutlineColor by animateColorAsState(colors.outline, label = "QSTileOutlineColor")
+    val colorSpec = tileColorAnimationSpec()
+    val animatedColor by
+        animateColorAsState(
+            colors.background,
+            animationSpec = colorSpec,
+            label = "QSTileCircleBgColor",
+        )
+    val animatedOutlineColor by
+        animateColorAsState(
+            colors.outline,
+            animationSpec = colorSpec,
+            label = "QSTileOutlineColor",
+        )
 
     val iconBoxSize = CommonTileDefaults.TileHeight
     val iconSize = CommonTileDefaults.LargeTileIconSize
@@ -203,9 +227,18 @@ fun ClassicTileContent(
         }
 
         if (!labelHide) {
-            val animatedLabelColor by animateColorAsState(colors.classicLabel, label = "QSTileLabelColor")
+            val animatedLabelColor by
+                animateColorAsState(
+                    colors.classicLabel,
+                    animationSpec = colorSpec,
+                    label = "QSTileLabelColor",
+                )
             val animatedSecondaryLabelColor by
-                animateColorAsState(colors.classicSecondaryLabel, label = "QSTileSecondaryLabelColor")
+                animateColorAsState(
+                    colors.classicSecondaryLabel,
+                    animationSpec = colorSpec,
+                    label = "QSTileSecondaryLabelColor",
+                )
             TileLabel(
                 text = label,
                 color = { animatedLabelColor },
@@ -260,7 +293,11 @@ fun LargeTileContent(
         // Icon
         val longPressLabel = longPressLabelSettings().takeIf { onLongClick != null }
         val animatedBackgroundColor by
-            animateColorAsState(colors.iconBackground, label = "QSTileDualTargetBackgroundColor")
+            animateColorAsState(
+                colors.iconBackground,
+                animationSpec = tileColorAnimationSpec(),
+                label = "QSTileDualTargetBackgroundColor",
+            )
         val focusBorderColor = MaterialTheme.colorScheme.secondary
         Box(
             modifier =
@@ -334,10 +371,17 @@ fun LargeTileLabels(
     modifier: Modifier = Modifier,
     isVisible: () -> Boolean = { true },
     accessibilityUiState: AccessibilityUiState? = null,
+    useEllipsis: Boolean = false,
 ) {
-    val animatedLabelColor by animateColorAsState(colors.label, label = "QSTileLabelColor")
+    val colorSpec = tileColorAnimationSpec()
+    val animatedLabelColor by
+        animateColorAsState(colors.label, animationSpec = colorSpec, label = "QSTileLabelColor")
     val animatedSecondaryLabelColor by
-        animateColorAsState(colors.secondaryLabel, label = "QSTileSecondaryLabelColor")
+        animateColorAsState(
+            colors.secondaryLabel,
+            animationSpec = colorSpec,
+            label = "QSTileSecondaryLabelColor",
+        )
     Column(verticalArrangement = Arrangement.Center, modifier = modifier.fillMaxHeight()) {
         TileLabel(
             text = label,
@@ -346,6 +390,7 @@ fun LargeTileLabels(
             ),
             color = { animatedLabelColor },
             isVisible = isVisible,
+            useEllipsis = useEllipsis,
         )
         if (!TextUtils.isEmpty(secondaryLabel)) {
             TileLabel(
@@ -355,6 +400,7 @@ fun LargeTileLabels(
                     fontWeight = FontWeight.Normal,
                 ),
                 isVisible = isVisible,
+                useEllipsis = useEllipsis,
                 modifier =
                     Modifier.thenIf(
                         accessibilityUiState?.stateDescription?.contains(secondaryLabel ?: "") ==
@@ -377,7 +423,12 @@ fun SmallTileContent(
 ) {
     val context = LocalContext.current
     val icon = iconProvider(context)
-    val animatedColor by animateColorAsState(color, label = "QSTileIconColor")
+    val animatedColor by
+        animateColorAsState(
+            color,
+            animationSpec = tileColorAnimationSpec(),
+            label = "QSTileIconColor",
+        )
     val sizeValue = size()
     val iconModifier =
         modifier
@@ -448,10 +499,24 @@ private fun TileLabel(
     style: TextStyle,
     modifier: Modifier = Modifier,
     isVisible: () -> Boolean = { true },
+    useEllipsis: Boolean = false,
 ) {
+    if (useEllipsis) {
+        BasicText(
+            text = text,
+            color = color,
+            style = style,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = modifier.fillMaxWidth(),
+        )
+        return
+    }
+
     var textSize by remember { mutableIntStateOf(0) }
 
-    val iterations = if (isVisible()) TILE_MARQUEE_ITERATIONS else 0
+    val iterations =
+        if (isVisible() && ValueAnimator.areAnimatorsEnabled()) TILE_MARQUEE_ITERATIONS else 0
 
     BasicText(
         text = text,

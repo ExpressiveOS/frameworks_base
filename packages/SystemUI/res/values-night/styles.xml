@@ -18,7 +18,7 @@
 
     <style name="Theme.SystemUI.DayNightDialog" parent="@android:style/Theme.DeviceDefault.Dialog"/>
 
-    <style name="Theme.SystemUI.Dialog.Alert" parent="@*android:style/Theme.DeviceDefault.Dialog.Alert" />
+    <style name="Theme.SystemUI.Dialog.Alert" parent="Theme.SystemUI.Dialog" />
 
     <style name="Theme.SystemUI.Dialog.GlobalActions" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
         <item name="android:windowIsFloating">true</item>

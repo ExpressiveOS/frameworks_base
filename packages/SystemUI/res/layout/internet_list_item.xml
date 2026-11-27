@@ -26,6 +26,7 @@
         android:id="@+id/wifi_list"
         style="@style/InternetDialog.Network"
         android:layout_height="@dimen/internet_dialog_wifi_network_height"
+        android:layout_marginVertical="1dp"
         android:paddingStart="20dp"
         android:paddingEnd="24dp">
         <FrameLayout

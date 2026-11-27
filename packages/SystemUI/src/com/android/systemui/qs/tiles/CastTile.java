@@ -281,6 +281,7 @@ public class CastTile extends QSTileImpl<BooleanState> {
             SystemUIDialog.setWindowOnTop(dialog, mKeyguard.isShowing());
             SystemUIDialog.setDialogSize(dialog);
             SystemUIDialog.resetElevation(dialog);
+            SystemUIDialog.applyFrostedDialogBlur(dialog);
 
             mUiHandler.post(() -> {
                 if (expandable != null) {

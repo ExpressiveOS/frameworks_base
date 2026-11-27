@@ -18,8 +18,11 @@ package com.android.systemui.qs.tiles.dialog
 
 import android.content.Context
 import android.os.Bundle
+import android.os.UserHandle
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
 import android.widget.FrameLayout
 import android.view.ContextThemeWrapper
 import android.view.Gravity
@@ -114,6 +117,15 @@ class FlashlightDialogDelegate @Inject constructor(
     }
 
     private fun vibrateForLevel(level: Int, maxLevel: Int) {
+        val hapticsEnabled =
+            Settings.System.getIntForUser(
+                context.contentResolver,
+                Settings.System.HAPTIC_FEEDBACK_ENABLED,
+                1,
+                UserHandle.USER_CURRENT,
+            ) != 0
+        if (!hapticsEnabled) return
+
         val v = vibrator ?: return
         if (!v.hasVibrator()) return
 
@@ -124,15 +136,16 @@ class FlashlightDialogDelegate @Inject constructor(
         val minScale = 0.12f
         val scale = (minScale + (1.0f - minScale) * t).coerceIn(0f, 1f)
 
+        val attrs = VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH)
         val primitive = VibrationEffect.Composition.PRIMITIVE_LOW_TICK
         if (v.areAllPrimitivesSupported(primitive)) {
             val effect = VibrationEffect.startComposition()
                 .addPrimitive(primitive, scale)
                 .compose()
-            v.vibrate(effect)
+            v.vibrate(effect, attrs)
         } else {
             // Fallback
-            v.vibrate(flashlightMoveHaptic)
+            v.vibrate(flashlightMoveHaptic, attrs)
         }
     }
 

@@ -31,6 +31,7 @@ import android.content.res.Resources;
 import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Trace;
 import android.os.UserHandle;
 import android.provider.Settings;
@@ -693,7 +694,7 @@ public class CarrierTextManager {
 
     private class SettingsObserver extends ContentObserver {
         SettingsObserver() {
-            super(new Handler());
+            super(new Handler(Looper.getMainLooper()));
         }
 
         void observe() {

@@ -26,6 +26,7 @@ import android.content.res.Configuration;
 import android.database.ContentObserver;
 import android.os.BatteryManager;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.IThermalEventListener;
 import android.os.IThermalService;
 import android.os.PowerManager;
@@ -80,7 +81,7 @@ public class PowerUI implements
     private static final String BOOT_COUNT_KEY = "boot_count";
     private static final String PREFS = "powerui_prefs";
 
-    private final Handler mHandler = new Handler();
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
     @VisibleForTesting
     final Receiver mReceiver = new Receiver();
 

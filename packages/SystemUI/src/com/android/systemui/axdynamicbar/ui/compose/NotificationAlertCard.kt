@@ -10,18 +10,24 @@ import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MotionScheme
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -68,7 +74,9 @@ import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -252,7 +260,7 @@ fun NotificationAlertCard(
                 }
                 .clip(ShapeCard)
                 // Frosted surface; falls back to the opaque card colour where blur is unavailable.
-                .islandBlur(RadiusCard, CardBg),
+                .islandBlur(RadiusCard, CardBg, allowBlur = true),
         ) {
           Box {
             SceneTransitionLayout(state = stlState) {
@@ -782,8 +790,30 @@ private fun ActionCircle(
     tint: Color,
     onClick: () -> Unit,
 ) {
-    Surface(onClick = onClick, shape = CircleShape, color = bg, modifier = Modifier.size(36.dp)) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+    val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    onClick()
+                },
+            ),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(bg, CircleShape)
+                .indication(interactionSource, LocalIndication.current),
+        ) {
             Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp))
         }
     }
@@ -796,13 +826,30 @@ private fun ExpandChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        onClick = onClick,
-        shape = CircleShape,
-        color = accent.copy(alpha = AlphaIconBg),
-        modifier = modifier.size(36.dp),
+    val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    onClick()
+                },
+            ),
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(accent.copy(alpha = AlphaIconBg), CircleShape)
+                .indication(interactionSource, LocalIndication.current),
+        ) {
             Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
         }
     }
@@ -815,8 +862,30 @@ private fun DrawableActionCircle(
     tint: Color,
     onClick: () -> Unit,
 ) {
-    Surface(onClick = onClick, shape = CircleShape, color = bg, modifier = Modifier.size(36.dp)) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+    val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    onClick()
+                },
+            ),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(bg, CircleShape)
+                .indication(interactionSource, LocalIndication.current),
+        ) {
             Image(
                 bitmap = drawable.toScaledBitmap(18.dp),
                 contentDescription = null,
@@ -883,25 +952,40 @@ private fun ReplyField(
             },
         )
         if (replyText.isNotEmpty()) {
-            Surface(
-                onClick = {
-                    val intent = Intent().apply {
-                        val results = Bundle().apply {
-                            putCharSequence(reply.remoteInput.resultKey, replyText)
-                        }
-                        RemoteInput.addResultsToIntent(arrayOf(reply.remoteInput), this, results)
-                    }
-                    try { reply.action.actionIntent?.sendWithBal(context, intent) }
-                    catch (e: Exception) { Log.w("NotificationReply", "Failed to send reply", e) }
-                    replyText = ""
-                    interactor.onFocusableRequested?.invoke(false)
-                    onSent()
-                },
-                shape = CircleShape,
-                color = accent,
-                modifier = Modifier.size(32.dp).padding(SpaceXs),
+            val sendView = LocalView.current
+            val sendInteraction = remember { MutableInteractionSource() }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                    .clickable(
+                        interactionSource = sendInteraction,
+                        indication = null,
+                        role = Role.Button,
+                        onClick = {
+                            sendView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                            val intent = Intent().apply {
+                                val results = Bundle().apply {
+                                    putCharSequence(reply.remoteInput.resultKey, replyText)
+                                }
+                                RemoteInput.addResultsToIntent(arrayOf(reply.remoteInput), this, results)
+                            }
+                            try { reply.action.actionIntent?.sendWithBal(context, intent) }
+                            catch (e: Exception) { Log.w("NotificationReply", "Failed to send reply", e) }
+                            replyText = ""
+                            interactor.onFocusableRequested?.invoke(false)
+                            onSent()
+                        },
+                    ),
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(accent, CircleShape)
+                        .indication(sendInteraction, LocalIndication.current),
+                ) {
                     Icon(Icons.AutoMirrored.Filled.Send, null, tint = IslandTone.ACCENT.onTint, modifier = Modifier.size(14.dp))
                 }
             }

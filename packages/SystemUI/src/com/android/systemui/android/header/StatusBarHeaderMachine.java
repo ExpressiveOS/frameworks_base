@@ -29,6 +29,7 @@ import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.util.Log;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.SparseArray;
@@ -69,7 +70,7 @@ public class StatusBarHeaderMachine {
     private Context mContext;
     private Map<String, IStatusBarHeaderProvider> mProviders = new HashMap<String, IStatusBarHeaderProvider>();
     private List<IStatusBarHeaderMachineObserver> mObservers = new ArrayList<IStatusBarHeaderMachineObserver>();
-    private Handler mHandler = new Handler();
+    private Handler mHandler = new Handler(Looper.getMainLooper());
     private boolean mAttached;
     private boolean mScreenOn = true;
     private String mDefaultProviderName;

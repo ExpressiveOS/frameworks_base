@@ -128,6 +128,12 @@ class EdgeLightView(context: Context) : FrameLayout(context) {
     private var pulseAnimator: ValueAnimator? = null
     private var rainbowAnimator: ValueAnimator? = null
     private var effectAnimator: ValueAnimator? = null
+    private var staticPulseActive: Boolean = false
+    private val staticPulseHideRunnable = Runnable {
+        staticPulseActive = false
+        alpha = 0f
+        visible = false
+    }
     private var rainbowRotation: Float = 0f
     private var effectProgress: Float = 0f
 
@@ -164,12 +170,14 @@ class EdgeLightView(context: Context) : FrameLayout(context) {
         }
 
     var pulseRunning: Boolean
-        get() = pulseAnimator?.isRunning == true
+        get() = pulseAnimator?.isRunning == true || staticPulseActive
         set(value) {
             if (value && !pulseRunning) {
                 startPulse()
-                startEffectAnimation()
-                startRainbowAnimation()
+                if (ValueAnimator.areAnimatorsEnabled()) {
+                    startEffectAnimation()
+                    startRainbowAnimation()
+                }
             } else if (!value) {
                 stopRainbowAnimation()
                 stopEffectAnimation()
@@ -202,7 +210,19 @@ class EdgeLightView(context: Context) : FrameLayout(context) {
     }
 
     private fun startPulse() {
+        removeCallbacks(staticPulseHideRunnable)
+        staticPulseActive = false
         visible = true
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            alpha = 1f
+            effectProgress = 0f
+            rainbowRotation = 0f
+            sparkles.clear()
+            staticPulseActive = true
+            invalidate()
+            postDelayed(staticPulseHideRunnable, totalPulseDuration)
+            return
+        }
         alpha = 0f
 
         val totalSegments = maxOf(userPulseCount, MIN_SEGMENTS)
@@ -252,6 +272,8 @@ class EdgeLightView(context: Context) : FrameLayout(context) {
     }
 
     private fun stopPulse() {
+        removeCallbacks(staticPulseHideRunnable)
+        staticPulseActive = false
         pulseAnimator?.cancel()
         pulseAnimator = null
     }
@@ -409,7 +431,9 @@ class EdgeLightView(context: Context) : FrameLayout(context) {
         edgePaint.strokeWidth = userStrokeWidth * resources.displayMetrics.density
         edgePaint.strokeCap = Paint.Cap.BUTT
 
-        when (animationEffect) {
+        val activeEffect =
+            if (ValueAnimator.areAnimatorsEnabled()) animationEffect else EFFECT_NONE
+        when (activeEffect) {
             EFFECT_BREATHING -> {
                 applyBreathingEffect()
                 val halfStroke = edgePaint.strokeWidth / 2
@@ -450,7 +474,9 @@ class EdgeLightView(context: Context) : FrameLayout(context) {
             Path.Direction.CW
         )
 
-        when (animationEffect) {
+        val activeEffect =
+            if (ValueAnimator.areAnimatorsEnabled()) animationEffect else EFFECT_NONE
+        when (activeEffect) {
             EFFECT_BREATHING -> {
                 applyBreathingEffect()
                 canvas.drawPath(roundedPath, edgePaint)
@@ -785,6 +811,7 @@ class EdgeLightView(context: Context) : FrameLayout(context) {
     }
 
     private fun startRainbowAnimation() {
+        if (!ValueAnimator.areAnimatorsEnabled()) return
         if (!useRainbowGradient || edgePaint.shader == null) return
         if (animationEffect in MOVING_EFFECT) return
         if (rainbowAnimator?.isRunning == true) return
@@ -822,6 +849,7 @@ class EdgeLightView(context: Context) : FrameLayout(context) {
     }
 
     private fun startEffectAnimation() {
+        if (!ValueAnimator.areAnimatorsEnabled()) return
         if (animationEffect == EFFECT_NONE) return
         if (effectAnimator?.isRunning == true) return
 

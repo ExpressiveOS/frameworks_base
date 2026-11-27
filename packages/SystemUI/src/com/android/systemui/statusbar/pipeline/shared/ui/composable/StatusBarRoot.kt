@@ -274,6 +274,8 @@ fun StatusBarRoot(
         }
     var touchableExclusionRegionDisposableHandle: DisposableHandle? = null
     var phoneStatusBarViewRef by remember { mutableStateOf<PhoneStatusBarView?>(null) }
+    var statusBarReleaseCleanup: (() -> Unit)? = null
+    var islandReleaseAnimatorRef: ValueAnimator? = null
 
     val touchSlop = LocalViewConfiguration.current.touchSlop
 
@@ -337,6 +339,7 @@ fun StatusBarRoot(
 
                 var statusIconContainerRef: StatusIconContainer? = null
                 var overlapDotParentRef: ViewGroup? = null
+                var statusIconsCleanup: (() -> Unit)? = null
 
                 // If the flag is enabled, create and add a compose section to the end
                 // of the system_icons container
@@ -356,6 +359,20 @@ fun StatusBarRoot(
                         ViewTreeObserver.OnGlobalLayoutListener {
                             applyOverlapState(statusIconContainer, dotParent, lastIslandBounds)
                         }
+                    var statusIconsCleanedUp = false
+                    val cleanupStatusIcons: () -> Unit = {
+                        if (!statusIconsCleanedUp) {
+                            statusIconsCleanedUp = true
+                            val vto = statusIconContainer.viewTreeObserver
+                            if (vto.isAlive) {
+                                vto.removeOnGlobalLayoutListener(statusIconsGlobalLayoutListener)
+                            }
+                            pendingOverlapCheck?.let { statusIconContainer.removeCallbacks(it) }
+                            pendingOverlapCheck = null
+                            clearOverlapState(statusIconContainer, dotParent)
+                        }
+                    }
+                    statusIconsCleanup = cleanupStatusIcons
                     statusIconContainer.viewTreeObserver.addOnGlobalLayoutListener(
                         statusIconsGlobalLayoutListener
                     )
@@ -364,12 +381,7 @@ fun StatusBarRoot(
                             override fun onViewAttachedToWindow(v: View) {}
 
                             override fun onViewDetachedFromWindow(v: View) {
-                                statusIconContainer.viewTreeObserver.removeOnGlobalLayoutListener(
-                                    statusIconsGlobalLayoutListener
-                                )
-                                pendingOverlapCheck?.let { statusIconContainer.removeCallbacks(it) }
-                                pendingOverlapCheck = null
-                                clearOverlapState(statusIconContainer, dotParent)
+                                cleanupStatusIcons()
                             }
                         }
                     )
@@ -499,8 +511,16 @@ fun StatusBarRoot(
 
                 fun animateIslandRelease(expanded: Boolean) {
                     islandReleaseAnimator?.cancel()
-                    islandReleaseAnimator =
-                        ValueAnimator.ofFloat(islandReleaseFraction, if (expanded) 1f else 0f)
+                    islandReleaseAnimator = null
+                    islandReleaseAnimatorRef = null
+                    val targetFraction = if (expanded) 1f else 0f
+                    if (!ValueAnimator.areAnimatorsEnabled()) {
+                        islandReleaseFraction = targetFraction
+                        applyIslandRelease()
+                        return
+                    }
+                    val animator =
+                        ValueAnimator.ofFloat(islandReleaseFraction, targetFraction)
                             .apply {
                                 duration = 350L
                                 interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
@@ -510,6 +530,8 @@ fun StatusBarRoot(
                                 }
                                 start()
                             }
+                    islandReleaseAnimator = animator
+                    islandReleaseAnimatorRef = animator
                 }
                 islandExpandedHandler = { expanded -> animateIslandRelease(expanded) }
 
@@ -567,12 +589,14 @@ fun StatusBarRoot(
                                     islandCorrections++
                                     (lp.leftMargin + delta).coerceIn(-windowWidth, windowWidth)
                                 }
-                            android.util.Log.d(
-                                "DynamicIslandDebug",
-                                "island left=${islandLocation[0]} desired=$desiredLeft " +
-                                    "hole=$cutout rect=${displayCutout?.boundingRectTop} margin=${lp.leftMargin}->$newMargin " +
-                                    "corrections=$islandCorrections",
-                            )
+                            if (android.util.Log.isLoggable("DynamicIslandDebug", android.util.Log.DEBUG)) {
+                                android.util.Log.d(
+                                    "DynamicIslandDebug",
+                                    "island left=${islandLocation[0]} desired=$desiredLeft " +
+                                        "hole=$cutout rect=${displayCutout?.boundingRectTop} margin=${lp.leftMargin}->$newMargin " +
+                                        "corrections=$islandCorrections",
+                                )
+                            }
                         } else {
                             val hostLocation = IntArray(2)
                             startSideHost.getLocationInWindow(hostLocation)
@@ -616,14 +640,27 @@ fun StatusBarRoot(
                 centeredArea.viewTreeObserver.addOnGlobalLayoutListener(
                     islandVisibilityResetListener
                 )
+                var islandListenersCleanedUp = false
+                val cleanupAllListeners: () -> Unit = {
+                    statusIconsCleanup?.invoke()
+                    islandReleaseAnimator?.cancel()
+                    islandReleaseAnimator = null
+                    islandReleaseAnimatorRef = null
+                    if (!islandListenersCleanedUp) {
+                        islandListenersCleanedUp = true
+                        val vto = centeredArea.viewTreeObserver
+                        if (vto.isAlive) {
+                            vto.removeOnGlobalLayoutListener(islandVisibilityResetListener)
+                        }
+                    }
+                }
+                statusBarReleaseCleanup = cleanupAllListeners
                 centeredArea.addOnAttachStateChangeListener(
                     object : View.OnAttachStateChangeListener {
                         override fun onViewAttachedToWindow(v: View) {}
 
                         override fun onViewDetachedFromWindow(v: View) {
-                            centeredArea.viewTreeObserver.removeOnGlobalLayoutListener(
-                                islandVisibilityResetListener
-                            )
+                            cleanupAllListeners()
                         }
                     }
                 )
@@ -648,16 +685,17 @@ fun StatusBarRoot(
                                 if (ViewFlags.scrollToTop()) {
                                     detectTapGesturesStrict(
                                         onTap = {
-                                            if (
-                                                statusBarScrollToTopGestureHandler == null ||
-                                                    statusBarScrollToTopGestureHandler
-                                                        .shouldAllowTap(
-                                                            it.x,
-                                                            it.y,
-                                                            phoneStatusBarViewRef,
-                                                        )
-                                            ) {
+                                            val handler = statusBarScrollToTopGestureHandler
+                                            if (handler == null) {
                                                 statusBarViewModel.onStatusBarTap(it.x)
+                                            } else {
+                                                handler.handleComposeTap(
+                                                    it.x,
+                                                    it.y,
+                                                    phoneStatusBarViewRef,
+                                                ) {
+                                                    statusBarViewModel.onStatusBarTap(it.x)
+                                                }
                                             }
                                         },
                                         onLongPress = {
@@ -688,7 +726,12 @@ fun StatusBarRoot(
                         Modifier.drawWithHeadlineScrim(headlineViewModel!!)
                     },
             onRelease = {
+                statusBarReleaseCleanup?.invoke()
+                statusBarReleaseCleanup = null
+                islandReleaseAnimatorRef?.cancel()
+                islandReleaseAnimatorRef = null
                 phoneStatusBarViewRef = null
+                statusBarScrollToTopGestureHandler?.cancelCurrentGesture()
                 statusBarScrollToTopGestureHandler?.updateAxDynamicBarChipBounds(null)
                 statusBarScrollToTopGestureHandler?.updateOngoingActivityChipsBounds(null)
                 statusBarScrollToTopGestureHandler?.updateDynamicIslandBounds(null)

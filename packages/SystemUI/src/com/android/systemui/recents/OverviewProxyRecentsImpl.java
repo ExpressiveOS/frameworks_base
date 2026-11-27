@@ -18,6 +18,7 @@ package com.android.systemui.recents;
 
 import android.content.Context;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.RemoteException;
 import android.util.Log;
 
@@ -54,7 +55,7 @@ public class OverviewProxyRecentsImpl implements RecentsImplementation {
 
     @Override
     public void onStart(Context context) {
-        mHandler = new Handler();
+        mHandler = new Handler(Looper.getMainLooper());
     }
 
     @Override

@@ -163,7 +163,8 @@ public class InternetAdapter extends RecyclerView.Adapter<InternetAdapter.Intern
         if (mWifiEntries == null || position >= mWifiEntriesCount) {
             return;
         }
-        viewHolder.onBind(mWifiEntries.get(position), mHasMultipleFullUsers);
+        viewHolder.onBind(mWifiEntries.get(position), mHasMultipleFullUsers, position,
+                mWifiEntriesCount);
     }
 
     /**
@@ -263,6 +264,24 @@ public class InternetAdapter extends RecyclerView.Adapter<InternetAdapter.Intern
         }
 
         void onBind(@NonNull WifiEntry wifiEntry, boolean hasMultipleFullUsers) {
+            onBind(wifiEntry, hasMultipleFullUsers, 0, 1);
+        }
+
+        void onBind(@NonNull WifiEntry wifiEntry, boolean hasMultipleFullUsers,
+                int position, int totalCount) {
+            if (!mIsInDetailsView) {
+                final int bgRes;
+                if (totalCount <= 1) {
+                    bgRes = R.drawable.eos_dialog_row_bg_single;
+                } else if (position == 0) {
+                    bgRes = R.drawable.eos_dialog_row_bg_top;
+                } else if (position == totalCount - 1) {
+                    bgRes = R.drawable.eos_dialog_row_bg_bottom;
+                } else {
+                    bgRes = R.drawable.eos_dialog_row_bg_middle;
+                }
+                mWifiListLayout.setBackground(mContext.getDrawable(bgRes));
+            }
             mWifiIcon.setImageDrawable(getWifiDrawable(wifiEntry));
             setWifiNetworkLayout(wifiEntry.getTitle(),
                     Html.fromHtml(wifiEntry.getSummary(false), Html.FROM_HTML_MODE_LEGACY));

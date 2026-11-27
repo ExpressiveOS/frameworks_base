@@ -16,17 +16,22 @@
 
 package com.android.systemui.qs.panels.ui.compose.toolbar
 
+import android.animation.ValueAnimator
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -41,6 +46,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -53,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -80,13 +87,14 @@ import com.android.systemui.qs.panels.ui.viewmodel.toolbar.ToolbarViewModel
 import com.android.systemui.qs.ui.compose.borderOnFocus
 import com.android.systemui.res.R
 
-@OptIn(ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun Toolbar(
     viewModel: ToolbarViewModel,
     isFullyVisible: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val motionScheme = MaterialTheme.motionScheme
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         val securityInfoCollapsed = viewModel.securityInfoShowCollapsed
 
@@ -94,6 +102,14 @@ fun Toolbar(
             AnimatedContent(
                 targetState = securityInfoCollapsed,
                 contentAlignment = Alignment.CenterStart,
+                transitionSpec = {
+                    if (ValueAnimator.areAnimatorsEnabled()) {
+                        fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
+                            fadeOut(motionScheme.defaultEffectsSpec())
+                    } else {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    }
+                },
                 label = "Toolbar.CollapsedSecurityInfo",
             ) { securityInfoCollapsed ->
                 if (securityInfoCollapsed) {
@@ -205,10 +221,14 @@ private fun IconButton(
     if (model == null) {
         return
     }
+    val view = LocalView.current
     Expandable(
         color = Color.Unspecified,
         shape = CircleShape,
-        onClick = model.onClick,
+        onClick = { expandable ->
+            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            model.onClick(expandable)
+        },
         modifier =
             modifier
                 .sizeIn(
@@ -242,11 +262,13 @@ private fun IconButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun PowerMenuToggleButton(
     viewModel: PowerMenuToggleButtonUiState,
     modifier: Modifier = Modifier,
 ) {
+    val view = LocalView.current
     val bgColor =
         if (viewModel.isSelected) {
             MaterialTheme.colorScheme.primary
@@ -275,7 +297,13 @@ private fun PowerMenuToggleButton(
                 .borderOnFocus(MaterialTheme.colorScheme.secondary, CornerSize(percent = 50))
                 .clip(shape)
                 .focusable()
-                .clickable(role = Role.Button, onClick = viewModel.onClick)
+                .clickable(
+                    role = Role.Button,
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        viewModel.onClick()
+                    },
+                )
                 .background(bgColor)
                 .padding(
                     start = PowerMenuToggleButtonConstants.PaddingStart,
@@ -300,7 +328,16 @@ private fun PowerMenuToggleButton(
         Icon(icon = viewModel.icon, tint = fgColor)
 
         val chevronRotation by
-            animateFloatAsState(targetValue = viewModel.chevronRotation, label = "ChevronRotation")
+            animateFloatAsState(
+                targetValue = viewModel.chevronRotation,
+                animationSpec =
+                    if (ValueAnimator.areAnimatorsEnabled()) {
+                        MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+                    } else {
+                        snap<Float>()
+                    },
+                label = "ChevronRotation",
+            )
 
         Icon(
             icon = viewModel.chevron,
@@ -321,11 +358,14 @@ private fun ToolbarIcon(icon: Icon, modifier: Modifier = Modifier, tint: Color) 
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ToolbarTextFeedback(
     viewModelFactory: TextFeedbackContentViewModel.Factory,
     modifier: Modifier,
 ) {
+    val motionScheme = MaterialTheme.motionScheme
+    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
     Box(modifier = modifier) {
         val context = LocalContext.current
         val viewModel =
@@ -338,8 +378,12 @@ private fun ToolbarTextFeedback(
             visible = hasTextFeedback,
             modifier = Modifier.align(Alignment.Center),
             label = "Toolbar.ToolbarTextFeedback",
-            enter = fadeIn(tween(durationMillis = 200)),
-            exit = fadeOut(tween(durationMillis = 200)),
+            enter =
+                if (animatorsEnabled) fadeIn(motionScheme.fastEffectsSpec())
+                else EnterTransition.None,
+            exit =
+                if (animatorsEnabled) fadeOut(motionScheme.fastEffectsSpec())
+                else ExitTransition.None,
         ) {
             TextFeedback(viewModel = viewModel.textFeedback)
         }

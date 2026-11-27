@@ -29,6 +29,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.MoveCallback;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.StrictMode;
 import android.os.UserHandle;
 import android.os.storage.DiskInfo;
@@ -209,7 +210,7 @@ public class StorageNotification implements CoreStartable {
             onVolumeStateChangedInternal(vol);
         }
 
-        mContext.getPackageManager().registerMoveCallback(mMoveCallback, new Handler());
+        mContext.getPackageManager().registerMoveCallback(mMoveCallback, new Handler(Looper.getMainLooper()));
 
         updateMissingPrivateVolumes();
 

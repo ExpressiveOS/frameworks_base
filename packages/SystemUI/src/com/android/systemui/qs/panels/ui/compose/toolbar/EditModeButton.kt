@@ -45,7 +45,9 @@ import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
@@ -146,8 +148,12 @@ fun EditModeButton(
                 }
             },
         ) {
+            val view = LocalView.current
             IconButton(
-                onClick = viewModel::onButtonClick,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    viewModel.onButtonClick()
+                },
                 shape = RoundedCornerShape(CornerSize(28.dp)),
                 modifier =
                     Modifier.sysuiResTag("qs_edit_mode_button")

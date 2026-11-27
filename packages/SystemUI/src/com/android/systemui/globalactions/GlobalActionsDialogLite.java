@@ -271,19 +271,37 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
     }
 
     private static void animateActionScale(@NonNull View view, float targetScale) {
+        final int tagX = com.android.systemui.res.R.id.tag_global_actions_spring_x;
+        final int tagY = com.android.systemui.res.R.id.tag_global_actions_spring_y;
+        SpringAnimation animX = (SpringAnimation) view.getTag(tagX);
+        SpringAnimation animY = (SpringAnimation) view.getTag(tagY);
         if (!ValueAnimator.areAnimatorsEnabled()) {
+            if (animX != null) {
+                animX.cancel();
+            }
+            if (animY != null) {
+                animY.cancel();
+            }
             view.setScaleX(1f);
             view.setScaleY(1f);
             return;
         }
-        SpringForce springX = new SpringForce(targetScale)
-                .setStiffness(ACTION_SPRING_STIFFNESS)
-                .setDampingRatio(ACTION_SPRING_DAMPING);
-        SpringForce springY = new SpringForce(targetScale)
-                .setStiffness(ACTION_SPRING_STIFFNESS)
-                .setDampingRatio(ACTION_SPRING_DAMPING);
-        new SpringAnimation(view, DynamicAnimation.SCALE_X).setSpring(springX).start();
-        new SpringAnimation(view, DynamicAnimation.SCALE_Y).setSpring(springY).start();
+        if (animX == null) {
+            animX = new SpringAnimation(view, DynamicAnimation.SCALE_X)
+                    .setSpring(new SpringForce(targetScale)
+                            .setStiffness(ACTION_SPRING_STIFFNESS)
+                            .setDampingRatio(ACTION_SPRING_DAMPING));
+            view.setTag(tagX, animX);
+        }
+        if (animY == null) {
+            animY = new SpringAnimation(view, DynamicAnimation.SCALE_Y)
+                    .setSpring(new SpringForce(targetScale)
+                            .setStiffness(ACTION_SPRING_STIFFNESS)
+                            .setDampingRatio(ACTION_SPRING_DAMPING));
+            view.setTag(tagY, animY);
+        }
+        animX.animateToFinalPosition(targetScale);
+        animY.animateToFinalPosition(targetScale);
     }
 
     @NonNull
@@ -1218,7 +1236,7 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
     @VisibleForTesting
     final class ShutDownAction extends SinglePressAction implements LongPressAction {
         ShutDownAction() {
-            super(com.android.systemui.res.R.drawable.ic_global_actions_power_off,
+            super(com.android.systemui.res.R.drawable.ic_eos_power_off,
                     R.string.global_action_power_off);
         }
 
@@ -1358,7 +1376,7 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
     @VisibleForTesting
     final class RestartAction extends SinglePressAction implements LongPressAction {
         RestartAction() {
-            super(com.android.systemui.res.R.drawable.ic_global_actions_restart,
+            super(com.android.systemui.res.R.drawable.ic_eos_restart,
                     R.string.global_action_restart);
         }
 
@@ -1406,7 +1424,7 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
 
     private final class RestartSystemAction extends SinglePressAction implements LongPressAction {
         RestartSystemAction() {
-            super(R.drawable.ic_restart,
+            super(com.android.systemui.res.R.drawable.ic_eos_restart,
                     com.android.systemui.res.R.string.global_action_restart_system);
         }
 

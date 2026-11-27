@@ -16,24 +16,42 @@
 package com.android.systemui.pulse
 
 import android.content.Context
+import android.os.PowerManager
 import android.os.SystemClock
+import android.os.UserHandle
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
 import kotlin.math.sqrt
 
 internal class PulseBassHaptics(
     context: Context
 ) {
 
+    private val appContext: Context = context.applicationContext ?: context
     private val vibrator: Vibrator? =
         context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    private val powerManager: PowerManager? =
+        context.getSystemService(PowerManager::class.java)
 
     private var smoothedBass: Float = 0f
     private var primed: Boolean = false
     private var lastVibrateUptimeMs: Long = 0L
 
+    fun isAllowed(): Boolean {
+        if (powerManager?.isPowerSaveMode == true) return false
+        return Settings.System.getIntForUser(
+            appContext.contentResolver,
+            Settings.System.HAPTIC_FEEDBACK_ENABLED,
+            1,
+            UserHandle.USER_CURRENT,
+        ) != 0
+    }
+
     fun process(fft: ByteArray?) {
         if (fft == null || fft.size < MIN_FFT_BYTES) return
+        if (!isAllowed()) return
 
         val v = vibrator ?: return
         if (!v.hasVibrator()) return
@@ -68,7 +86,10 @@ internal class PulseBassHaptics(
         if (mean > prev * SPIKE_RATIO && mean > ABSOLUTE_FLOOR) {
             lastVibrateUptimeMs = now
             try {
-                v.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
+                v.vibrate(
+                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK),
+                    VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH),
+                )
             } catch (_: Exception) {
                 // No-op
             }

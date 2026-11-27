@@ -25,6 +25,7 @@ import android.graphics.Matrix
 import android.graphics.Rect
 import android.os.DeadObjectException
 import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.RemoteException
 import android.os.Trace
@@ -331,7 +332,7 @@ constructor(
      */
     private var willUnlockWithSmartspaceTransition: Boolean = false
 
-    private val handler = Handler()
+    private val handler = Handler(Looper.getMainLooper())
 
     private val tmpFloat = FloatArray(9)
 

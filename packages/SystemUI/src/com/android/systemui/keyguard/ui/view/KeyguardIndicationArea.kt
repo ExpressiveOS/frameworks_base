@@ -59,7 +59,8 @@ class KeyguardIndicationArea(context: Context, private val attrs: AttributeSet?)
             id = R.id.keyguard_indication_text
             gravity = Gravity.CENTER
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-            setTextAppearance(R.style.TextAppearance_Keyguard_BottomArea)
+            setTextAppearance(R.style.TextAppearance_Keyguard_BottomArea_DoubleShadow)
+            setAlpha(1.0f)
 
             val padding = R.dimen.keyguard_indication_text_padding.dp()
             setPaddingRelative(padding, 0, padding, 0)
@@ -72,9 +73,9 @@ class KeyguardIndicationArea(context: Context, private val attrs: AttributeSet?)
             gravity = Gravity.CENTER
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
 
-            setTextAppearance(R.style.TextAppearance_Keyguard_BottomArea)
+            setTextAppearance(R.style.TextAppearance_Keyguard_BottomArea_DoubleShadow)
             setEllipsize(TextUtils.TruncateAt.END)
-            setAlpha(0.8f)
+            setAlpha(1.0f)
             setMinHeight(R.dimen.keyguard_indication_text_min_height.dp())
             setMaxLines(2)
             setVisibility(View.GONE)

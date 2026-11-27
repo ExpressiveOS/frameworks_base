@@ -34,6 +34,7 @@ import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Parcelable;
 import android.os.SystemClock;
 import android.os.UserHandle;
@@ -189,6 +190,7 @@ public class Clock extends TextView implements
                 ActivityInfo.CONFIG_FONT_SCALE | ActivityInfo.CONFIG_DENSITY);
 
         setIncludeFontPadding(false);
+        setFontFeatureSettings("tnum");
     }
 
     @Override
@@ -501,7 +503,7 @@ public class Clock extends TextView implements
         if (mShowSeconds) {
             // Wait until we have a display to start trying to show seconds.
             if (mSecondsHandler == null && getDisplay() != null) {
-                mSecondsHandler = new Handler();
+                mSecondsHandler = new Handler(Looper.getMainLooper());
                 if (getDisplay().getState() == Display.STATE_ON) {
                     mSecondsHandler.postAtTime(mSecondTick,
                             SystemClock.uptimeMillis() / 1000 * 1000 + 1000);
@@ -520,7 +522,7 @@ public class Clock extends TextView implements
                 mSecondsHandler = null;
                 updateClock();
             }
-            setFontFeatureSettings(null);
+            setFontFeatureSettings("tnum");
         }
     }
 

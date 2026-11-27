@@ -18,6 +18,7 @@ package com.android.systemui.statusbar.phone;
 
 import android.annotation.NonNull;
 import android.os.Handler;
+import android.os.Looper;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.systemui.dagger.SysUISingleton;
@@ -36,7 +37,7 @@ import javax.inject.Inject;
 public class DozeScrimController implements StateListener {
     private final DozeLog mDozeLog;
     private final DozeParameters mDozeParameters;
-    private final Handler mHandler = new Handler();
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
 
     private boolean mDozing;
     private DozeHost.PulseCallback mPulseCallback;

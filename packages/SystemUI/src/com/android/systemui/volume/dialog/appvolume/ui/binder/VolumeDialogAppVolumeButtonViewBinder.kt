@@ -1,5 +1,6 @@
 package com.android.systemui.volume.dialog.appvolume.ui.binder
 
+import android.view.HapticFeedbackConstants
 import android.view.View
 import com.android.app.tracing.coroutines.launchInTraced
 import com.android.app.tracing.coroutines.launchTraced
@@ -46,7 +47,8 @@ constructor(
             )
         )
 
-        appVolumeButton.setOnClickListener {
+        appVolumeButton.setOnClickListener { buttonView ->
+            buttonView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             viewModel.onButtonClicked()
             Events.writeEvent(Events.EVENT_SETTINGS_CLICK)
         }

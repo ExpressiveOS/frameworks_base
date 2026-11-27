@@ -98,6 +98,7 @@ import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
@@ -484,7 +485,7 @@ fun BrightnessSlider(
         )
 
         if (hasAutoBrightness && showAutoBrightness) {
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(dimensionResource(R.dimen.qs_tile_margin_horizontal)))
             drawAutoBrightnessButton(
                 autoMode = autoMode,
                 onIconClick = onIconClick,
@@ -832,7 +833,7 @@ private fun VolumeSlider(
         )
 
         if (showRinger) {
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(dimensionResource(R.dimen.qs_tile_margin_horizontal)))
             VolumeRingerButton(
                 hapticsEnabled = hapticsEnabled,
                 gradientColors = gradientColors,
@@ -1388,8 +1389,9 @@ fun BrightnessSliderContainer(
         )
     }
 
-    // Leave room for both background frames plus a small visual gap between the two sliders.
-    val horizontalGap = dimensions.backgroundFrameWidth * 2 + 4.dp
+    // Match the QS tile grid horizontal gutter (8dp) so left and right slider groups align
+    // with the QS tile column edges directly below.
+    val horizontalGap = dimensionResource(R.dimen.qs_tile_margin_horizontal)
     val verticalGap = dimensions.backgroundFrameHeight * 2 + 4.dp
 
     Box(

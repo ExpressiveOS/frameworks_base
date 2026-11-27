@@ -16,6 +16,7 @@
 
 package com.android.keyguard;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.text.TextUtils;
@@ -54,16 +55,27 @@ public class CarrierText extends TextView {
             a.recycle();
         }
         setTransformationMethod(new CarrierTextTransformationMethod(mContext, useAllCaps));
+        setMarqueeRepeatLimit(-1);
+        setShadowLayer(2f, 0f, 1f, context.getColor(R.color.keyguard_shadow_color));
     }
+
+    private void updateEllipsizeMode() {
+        final boolean useMarquee =
+                isShown() && isSelected() && ValueAnimator.areAnimatorsEnabled();
+        setEllipsize(useMarquee ? TextUtils.TruncateAt.MARQUEE : TextUtils.TruncateAt.END);
+        setHorizontalFadingEdgeEnabled(useMarquee);
+    }
+
+    @Override
+    public void setSelected(boolean selected) {
+        super.setSelected(selected);
+        updateEllipsizeMode();
+    }
+
     @Override
     protected void onVisibilityChanged(View changedView, int visibility) {
         super.onVisibilityChanged(changedView, visibility);
-        // Only show marquee when visible
-        if (visibility == VISIBLE) {
-            setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        } else {
-            setEllipsize(TextUtils.TruncateAt.END);
-        }
+        updateEllipsizeMode();
     }
 
     @Override

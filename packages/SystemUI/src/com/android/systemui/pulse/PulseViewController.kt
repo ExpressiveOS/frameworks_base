@@ -170,7 +170,7 @@ class PulseViewController @Inject constructor(
             if (show) {
                 audioProcessor.startCapture()
                 view.setVisibility(true, animate = true, durationMs = PULSE_FADE_IN_DURATION_MS)
-            } else if (pulseEnabled && hapticsMode > 1 && isMediaPlaying) {
+            } else if (pulseEnabled && hapticsMode > 1 && isMediaPlaying && bassHaptics.isAllowed()) {
                 audioProcessor.startCapture()
                 view.setVisibility(false, animate = true, durationMs = PULSE_FADE_OUT_DURATION_MS)
             } else {
@@ -182,7 +182,7 @@ class PulseViewController @Inject constructor(
     }
 
     override fun onDataUpdate(data: PulseData) {
-        if (hapticsMode > 0 && captureMode == PulseAudioDataProcessor.CaptureMode.FFT) {
+        if (hapticsMode > 0 && captureMode == PulseAudioDataProcessor.CaptureMode.FFT && bassHaptics.isAllowed()) {
             bassHaptics.process(data.fftBytes)
         }
         if (pulseRunning) {

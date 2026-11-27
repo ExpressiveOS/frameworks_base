@@ -954,17 +954,18 @@ private object TileDefaults {
     @Composable
     @ReadOnlyComposable
     fun unavailableTileColors(): TileColors {
-        val surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = .18f)
-        val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .38f)
+        val surfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .42f)
+        val primaryContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f)
+        val secondaryContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f)
         return TileColors(
             background = surfaceColor,
             iconBackground = surfaceColor,
-            label = onSurfaceVariantColor,
-            secondaryLabel = onSurfaceVariantColor,
-            icon = onSurfaceVariantColor,
-            outline = onSurfaceVariantColor,
-            classicLabel = onSurfaceVariantColor,
-            classicSecondaryLabel = onSurfaceVariantColor,
+            label = primaryContentColor,
+            secondaryLabel = secondaryContentColor,
+            icon = primaryContentColor,
+            outline = primaryContentColor,
+            classicLabel = primaryContentColor,
+            classicSecondaryLabel = secondaryContentColor,
         )
     }
 

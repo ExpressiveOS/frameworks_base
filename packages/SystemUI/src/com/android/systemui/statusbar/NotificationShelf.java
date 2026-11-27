@@ -17,6 +17,7 @@
 package com.android.systemui.statusbar;
 
 import static com.android.keyguard.BouncerPanelExpansionCalculator.aboutToShowBouncerProgress;
+import static com.android.systemui.Flags.lockscreenBlurForNotifications;
 import static com.android.systemui.Flags.physicalNotificationMovement;
 import static com.android.systemui.util.ColorUtilKt.hexColorString;
 
@@ -143,6 +144,7 @@ public class NotificationShelf extends ActivatableNotificationView {
         mAmbientState = ambientState;
         mHostLayout = hostLayout;
         mRoundnessManager = roundnessManager;
+        updateIfNeeded();
     }
 
     private void updateResources() {
@@ -1169,6 +1171,6 @@ public class NotificationShelf extends ActivatableNotificationView {
     protected boolean usesTransparentBackground() {
         return super.usesTransparentBackground()
                 && mAmbientState != null
-                && !mAmbientState.isOnKeyguard();
+                && (!mAmbientState.isOnKeyguard() || lockscreenBlurForNotifications());
     }
 }

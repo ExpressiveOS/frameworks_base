@@ -30,7 +30,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -55,7 +57,11 @@ fun SecurityInfo(
     val onClick: ((Expandable) -> Unit)? =
         viewModel.onClick?.let { onClick ->
             val context = LocalContext.current
-            { expandable -> onClick(context, expandable) }
+            val view = LocalView.current
+            { expandable ->
+                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                onClick(context, expandable)
+            }
         }
     CompositionLocalProvider(
         value = LocalContentColor provides MaterialTheme.colorScheme.onSurface

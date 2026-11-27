@@ -30,7 +30,8 @@
         <path
             android:name="background_track"
             android:pathData="M -180.0,-5.0 l 360.0,0 l 0,10.0 l -360.0,0 Z"
-            android:fillColor="@color/materialColorSurfaceContainerHigh"/>
+            android:fillColor="@color/materialColorOutlineVariant"
+            android:fillAlpha="0.55"/>
         <group
             android:name="rect_grp"
             android:translateX="-197.60001"

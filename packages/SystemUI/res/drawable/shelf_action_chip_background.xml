@@ -20,7 +20,7 @@
     android:color="@color/overlay_button_ripple">
     <item android:id="@android:id/background">
         <shape android:shape="rectangle">
-            <solid android:color="@color/materialColorSecondaryContainer"/>
+            <solid android:color="@color/materialColorSurfaceContainerHigh"/>
             <corners android:radius="1000dp"/>  <!-- fully-rounded pill -->
         </shape>
     </item>

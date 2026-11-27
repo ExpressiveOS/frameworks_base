@@ -26,6 +26,7 @@ import com.android.systemui.qs.panels.domain.model.EditTilesModel
 import com.android.systemui.qs.panels.shared.model.EditTileData
 import com.android.systemui.qs.shared.model.TileCategory
 import com.android.systemui.qs.tiles.base.shared.model.QSTileConfigProvider
+import com.android.systemui.res.R
 import javax.inject.Inject
 
 @SysUISingleton
@@ -46,10 +47,16 @@ constructor(
             stockTilesRepository.stockTiles.map {
                 if (qsTileConfigProvider.hasConfig(it.spec)) {
                     val config = qsTileConfigProvider.getConfig(it.spec)
+                    val editIconRes =
+                        if (config.uiConfig.iconRes == R.drawable.qs_bluetooth_icon_off) {
+                            R.drawable.vd_bluetooth
+                        } else {
+                            config.uiConfig.iconRes
+                        }
                     EditTileData(
                         it,
                         Icon.Resource(
-                            config.uiConfig.iconRes,
+                            editIconRes,
                             ContentDescription.Resource(config.uiConfig.labelRes),
                         ),
                         Text.Resource(config.uiConfig.labelRes),

@@ -804,7 +804,7 @@ public class LauncherProxyService implements CallbackController<LauncherProxyLis
         mMainExecutor = mainExecutor;
         mShellInterface = shellInterface;
         mShadeViewControllerLazy = shadeViewControllerLazy;
-        mHandler = new Handler();
+        mHandler = new Handler(Looper.getMainLooper());
         mNavBarControllerLazy = navBarControllerLazy;
         mScreenPinningRequest = screenPinningRequest;
         mStatusBarWinController = statusBarWinController;

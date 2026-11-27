@@ -18,8 +18,12 @@
 
 package com.android.systemui.qs.panels.ui.compose.infinitegrid
 
+import android.animation.ValueAnimator
+import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
@@ -27,11 +31,13 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalOverscrollFactory
@@ -133,6 +139,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -152,6 +159,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -240,7 +248,7 @@ sealed interface EditAction {
     data object ResetGrid : EditAction
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun DefaultEditTileGrid(
     listState: EditTileListState,
@@ -266,10 +274,24 @@ fun DefaultEditTileGrid(
     }
 
     val undoAction: @Composable RowScope.() -> Unit = {
-        AnimatedVisibility(snapshotViewModel.canUndo, enter = fadeIn(), exit = fadeOut()) {
+        val undoView = LocalView.current
+        val undoMotionScheme = MaterialTheme.motionScheme
+        val undoAnimatorsEnabled = ValueAnimator.areAnimatorsEnabled()
+        AnimatedVisibility(
+            snapshotViewModel.canUndo,
+            enter =
+                if (undoAnimatorsEnabled) fadeIn(undoMotionScheme.fastEffectsSpec())
+                else EnterTransition.None,
+            exit =
+                if (undoAnimatorsEnabled) fadeOut(undoMotionScheme.fastEffectsSpec())
+                else ExitTransition.None,
+        ) {
             IconButton(
                 enabled = snapshotViewModel.canUndo,
-                onClick = snapshotViewModel::undo,
+                onClick = {
+                    undoView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    snapshotViewModel.undo()
+                },
                 colors =
                     IconButtonDefaults.iconButtonColors(
                         containerColor = LocalAndroidColorScheme.current.surfaceEffect1,
@@ -537,6 +559,7 @@ private fun rememberEditModeState(
     return editGridHeaderState
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun TopBarSubtitle(
     listState: EditTileListState,
@@ -544,9 +567,18 @@ private fun TopBarSubtitle(
     modifier: Modifier = Modifier,
 ) {
     val editGridHeaderState by rememberEditModeState(listState, selectionState)
+    val motionScheme = MaterialTheme.motionScheme
 
     AnimatedContent(
         targetState = editGridHeaderState,
+        transitionSpec = {
+            if (ValueAnimator.areAnimatorsEnabled()) {
+                fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
+                    fadeOut(motionScheme.defaultEffectsSpec())
+            } else {
+                EnterTransition.None togetherWith ExitTransition.None
+            }
+        },
         label = "EditModeTopBarSubtitle",
         modifier = modifier,
     ) { state ->
@@ -559,15 +591,23 @@ private fun TopBarSubtitle(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun RemoveButton(
     enabled: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
+    val view = LocalView.current
+    val motionScheme = MaterialTheme.motionScheme
     val enabledTransition = updateTransition(enabled, "QSEditModeRemoveButton")
     val backgroundColor by
-        enabledTransition.animateColor(transitionSpec = { tween() }) {
+        enabledTransition.animateColor(
+            transitionSpec = {
+                if (ValueAnimator.areAnimatorsEnabled()) motionScheme.fastEffectsSpec<Color>()
+                else snap<Color>()
+            }
+        ) {
             if (it) {
                 MaterialTheme.colorScheme.primary
             } else {
@@ -575,7 +615,12 @@ private fun RemoveButton(
             }
         }
     val contentColor by
-        enabledTransition.animateColor(transitionSpec = { tween() }) {
+        enabledTransition.animateColor(
+            transitionSpec = {
+                if (ValueAnimator.areAnimatorsEnabled()) motionScheme.fastEffectsSpec<Color>()
+                else snap<Color>()
+            }
+        ) {
             if (it) MaterialTheme.colorScheme.onPrimary
             else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
         }
@@ -589,7 +634,13 @@ private fun RemoveButton(
                     cornerRadius = CornerRadius(size.height / 2f),
                 )
             }
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                enabled = enabled,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                    onClick()
+                },
+            )
             .padding(10.dp)
     ) {
         BasicText(
@@ -600,6 +651,7 @@ private fun RemoveButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun CurrentTilesGrid(
     listState: EditTileListState,
@@ -611,6 +663,12 @@ private fun CurrentTilesGrid(
     val totalHeight by
         animateDpAsState(
             gridHeight(totalRows + 1, TileHeight, TileArrangementPadding, CurrentTilesGridPadding),
+            animationSpec =
+                if (ValueAnimator.areAnimatorsEnabled()) {
+                    MaterialTheme.motionScheme.defaultSpatialSpec<Dp>()
+                } else {
+                    snap<Dp>()
+                },
             label = "QSEditCurrentTilesGridHeight",
         )
     val gridState = rememberLazyGridState()
@@ -692,6 +750,7 @@ private fun TileLazyGrid(
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AnimatedAvailableTilesGrid(
     allTiles: List<EditTileViewModel>,
@@ -702,17 +761,30 @@ private fun AnimatedAvailableTilesGrid(
     onEditAction: (EditAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val view = LocalView.current
+    val motionScheme = MaterialTheme.motionScheme
+    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
     // Sets a minimum height to be used when available tiles are hidden
     Box(
-        Modifier.fillMaxWidth().requiredHeightIn(AvailableTilesGridMinHeight).animateContentSize()
+        Modifier.fillMaxWidth()
+            .requiredHeightIn(AvailableTilesGridMinHeight)
+            .animateContentSize(
+                animationSpec =
+                    if (animatorsEnabled) motionScheme.defaultSpatialSpec<IntSize>()
+                    else snap<IntSize>()
+            )
     ) {
 
         // Using the fully qualified name here as a workaround for AnimatedVisibility not being
         // available from a Box
         androidx.compose.animation.AnimatedVisibility(
             visible = showAvailableTiles,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter =
+                if (animatorsEnabled) fadeIn(motionScheme.defaultEffectsSpec())
+                else EnterTransition.None,
+            exit =
+                if (animatorsEnabled) fadeOut(motionScheme.defaultEffectsSpec())
+                else ExitTransition.None,
         ) {
             // Hide available tiles when dragging
             Column(
@@ -731,7 +803,10 @@ private fun AnimatedAvailableTilesGrid(
                 )
 
                 TextButton(
-                    onClick = { onEditAction(EditAction.ResetGrid) },
+                    onClick = {
+                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        onEditAction(EditAction.ResetGrid)
+                    },
                     colors =
                         ButtonDefaults.textButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
@@ -1004,7 +1079,10 @@ private fun LazyGridItemScope.TileGridCell(
     // Don't apply the placementSpec to the selected tile as it interferes with
     // the resizing animation. The selection can't change positions without selecting a
     // different tile, so this isn't needed regardless.
-    val placementSpec = TilePlacementSpec.takeIf { resizingState.isIdle }
+    val placementSpec =
+        (if (ValueAnimator.areAnimatorsEnabled()) TilePlacementSpec else snap<IntOffset>()).takeIf {
+            resizingState.isIdle
+        }
     val removeTile = {
         selectionState.unSelect()
         onRemoveTile(cell.tile.tileSpec)
@@ -1131,6 +1209,7 @@ private fun CategoryHeader(category: TileCategory, modifier: Modifier = Modifier
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AvailableTileGridCell(
     cell: EditTileViewModel,
@@ -1140,13 +1219,25 @@ private fun AvailableTileGridCell(
     onAddTile: (TileSpec) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val view = LocalView.current
     val stateDescription: String? =
         if (cell.isCurrent) stringResource(R.string.accessibility_qs_edit_tile_already_added)
         else null
 
-    val alpha by animateFloatAsState(if (cell.isCurrent) .38f else 1f)
+    val alpha by
+        animateFloatAsState(
+            targetValue = if (cell.isCurrent) .38f else 1f,
+            animationSpec =
+                if (ValueAnimator.areAnimatorsEnabled()) {
+                    MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+                } else {
+                    snap<Float>()
+                },
+            label = "AvailableTileAlpha",
+        )
     val colors = EditModeTileDefaults.editTileColors()
     val onClick: () -> Unit = {
+        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
         onAddTile(cell.tileSpec)
         if (canLayoutTile) {
             selectionState.select(cell.tileSpec)
@@ -1374,6 +1465,7 @@ fun EditTile(
             label = tile.label.text,
             secondaryLabel = tile.appName?.text,
             colors = colors,
+            useEllipsis = true,
             modifier = Modifier.weight(1f).graphicsLayer { this.alpha = progress() },
         )
     }

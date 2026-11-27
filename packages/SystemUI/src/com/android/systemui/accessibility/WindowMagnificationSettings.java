@@ -46,6 +46,16 @@ import android.view.View.AccessibilityDelegate;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.os.PowerManager;
+import android.view.CrossWindowBlurListeners;
+import android.view.HapticFeedbackConstants;
+import android.view.ViewRootImpl;
+import com.android.internal.graphics.drawable.BackgroundBlurDrawable;
+import com.android.systemui.Flags;
+import java.util.function.Consumer;
 import android.view.WindowManager.LayoutParams;
 import android.view.WindowMetrics;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -115,6 +125,15 @@ class WindowMagnificationSettings implements MagnificationGestureDetector.OnGest
      */
     private int mSeekBarMagnitude;
     private float mScale = SCALE_MIN_VALUE;
+    private boolean mBlurListenerRegistered = false;
+    private final Consumer<Boolean> mCrossWindowBlurListener =
+            enabled -> applyPanelBackground();
+    private final BroadcastReceiver mPowerSaveReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            applyPanelBackground();
+        }
+    };
 
     private WindowMagnificationSettingsCallback mCallback;
 
@@ -207,6 +226,7 @@ class WindowMagnificationSettings implements MagnificationGestureDetector.OnGest
             if (!fromUser) {
                 return;
             }
+            seekBar.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
             final float scale = transformProgressToScale(progress);
             // We don't need to update the persisted scale when the seekbar progress is
             // changing. The update should be triggered when the changing is ended.
@@ -352,6 +372,7 @@ class WindowMagnificationSettings implements MagnificationGestureDetector.OnGest
         }
 
         // Unregister observer before removing view
+        unregisterBlurListener();
         mSecureSettings.unregisterContentObserverSync(mMagnificationCapabilityObserver);
         mSecureSettings.unregisterContentObserverSync(mMagnifyTypingObserver);
         mSecureSettings.unregisterContentObserverSync(mMagnifyKeyboardObserver);
@@ -592,6 +613,18 @@ class WindowMagnificationSettings implements MagnificationGestureDetector.OnGest
         mSettingView.setFocusableInTouchMode(true);
         mSettingView.setOnTouchListener(this::onTouch);
         mSettingView.setAccessibilityDelegate(mPanelDelegate);
+        mSettingView.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override
+            public void onViewAttachedToWindow(View v) {
+                registerBlurListener();
+                applyPanelBackground();
+            }
+
+            @Override
+            public void onViewDetachedFromWindow(View v) {
+                unregisterBlurListener();
+            }
+        });
         mSettingView.setOnApplyWindowInsetsListener((v, insets) -> {
             // Adds a pending post check to avoiding redundant calculation because this callback
             // is sent frequently when the switch icon window dragged by the users.
@@ -641,6 +674,15 @@ class WindowMagnificationSettings implements MagnificationGestureDetector.OnGest
                 (view, isChecked) -> setMagnifyTyping(isChecked));
 
         mZoomSeekbar = mSettingView.findViewById(R.id.magnifier_zoom_slider);
+        final SeekBar innerZoomSeekBar = mZoomSeekbar.findViewById(R.id.seekbar);
+        if (innerZoomSeekBar != null) {
+            innerZoomSeekBar.setSplitTrack(false);
+            innerZoomSeekBar.setProgressDrawable(
+                    mContext.getDrawable(R.drawable.eos_magnification_seekbar_progress));
+            innerZoomSeekBar.setThumb(
+                    mContext.getDrawable(R.drawable.eos_magnification_seekbar_thumb));
+            innerZoomSeekBar.setThumbOffset(0);
+        }
         mZoomSeekbar.setMax((int) (mZoomSeekbar.getChangeMagnitude()
                 * (SCALE_MAX_VALUE - SCALE_MIN_VALUE)));
         mSeekBarMagnitude = mZoomSeekbar.getChangeMagnitude();
@@ -651,6 +693,84 @@ class WindowMagnificationSettings implements MagnificationGestureDetector.OnGest
         mDoneButton.setOnClickListener(mButtonClickListener);
 
         updateSelectedButton(mLastSelectedButtonIndex);
+        applyPanelBackground();
+    }
+
+    private void registerBlurListener() {
+        if (Flags.blurOnMoreSurfaces()
+                && CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED
+                && !mBlurListenerRegistered) {
+            CrossWindowBlurListeners.getInstance().addListener(
+                    mContext.getMainExecutor(), mCrossWindowBlurListener);
+            mContext.registerReceiver(
+                    mPowerSaveReceiver,
+                    new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+                    Context.RECEIVER_NOT_EXPORTED);
+            mBlurListenerRegistered = true;
+        }
+    }
+
+    private void unregisterBlurListener() {
+        if (mBlurListenerRegistered) {
+            CrossWindowBlurListeners.getInstance().removeListener(mCrossWindowBlurListener);
+            try {
+                mContext.unregisterReceiver(mPowerSaveReceiver);
+            } catch (IllegalArgumentException ignored) {
+                // Already unregistered.
+            }
+            mBlurListenerRegistered = false;
+        }
+    }
+
+    private boolean isFrostedBlurAllowed() {
+        if (!Flags.blurOnMoreSurfaces()
+                || !CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED) {
+            return false;
+        }
+        final PowerManager pm = mContext.getSystemService(PowerManager.class);
+        if (pm != null && pm.isPowerSaveMode()) {
+            return false;
+        }
+        return CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled();
+    }
+
+    private void applyPanelBackground() {
+        if (mSettingView == null) {
+            return;
+        }
+        final float cornerRadiusPx = mContext.getResources().getDimensionPixelSize(
+                R.dimen.magnification_setting_background_corner_radius);
+        final int strokeWidthPx = Math.max(1, Math.round(
+                mContext.getResources().getDisplayMetrics().density));
+        final int outlineColor = mContext.getColor(
+                com.android.internal.R.color.materialColorOutlineVariant);
+
+        final GradientDrawable surfaceShape = new GradientDrawable();
+        surfaceShape.setShape(GradientDrawable.RECTANGLE);
+        surfaceShape.setCornerRadius(cornerRadiusPx);
+        surfaceShape.setStroke(strokeWidthPx, outlineColor);
+
+        final ViewRootImpl vri = mSettingView.getViewRootImpl();
+        if (vri != null && isFrostedBlurAllowed()) {
+            try {
+                final BackgroundBlurDrawable blurDrawable = vri.createBackgroundBlurDrawable();
+                if (blurDrawable != null) {
+                    blurDrawable.setCornerRadius(cornerRadiusPx);
+                    blurDrawable.setBlurRadius(mContext.getResources().getDimensionPixelSize(
+                            R.dimen.volume_dialog_background_surface_blur_radius));
+                    surfaceShape.setColor(mContext.getColor(
+                            R.color.volume_dialog_view_background_blur));
+                    mSettingView.setBackground(
+                            new LayerDrawable(new Drawable[] { blurDrawable, surfaceShape }));
+                    return;
+                }
+            } catch (RuntimeException ignored) {
+                // Fall back to opaque tonal surface below.
+            }
+        }
+        surfaceShape.setColor(mContext.getColor(
+                R.color.volume_dialog_view_background_blur_fallback));
+        mSettingView.setBackground(surfaceShape);
     }
 
     void onConfigurationChanged(int configDiff) {

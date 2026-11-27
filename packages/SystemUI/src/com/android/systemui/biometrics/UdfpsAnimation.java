@@ -21,6 +21,7 @@ import static android.content.Intent.ACTION_USER_SWITCHED;
 import static com.android.systemui.doze.util.BurnInHelperKt.getBurnInOffset;
 import static com.android.systemui.doze.util.BurnInHelperKt.getBurnInProgressOffset;
 
+import android.animation.ValueAnimator;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -251,7 +252,9 @@ public class UdfpsAnimation extends ImageView {
             mShowing = true;
             recognizingAnim.stop();
             recognizingAnim.selectDrawable(0);
-            recognizingAnim.start();
+            if (ValueAnimator.areAnimatorsEnabled()) {
+                recognizingAnim.start();
+            }
         } catch (RuntimeException e) {
             mShowing = false;
             Log.e(LOG_TAG, "Error adding animation window", e);

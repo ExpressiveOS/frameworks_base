@@ -18,7 +18,6 @@ package com.android.systemui.media.controls.ui.view
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.Path
@@ -51,27 +50,25 @@ class WaveformSeekBar @JvmOverloads constructor(
     private val waveLength = 80f * density
     private val minWaveTrackLength = waveLength * 1.0f
     
+    private val defaultPrimaryColor =
+        context.getColor(com.android.internal.R.color.materialColorPrimary)
+    private val defaultTrackColor =
+        context.getColor(com.android.internal.R.color.materialColorOnSurfaceVariant)
+
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.WHITE
+        color = defaultTrackColor
         alpha = 77
     }
     
     private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.WHITE
-    }
-    
-    private val thumbShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.BLACK
-        alpha = 60
+        color = defaultPrimaryColor
     }
     
     private val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        color = Color.WHITE
-        setShadowLayer(4f * density, 0f, 2f * density, Color.argb(80, 0, 0, 0))
+        color = defaultPrimaryColor
     }
     
     private var wavePhase = 0f
@@ -89,6 +86,17 @@ class WaveformSeekBar @JvmOverloads constructor(
     }
     
     fun startWaveAnimation() {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            isPlaying = true
+            waveAnimator?.cancel()
+            waveAnimator = null
+            fadeAnimator?.cancel()
+            fadeAnimator = null
+            waveAmplitudeMultiplier = 0f
+            wavePhase = 0f
+            invalidate()
+            return
+        }
         if (isPlaying && waveAnimator?.isRunning == true) return
         isPlaying = true
         
@@ -121,6 +129,12 @@ class WaveformSeekBar @JvmOverloads constructor(
         waveAnimator = null
         
         fadeAnimator?.cancel()
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            fadeAnimator = null
+            waveAmplitudeMultiplier = 0f
+            invalidate()
+            return
+        }
         fadeAnimator = ValueAnimator.ofFloat(waveAmplitudeMultiplier, 0f).apply {
             duration = 300L
             addUpdateListener { 
@@ -139,7 +153,10 @@ class WaveformSeekBar @JvmOverloads constructor(
         super.onAttachedToWindow()
         MediaSessionManager.get().addListener(this)
         
-        if (isPlaying && waveAnimator?.isRunning != true) {
+        if (isPlaying && !ValueAnimator.areAnimatorsEnabled()) {
+            waveAmplitudeMultiplier = 0f
+            invalidate()
+        } else if (isPlaying && ValueAnimator.areAnimatorsEnabled() && waveAnimator?.isRunning != true) {
             waveAnimator?.cancel()
             waveAnimator = ValueAnimator.ofFloat(0f, (2 * Math.PI).toFloat()).apply {
                 duration = 3500L
@@ -186,14 +203,13 @@ class WaveformSeekBar @JvmOverloads constructor(
         canvas.drawRoundRect(backgroundRect, cornerRadius, cornerRadius, backgroundPaint)
         
         if (progressX > pLeft) {
-            if (waveAmplitudeMultiplier > 0.01f) {
+            if (waveAmplitudeMultiplier > 0.01f && ValueAnimator.areAnimatorsEnabled()) {
                 drawWaveProgress(canvas, pLeft, progressX, centerY, trackTop, trackBottom)
             } else {
                 progressRect.set(pLeft, trackTop, progressX, trackBottom)
                 canvas.drawRoundRect(progressRect, cornerRadius, cornerRadius, progressPaint)
             }
         }
-        canvas.drawCircle(progressX, centerY + 2 * density, thumbRadius, thumbShadowPaint)
         canvas.drawCircle(progressX, centerY, thumbRadius, thumbPaint)
     }
     
@@ -329,7 +345,7 @@ class WaveformSeekBar @JvmOverloads constructor(
     
     fun setThumbColor(color: Int) {
         thumbPaint.color = color
-        thumbPaint.setShadowLayer(4f * density, 0f, 2f * density, Color.argb(80, 0, 0, 0))
+        thumbPaint.clearShadowLayer()
         invalidate()
     }
     

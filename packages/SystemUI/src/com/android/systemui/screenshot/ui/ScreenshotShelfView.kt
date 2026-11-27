@@ -29,9 +29,13 @@ import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.GestureDetector.SimpleOnGestureListener
 import android.view.MotionEvent
+import android.view.CrossWindowBlurListeners
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import com.android.internal.graphics.drawable.BackgroundBlurDrawable
+import java.util.function.Consumer
+import kotlin.math.min
 import android.view.WindowInsets
 import android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_GESTURAL
 import android.view.accessibility.AccessibilityEvent
@@ -55,6 +59,10 @@ class ScreenshotShelfView(context: Context, attrs: AttributeSet? = null) :
     private lateinit var actionsContainerBackground: View
     private lateinit var actionsContainer: View
     private var currentWindowInsets: WindowInsets = WindowInsets(Rect())
+    private var shelfBlurDrawable: BackgroundBlurDrawable? = null
+    private var shelfShapeDrawable: GradientDrawable? = null
+    private var blurEnabledListener: Consumer<Boolean>? = null
+    private var actionsBgLayoutListener: View.OnLayoutChangeListener? = null
 
     // Prepare an internal `GestureDetector` to determine when we can initiate a touch-interception
     // session (with the client's provided `onTouchInterceptListener`). We delegate out to their
@@ -133,24 +141,91 @@ class ScreenshotShelfView(context: Context, attrs: AttributeSet? = null) :
         applyFrostedShelfBlurIfSupported()
     }
 
+    override fun onDetachedFromWindow() {
+        blurEnabledListener?.let { listener ->
+            if (CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED) {
+                CrossWindowBlurListeners.getInstance().removeListener(listener)
+            }
+        }
+        blurEnabledListener = null
+        actionsBgLayoutListener?.let { actionsContainerBackground.removeOnLayoutChangeListener(it) }
+        actionsBgLayoutListener = null
+        super.onDetachedFromWindow()
+    }
+
     private fun applyFrostedShelfBlurIfSupported() {
-        if (!Flags.blurOnMoreSurfaces()) return
+        if (!Flags.blurOnMoreSurfaces() || !CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED) {
+            return
+        }
         val vri = viewRootImpl ?: return
+        if (shelfBlurDrawable == null || shelfShapeDrawable == null) {
+            val insetBg = actionsContainerBackground.background as? InsetDrawable ?: return
+            val shape = (insetBg.drawable?.mutate() as? GradientDrawable) ?: return
+            val blurDrawable =
+                runCatching { vri.createBackgroundBlurDrawable() }.getOrNull() ?: return
+            shelfBlurDrawable = blurDrawable
+            shelfShapeDrawable = shape
+            val insetPx =
+                resources.getDimensionPixelSize(R.dimen.overlay_action_container_minimum_edge_spacing)
+            actionsContainerBackground.background =
+                InsetDrawable(
+                    LayerDrawable(arrayOf<Drawable>(blurDrawable, shape)),
+                    insetPx,
+                    0,
+                    insetPx,
+                    0,
+                )
+        }
+        if (actionsBgLayoutListener == null) {
+            val layoutListener =
+                View.OnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+                    updateShelfBlurCornerRadius(v.width, v.height)
+                }
+            actionsBgLayoutListener = layoutListener
+            actionsContainerBackground.addOnLayoutChangeListener(layoutListener)
+        }
+        updateShelfBlurCornerRadius(
+            actionsContainerBackground.width,
+            actionsContainerBackground.height,
+        )
+        val listener =
+            blurEnabledListener
+                ?: Consumer<Boolean> { enabled -> updateFrostedShelfBlurState(enabled) }.also {
+                    blurEnabledListener = it
+                    CrossWindowBlurListeners.getInstance().addListener(context.mainExecutor, it)
+                }
+        updateFrostedShelfBlurState(
+            CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled()
+        )
+    }
+
+    private fun updateShelfBlurCornerRadius(width: Int, height: Int) {
+        val blurDrawable = shelfBlurDrawable ?: return
+        if (width > 0 && height > 0) {
+            blurDrawable.setCornerRadius(min(width, height) / 2f)
+        }
+    }
+
+    private fun updateFrostedShelfBlurState(isCrossWindowBlurEnabled: Boolean) {
+        val blurDrawable = shelfBlurDrawable ?: return
+        val shape = shelfShapeDrawable ?: return
         val pm = context.getSystemService(PowerManager::class.java)
-        if (pm?.isPowerSaveMode == true) return
-        val insetBg = actionsContainerBackground.background as? InsetDrawable ?: return
-        val shape = (insetBg.drawable?.mutate() as? GradientDrawable) ?: return
-        val blurDrawable = runCatching { vri.createBackgroundBlurDrawable() }.getOrNull() ?: return
-        val pillRadiusPx = FloatingWindowUtil.dpToPx(displayMetrics, 1000f)
-        val blurRadiusPx =
-            resources.getDimensionPixelSize(R.dimen.volume_dialog_background_surface_blur_radius)
-        blurDrawable.setCornerRadius(pillRadiusPx)
-        blurDrawable.setBlurRadius(blurRadiusPx)
-        shape.setColor(context.getColor(R.color.volume_dialog_view_background_blur))
-        val insetPx =
-            resources.getDimensionPixelSize(R.dimen.overlay_action_container_minimum_edge_spacing)
-        actionsContainerBackground.background =
-            InsetDrawable(LayerDrawable(arrayOf<Drawable>(blurDrawable, shape)), insetPx, 0, insetPx, 0)
+        val effectiveBlur = isCrossWindowBlurEnabled && (pm?.isPowerSaveMode != true)
+        if (effectiveBlur) {
+            val blurRadiusPx =
+                resources.getDimensionPixelSize(R.dimen.volume_dialog_background_surface_blur_radius)
+            blurDrawable.setBlurRadius(blurRadiusPx)
+            updateShelfBlurCornerRadius(
+                actionsContainerBackground.width,
+                actionsContainerBackground.height,
+            )
+            shape.setColor(context.getColor(R.color.volume_dialog_view_background_blur))
+        } else {
+            blurDrawable.setBlurRadius(0)
+            shape.setColor(
+                context.getColor(com.android.internal.R.color.materialColorSurfaceContainerHigh)
+            )
+        }
     }
 
     fun getObservedRegion(): Region {

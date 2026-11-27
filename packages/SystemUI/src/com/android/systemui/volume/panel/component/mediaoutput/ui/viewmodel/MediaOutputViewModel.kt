@@ -17,7 +17,6 @@
 package com.android.systemui.volume.panel.component.mediaoutput.ui.viewmodel
 
 import android.content.Context
-import android.graphics.Color as GraphicsColor
 import com.android.internal.logging.UiEventLogger
 import com.android.systemui.animation.Expandable
 import com.android.systemui.common.shared.model.Color
@@ -138,11 +137,22 @@ constructor(
                         icon = icon,
                         iconColor =
                             if (mediaOutputModel.canOpenAudioSwitcher) {
-                                Color.Resource(com.android.internal.R.color.materialColorPrimary)
+                                Color.Resource(com.android.internal.R.color.materialColorOnSurface)
                             } else {
-                                Color.Resource(com.android.internal.R.color.materialColorOutline)
+                                Color.Resource(
+                                    com.android.internal.R.color.materialColorOnSurfaceVariant
+                                )
                             },
-                        backgroundColor = Color.Loaded(GraphicsColor.TRANSPARENT),
+                        backgroundColor =
+                            if (mediaOutputModel.canOpenAudioSwitcher) {
+                                Color.Resource(
+                                    com.android.internal.R.color.materialColorSurfaceContainerHigh
+                                )
+                            } else {
+                                Color.Resource(
+                                    com.android.internal.R.color.materialColorSurfaceContainer
+                                )
+                            },
                     )
                 }
             }

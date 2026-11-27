@@ -628,7 +628,7 @@
         <item name="android:paddingBottom">@dimen/dialog_bottom_padding</item>
     </style>
 
-    <style name="Theme.SystemUI.Dialog.Alert" parent="@*android:style/Theme.DeviceDefault.Light.Dialog.Alert" />
+    <style name="Theme.SystemUI.Dialog.Alert" parent="Theme.SystemUI.Dialog" />
 
     <style name="Theme.SystemUI.Dialog.Alert.SensorPrivacy" parent="Theme.SystemUI.Dialog.Alert">
         <item name="android:windowNoTitle">true</item>
@@ -728,7 +728,7 @@
     </style>
 
     <style name="Theme.SystemUI.Dialog.Media" parent="Theme.SystemUI.Dialog">
-        <item name="android:colorBackground">@color/media_dialog_surface_container</item>
+        <item name="android:colorBackground">@color/media_dialog_surface_container_high</item>
     </style>
 
     <style name="MediaOutput" />
@@ -1114,7 +1114,7 @@
     </style>
 
     <style name="Theme.VolumePanel.Popup" parent="@style/Theme.SystemUI.Dialog">
-        <item name="android:dialogCornerRadius">44dp</item>
+        <item name="android:dialogCornerRadius">28dp</item>
         <item name="android:colorBackground">@color/materialColorSurfaceContainerHigh
         </item>
     </style>
@@ -1221,10 +1221,9 @@
     <style name="Control.ListPopupWindow" parent="@*android:style/Widget.DeviceDefault.ListPopupWindow">
         <item name="android:overlapAnchor">true</item>
 
-        <!-- used to override dark/light theming -->
-        <item name="*android:colorBackgroundFloating">@color/GM2_grey_800</item>
-        <item name="*android:colorPopupBackground">@color/GM2_grey_800</item>
-        <item name="*android:dialogCornerRadius">8dp</item>
+        <item name="*android:colorBackgroundFloating">@color/materialColorSurfaceContainerHigh</item>
+        <item name="*android:colorPopupBackground">@color/materialColorSurfaceContainerHigh</item>
+        <item name="*android:dialogCornerRadius">16dp</item>
     </style>
 
     <style name="TextAppearance.ControlSetup">
@@ -1686,7 +1685,7 @@
     </style>
 
     <style name="Theme.PrivacyDialog" parent="@style/Theme.SystemUI.Dialog">
-        <item name="android:colorBackground">@color/materialColorSurfaceContainer</item>
+        <item name="android:colorBackground">@color/materialColorSurfaceContainerHigh</item>
     </style>
 
     <style name="Theme.SystemUI.Dialog.StickyKeys" parent="@style/Theme.SystemUI.Dialog">
@@ -1744,8 +1743,10 @@
         <item name="android:textColor">@color/materialColorOnPrimary</item>
     </style>
 
-    <style name="Theme.AttributionDialog" parent="Theme.MaterialComponents.DayNight.Dialog">
+    <style name="Theme.AttributionDialog" parent="Theme.Material3.DayNight.Dialog">
         <item name="android:dialogCornerRadius">28dp</item>
+        <item name="android:colorBackground">@color/materialColorSurfaceContainerHigh</item>
+        <item name="android:windowElevation">0dp</item>
         <item name="android:windowMinWidthMajor">60%</item>
         <item name="android:windowMinWidthMinor">100%</item>
     </style>

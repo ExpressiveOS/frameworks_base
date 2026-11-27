@@ -16,7 +16,9 @@
 
 package com.android.systemui.media.controls.ui.drawable
 
+import android.animation.ValueAnimator
 import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.graphics.Color
 import android.graphics.LightingColorFilter
 import android.graphics.Paint
@@ -36,6 +38,8 @@ import org.mockito.ArgumentCaptor
 import org.mockito.Captor
 import org.mockito.Mock
 import org.mockito.Mockito.times
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.junit.MockitoJUnit
 
@@ -124,5 +128,22 @@ class SquigglyProgressTest : SysuiTestCase() {
 
         assertThat(wavePaint.color).isEqualTo(tint)
         assertThat(linePaint.color).isEqualTo(ColorUtils.setAlphaComponent(tint, DISABLED_ALPHA))
+    }
+
+    @Test
+    fun testReducedMotionStopsInvalidationAndFlattensWave() {
+        val callback = mock(Drawable.Callback::class.java)
+        val prevScale = ValueAnimator.getDurationScale()
+        try {
+            ValueAnimator.setDurationScale(0f)
+            squigglyProgress.animate = true
+            squigglyProgress.callback = callback
+            squigglyProgress.draw(canvas)
+
+            verify(callback, never()).invalidateDrawable(squigglyProgress)
+            verify(canvas, times(2)).drawPath(any(), paintCaptor.capture())
+        } finally {
+            ValueAnimator.setDurationScale(prevScale)
+        }
     }
 }

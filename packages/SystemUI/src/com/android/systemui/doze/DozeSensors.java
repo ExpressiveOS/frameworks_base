@@ -34,6 +34,7 @@ import android.hardware.biometrics.BiometricAuthenticator;
 import android.hardware.display.AmbientDisplayConfiguration;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.os.UserHandle;
 import android.provider.Settings;
@@ -113,7 +114,7 @@ public class DozeSensors {
     private final Callback mSensorCallback; // receives callbacks on registered sensor events
     private final Consumer<Boolean> mProxCallback; // receives callbacks on near/far updates
 
-    private final Handler mHandler = new Handler();
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
     private long mDebounceFrom;
     private boolean mSettingRegistered;
     private boolean mListening;

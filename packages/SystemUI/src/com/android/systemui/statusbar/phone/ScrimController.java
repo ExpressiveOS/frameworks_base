@@ -32,8 +32,11 @@ import android.animation.ValueAnimator;
 import android.annotation.IntDef;
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.database.ContentObserver;
 import android.graphics.Color;
 import android.os.Handler;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.Log;
 import android.util.MathUtils;
 import android.util.Pair;
@@ -378,6 +381,7 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
     Consumer<TransitionStep> mBouncerToGoneTransition;
 
     private boolean mViewsAttached;
+    private final ContentObserver mBlackThemeObserver;
 
     @Inject
     public ScrimController(
@@ -449,6 +453,21 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener, Dump
         mKeyguardTransitionInteractor = keyguardTransitionInteractor;
         mKeyguardInteractor = keyguardInteractor;
         mMainDispatcher = mainDispatcher;
+        mBlackThemeObserver = new ContentObserver(mHandler) {
+            @Override
+            public void onChange(boolean selfChange) {
+                onThemeChanged();
+            }
+        };
+        try {
+            mContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor("berry_black_theme"),
+                    false,
+                    mBlackThemeObserver,
+                    UserHandle.USER_ALL);
+        } catch (SecurityException | IllegalArgumentException | UnsupportedOperationException e) {
+            Log.w(TAG, "Unable to observe berry_black_theme setting", e);
+        }
     }
 
     /**

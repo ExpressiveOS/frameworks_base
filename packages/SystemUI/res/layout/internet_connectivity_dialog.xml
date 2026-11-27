@@ -54,9 +54,9 @@
     </LinearLayout>
 
     <LinearLayout
-        android:layout_width="@dimen/internet_dialog_progress_bar_width"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
+        android:layout_marginHorizontal="@dimen/internet_dialog_network_layout_margin"
         android:layout_marginBottom="@dimen/internet_dialog_network_layout_margin"
         android:orientation="vertical">
 
@@ -65,12 +65,12 @@
             android:layout_width="match_parent"
             android:layout_height="4dp"
             android:layout_gravity="center_vertical|center_horizontal"
-            android:background="@color/materialColorSurfaceContainerHigh"/>
+            android:background="@android:color/transparent"/>
 
         <ProgressBar
             android:id="@+id/wifi_searching_progress"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="4dp"
             android:layout_gravity="center_horizontal"
             android:visibility="gone"
             style="@style/TrimmedHorizontalProgressBar"/>
@@ -178,7 +178,8 @@
                             android:layout_height="28dp"
                             android:layout_marginStart="7dp"
                             android:layout_marginEnd="16dp"
-                            android:layout_gravity="center_vertical"/>
+                            android:layout_gravity="center_vertical"
+                            android:background="@color/materialColorOutlineVariant"/>
 
                         <FrameLayout
                             android:layout_width="@dimen/settingslib_switch_track_width"
@@ -234,7 +235,8 @@
                             android:layout_height="28dp"
                             android:layout_marginStart="7dp"
                             android:layout_marginEnd="16dp"
-                            android:layout_gravity="center_vertical"/>
+                            android:layout_gravity="center_vertical"
+                            android:background="@color/materialColorOutlineVariant"/>
 
                         <FrameLayout
                             android:layout_width="@dimen/settingslib_switch_track_width"
@@ -268,6 +270,8 @@
                     android:id="@+id/hotspot_layout"
                     style="@style/InternetDialog.Network"
                     android:layout_height="@dimen/internet_dialog_wifi_network_height"
+                    android:layout_marginBottom="4dp"
+                    android:background="@drawable/eos_dialog_row_bg_single"
                     android:gravity="center"
                     android:clickable="false"
                     android:focusable="false">
@@ -310,7 +314,7 @@
                         android:layout_marginStart="7dp"
                         android:layout_marginEnd="16dp"
                         android:layout_gravity="center_vertical"
-                        android:background="@color/disconnected_network_primary_color"/>
+                        android:background="@color/materialColorOutlineVariant"/>
 
                     <FrameLayout
                         android:layout_width="@dimen/settingslib_switch_track_width"
@@ -339,6 +343,8 @@
                     android:id="@+id/turn_on_wifi_layout"
                     style="@style/InternetDialog.Network"
                     android:layout_height="@dimen/internet_dialog_wifi_network_height"
+                    android:layout_marginBottom="4dp"
+                    android:background="@drawable/eos_dialog_row_bg_single"
                     android:gravity="center"
                     android:clickable="false"
                     android:focusable="false">
@@ -388,9 +394,10 @@
                     android:id="@+id/wifi_connected_layout"
                     style="@style/InternetDialog.Network"
                     android:layout_height="@dimen/internet_dialog_wifi_network_height"
+                    android:layout_marginBottom="4dp"
                     android:paddingStart="20dp"
                     android:paddingEnd="24dp"
-                    android:background="@drawable/settingslib_switch_bar_bg_on"
+                    android:background="@drawable/eos_dialog_row_bg_active"
                     android:visibility="gone">
 
                     <FrameLayout
@@ -452,28 +459,18 @@
             <LinearLayout
                 android:id="@+id/see_all_layout"
                 style="@style/InternetDialog.Network"
-                android:layout_height="64dp"
-                android:paddingStart="20dp">
-
-                <FrameLayout
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:clickable="false"
-                    android:layout_gravity="center_vertical|start">
-                    <ImageView
-                        android:id="@+id/arrow_forward"
-                        android:src="@drawable/ic_arrow_forward"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"/>
-                </FrameLayout>
+                android:layout_height="56dp"
+                android:layout_marginTop="4dp"
+                android:paddingStart="22dp"
+                android:paddingEnd="20dp"
+                android:background="@drawable/eos_dialog_row_bg_single">
 
                 <FrameLayout
                     android:orientation="vertical"
                     android:clickable="false"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:layout_marginStart="@dimen/internet_dialog_network_layout_margin">
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="match_parent">
                     <TextView
                         android:text="@string/see_all_networks"
                         android:layout_width="wrap_content"
@@ -481,6 +478,21 @@
                         android:gravity="start|center_vertical"
                         android:textAppearance="@style/TextAppearance.InternetDialog"
                         android:textSize="14sp"/>
+                </FrameLayout>
+
+                <FrameLayout
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:clickable="false"
+                    android:layout_gravity="center_vertical|end">
+                    <ImageView
+                        android:id="@+id/arrow_forward"
+                        android:src="@drawable/ic_arrow_forward"
+                        android:autoMirrored="true"
+                        android:tint="@color/materialColorOnSurfaceVariant"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"/>
                 </FrameLayout>
             </LinearLayout>
 

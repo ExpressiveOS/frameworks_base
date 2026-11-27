@@ -612,7 +612,7 @@ constructor(
 
         override fun onBindViewHolder(holder: DeviceItemViewHolder, position: Int) {
             val item = getItem(position)
-            holder.bind(item)
+            holder.bind(item, position, itemCount)
         }
 
         internal fun getItem(position: Int) = asyncListDiffer.currentList[position]
@@ -632,12 +632,26 @@ constructor(
             private val actionIconView = view.requireViewById<View>(R.id.gear_icon)
             private val divider = view.requireViewById<View>(R.id.divider)
 
-            internal fun bind(item: DeviceItem) {
+            internal fun bind(item: DeviceItem, position: Int = 0, totalCount: Int = 1) {
                 val isDeviceConnected = isDeviceConnected(item)
                 container.apply {
                     isEnabled = item.isEnabled
                     if (isInDialog) {
-                        background = item.background?.let { context.getDrawable(it) }
+                        background =
+                            when {
+                                item.background == R.drawable.bluetooth_tile_dialog_bg_off_busy ->
+                                    context.getDrawable(R.drawable.bluetooth_tile_dialog_bg_off_busy)
+                                item.isActive ->
+                                    context.getDrawable(R.drawable.eos_dialog_row_bg_active)
+                                totalCount <= 1 ->
+                                    context.getDrawable(R.drawable.eos_dialog_row_bg_single)
+                                position == 0 ->
+                                    context.getDrawable(R.drawable.eos_dialog_row_bg_top)
+                                position == totalCount - 1 ->
+                                    context.getDrawable(R.drawable.eos_dialog_row_bg_bottom)
+                                else ->
+                                    context.getDrawable(R.drawable.eos_dialog_row_bg_middle)
+                            }
                     } else {
                         // When !isInDialog, background is handled by ItemDecoration.
                         background = null
@@ -676,7 +690,13 @@ constructor(
                     actionIconView.contentDescription =
                         resources.getString(item.actionIconAccessibilityLabelRes, item.deviceName)
 
-                    divider.setBackgroundColor(tintColor)
+                    divider.setBackgroundColor(
+                        if (isInDialog && !item.isActive) {
+                            context.getColor(InternalR.color.materialColorOutlineVariant)
+                        } else {
+                            tintColor
+                        }
+                    )
 
                     // update text styles
                     if (isInDialog) {

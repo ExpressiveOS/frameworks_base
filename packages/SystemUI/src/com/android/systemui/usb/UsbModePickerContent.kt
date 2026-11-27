@@ -89,14 +89,14 @@ fun UsbModePickerContent(
             IconButton(onClick = onSettingsClick) {
                 Icon(
                     imageVector = Icons.Outlined.Settings,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.usb_mode_picker_settings_desc),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             IconButton(onClick = onDismiss) {
                 Icon(
                     imageVector = Icons.Outlined.Close,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.usb_mode_picker_close_desc),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

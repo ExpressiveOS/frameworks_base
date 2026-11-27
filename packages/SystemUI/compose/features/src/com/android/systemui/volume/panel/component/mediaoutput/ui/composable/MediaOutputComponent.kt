@@ -16,7 +16,11 @@
 
 package com.android.systemui.volume.panel.component.mediaoutput.ui.composable
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
@@ -24,8 +28,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -34,7 +36,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -179,6 +180,7 @@ class MediaOutputComponent @Inject constructor(private val viewModel: MediaOutpu
                     transition.currentState == transition.targetState && !transition.isRunning
                 }
             }
+        val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
         Box(
             modifier =
                 modifier.size(56.dp).motionTestValues {
@@ -190,22 +192,27 @@ class MediaOutputComponent @Inject constructor(private val viewModel: MediaOutpu
             transition.AnimatedContent(
                 contentKey = { it.backgroundColor },
                 transitionSpec = {
-                    if (targetState is DeviceIconViewModel.IsPlaying) {
-                        scaleIn(
-                            initialScale = 0.9f,
-                            animationSpec = isPlayingInIconBackgroundSpec(),
-                        ) + fadeIn(animationSpec = isPlayingInIconBackgroundSpec()) togetherWith
-                            fadeOut(animationSpec = snap())
-                    } else {
-                        fadeIn(animationSpec = snap(delayMillis = 900)) togetherWith
-                            scaleOut(targetScale = 0.9f, animationSpec = isPlayingOutSpec()) +
-                                fadeOut(animationSpec = isPlayingOutSpec())
-                    }
+                    val isSamePlayState = initialState::class == targetState::class
+                    val transform =
+                        if (!animatorsEnabled || isSamePlayState) {
+                            EnterTransition.None togetherWith ExitTransition.None
+                        } else if (targetState is DeviceIconViewModel.IsPlaying) {
+                            scaleIn(
+                                initialScale = 0.9f,
+                                animationSpec = isPlayingInIconBackgroundSpec(),
+                            ) + fadeIn(animationSpec = isPlayingInIconBackgroundSpec()) togetherWith
+                                fadeOut(animationSpec = snap())
+                        } else {
+                            fadeIn(animationSpec = isPlayingOutSpec()) togetherWith
+                                scaleOut(targetScale = 0.9f, animationSpec = isPlayingOutSpec()) +
+                                    fadeOut(animationSpec = isPlayingOutSpec())
+                        }
+                    transform.using(SizeTransform(clip = false))
                 },
             ) { targetViewModel ->
                 Spacer(
                     modifier =
-                        Modifier.fillMaxSize()
+                        Modifier.size(48.dp)
                             .background(
                                 color = targetViewModel.backgroundColor.toColor(),
                                 shape = RoundedCornerShape(16.dp),
@@ -222,19 +229,18 @@ class MediaOutputComponent @Inject constructor(private val viewModel: MediaOutpu
             transition.AnimatedContent(
                 contentKey = { Objects.hash(it.icon, it.iconColor) },
                 transitionSpec = {
-                    if (targetState is DeviceIconViewModel.IsPlaying) {
-                        fadeIn(animationSpec = snap(delayMillis = 700)) togetherWith
-                            slideOutVertically(
-                                targetOffsetY = { it },
-                                animationSpec = isPlayingInIconSpec(),
-                            ) + fadeOut(animationSpec = isNotPlayingOutIconSpec())
-                    } else {
-                        slideInVertically(
-                            initialOffsetY = { it },
-                            animationSpec = isNotPlayingInIconSpec(),
-                        ) + fadeIn(animationSpec = isNotPlayingInIconSpec()) togetherWith
-                            fadeOut(animationSpec = isPlayingOutSpec())
-                    }
+                    val isSamePlayState = initialState::class == targetState::class
+                    val transform =
+                        if (!animatorsEnabled || isSamePlayState) {
+                            EnterTransition.None togetherWith ExitTransition.None
+                        } else if (targetState is DeviceIconViewModel.IsPlaying) {
+                            fadeIn(animationSpec = tween(durationMillis = 200)) togetherWith
+                                fadeOut(animationSpec = tween(durationMillis = 150))
+                        } else {
+                            fadeIn(animationSpec = tween(durationMillis = 200)) togetherWith
+                                fadeOut(animationSpec = tween(durationMillis = 150))
+                        }
+                    transform.using(SizeTransform(clip = false))
                 },
             ) { targetViewModel ->
                 Icon(
@@ -255,15 +261,9 @@ class MediaOutputComponent @Inject constructor(private val viewModel: MediaOutpu
     }
 }
 
-private fun <T> isPlayingOutSpec() = tween<T>(durationMillis = 400, delayMillis = 500)
+private fun <T> isPlayingOutSpec() = tween<T>(durationMillis = 200)
 
-private fun <T> isPlayingInIconSpec() = tween<T>(durationMillis = 400, delayMillis = 300)
-
-private fun <T> isPlayingInIconBackgroundSpec() = tween<T>(durationMillis = 400, delayMillis = 700)
-
-private fun <T> isNotPlayingOutIconSpec() = tween<T>(durationMillis = 400, delayMillis = 300)
-
-private fun <T> isNotPlayingInIconSpec() = tween<T>(durationMillis = 400, delayMillis = 900)
+private fun <T> isPlayingInIconBackgroundSpec() = tween<T>(durationMillis = 200)
 
 @VisibleForTesting
 object MediaOutputComponentMotionTestKeys {

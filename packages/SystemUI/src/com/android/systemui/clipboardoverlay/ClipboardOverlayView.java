@@ -47,6 +47,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.MathUtils;
 import android.util.TypedValue;
+import android.view.CrossWindowBlurListeners;
 import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -78,6 +79,7 @@ import kotlin.Unit;
 import kotlin.jvm.functions.Function0;
 
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 /**
  * Handles the visual elements and animations for the clipboard overlay.
@@ -101,6 +103,10 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
 
     private final DisplayMetrics mDisplayMetrics;
     private final ArrayList<View> mActionChips = new ArrayList<>();
+    private BackgroundBlurDrawable mShelfBlurDrawable;
+    private GradientDrawable mShelfShapeDrawable;
+    private Consumer<Boolean> mBlurEnabledListener;
+    private View.OnLayoutChangeListener mActionBgLayoutListener;
 
     private View mClipboardPreview;
     private ImageView mImagePreview;
@@ -201,41 +207,94 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
         applyFrostedShelfBlurIfSupported();
     }
 
+    @Override
+    protected void onDetachedFromWindow() {
+        if (mBlurEnabledListener != null && CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED) {
+            CrossWindowBlurListeners.getInstance().removeListener(mBlurEnabledListener);
+        }
+        mBlurEnabledListener = null;
+        if (mActionBgLayoutListener != null && mActionContainerBackground != null) {
+            mActionContainerBackground.removeOnLayoutChangeListener(mActionBgLayoutListener);
+        }
+        mActionBgLayoutListener = null;
+        super.onDetachedFromWindow();
+    }
+
     private void applyFrostedShelfBlurIfSupported() {
-        if (!Flags.blurOnMoreSurfaces() || mActionContainerBackground == null) {
+        if (!Flags.blurOnMoreSurfaces()
+                || !CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED
+                || mActionContainerBackground == null) {
             return;
         }
         final ViewRootImpl vri = getViewRootImpl();
         if (vri == null) {
             return;
         }
-        final PowerManager pm = mContext.getSystemService(PowerManager.class);
-        if (pm != null && pm.isPowerSaveMode()) {
-            return;
-        }
-        if (!(mActionContainerBackground.getBackground() instanceof InsetDrawable insetBg)) {
-            return;
-        }
-        if (!(insetBg.getDrawable() instanceof GradientDrawable rawShape)) {
-            return;
-        }
-        try {
-            final BackgroundBlurDrawable blurDrawable = vri.createBackgroundBlurDrawable();
-            if (blurDrawable == null) {
+        if (mShelfBlurDrawable == null || mShelfShapeDrawable == null) {
+            if (!(mActionContainerBackground.getBackground() instanceof InsetDrawable insetBg)) {
                 return;
             }
-            final GradientDrawable shape = (GradientDrawable) rawShape.mutate();
-            blurDrawable.setCornerRadius(FloatingWindowUtil.dpToPx(mDisplayMetrics, 1000f));
-            blurDrawable.setBlurRadius(getResources().getDimensionPixelSize(
+            if (!(insetBg.getDrawable() instanceof GradientDrawable rawShape)) {
+                return;
+            }
+            try {
+                final BackgroundBlurDrawable blurDrawable = vri.createBackgroundBlurDrawable();
+                if (blurDrawable == null) {
+                    return;
+                }
+                final GradientDrawable shape = (GradientDrawable) rawShape.mutate();
+                mShelfBlurDrawable = blurDrawable;
+                mShelfShapeDrawable = shape;
+                final int insetPx = getResources().getDimensionPixelSize(
+                        R.dimen.overlay_action_container_minimum_edge_spacing);
+                mActionContainerBackground.setBackground(new InsetDrawable(
+                        new LayerDrawable(new Drawable[]{blurDrawable, shape}),
+                        insetPx, 0, insetPx, 0));
+            } catch (RuntimeException ignored) {
+                // Keep tonal surfaceContainerHigh fallback if blur drawable cannot be created.
+                return;
+            }
+        }
+        if (mActionBgLayoutListener == null) {
+            mActionBgLayoutListener = (v, left, top, right, bottom, ol, ot, orr, ob) ->
+                    updateShelfBlurCornerRadius(v.getWidth(), v.getHeight());
+            mActionContainerBackground.addOnLayoutChangeListener(mActionBgLayoutListener);
+        }
+        updateShelfBlurCornerRadius(
+                mActionContainerBackground.getWidth(), mActionContainerBackground.getHeight());
+        if (mBlurEnabledListener == null) {
+            mBlurEnabledListener = this::updateFrostedShelfBlurState;
+            CrossWindowBlurListeners.getInstance().addListener(
+                    mContext.getMainExecutor(), mBlurEnabledListener);
+        }
+        updateFrostedShelfBlurState(
+                CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled());
+    }
+
+    private void updateShelfBlurCornerRadius(int width, int height) {
+        if (mShelfBlurDrawable != null && width > 0 && height > 0) {
+            mShelfBlurDrawable.setCornerRadius(Math.min(width, height) / 2f);
+        }
+    }
+
+    private void updateFrostedShelfBlurState(boolean isCrossWindowBlurEnabled) {
+        if (mShelfBlurDrawable == null || mShelfShapeDrawable == null) {
+            return;
+        }
+        final PowerManager pm = mContext.getSystemService(PowerManager.class);
+        final boolean effectiveBlur =
+                isCrossWindowBlurEnabled && (pm == null || !pm.isPowerSaveMode());
+        if (effectiveBlur) {
+            mShelfBlurDrawable.setBlurRadius(getResources().getDimensionPixelSize(
                     R.dimen.volume_dialog_background_surface_blur_radius));
-            shape.setColor(mContext.getColor(R.color.volume_dialog_view_background_blur));
-            final int insetPx = getResources().getDimensionPixelSize(
-                    R.dimen.overlay_action_container_minimum_edge_spacing);
-            mActionContainerBackground.setBackground(new InsetDrawable(
-                    new LayerDrawable(new Drawable[]{blurDrawable, shape}),
-                    insetPx, 0, insetPx, 0));
-        } catch (RuntimeException ignored) {
-            // Keep tonal surfaceContainerHigh fallback if blur drawable cannot be created.
+            updateShelfBlurCornerRadius(
+                    mActionContainerBackground.getWidth(), mActionContainerBackground.getHeight());
+            mShelfShapeDrawable.setColor(
+                    mContext.getColor(R.color.volume_dialog_view_background_blur));
+        } else {
+            mShelfBlurDrawable.setBlurRadius(0);
+            mShelfShapeDrawable.setColor(mContext.getColor(
+                    com.android.internal.R.color.materialColorSurfaceContainerHigh));
         }
     }
 

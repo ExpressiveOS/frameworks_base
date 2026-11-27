@@ -19,6 +19,7 @@ package com.android.systemui.volume.panel.component.volume.ui.viewmodel
 import com.android.app.tracing.coroutines.launchTraced as launch
 import com.android.settingslib.volume.domain.interactor.AudioModeInteractor
 import com.android.settingslib.volume.shared.model.AudioStream
+import com.android.systemui.shared.settings.data.repository.SystemSettingsRepository
 import com.android.systemui.volume.panel.component.mediaoutput.domain.interactor.MediaDeviceSessionInteractor
 import com.android.systemui.volume.panel.component.mediaoutput.domain.interactor.MediaOutputInteractor
 import com.android.systemui.volume.panel.component.mediaoutput.shared.model.MediaDeviceSession
@@ -63,6 +64,7 @@ constructor(
     private val audioSharingStreamSliderViewModelFactory: AudioSharingStreamSliderViewModel.Factory,
     audioModeInteractor: AudioModeInteractor,
     streamsInteractor: AudioSlidersInteractor,
+    systemSettingsRepository: SystemSettingsRepository,
 ) {
 
     private val mutableIsExpanded = MutableStateFlow<Boolean?>(null)
@@ -97,6 +99,12 @@ constructor(
                 }
             }
             .stateIn(scope, SharingStarted.Eagerly, SlidersExpandableViewModel.Unavailable)
+
+    val isVerticalSliders: StateFlow<Boolean> =
+        systemSettingsRepository
+            .intSetting(KEY_VOLUME_PANEL_VERTICAL_SLIDERS, 0)
+            .map { it == 1 }
+            .stateIn(scope, SharingStarted.Eagerly, false)
 
     val sliderViewModels: StateFlow<List<SliderViewModel>> =
         streamsInteractor.volumePanelSliders
@@ -149,5 +157,9 @@ constructor(
 
     private fun CoroutineScope.createAudioSharingViewModel(): AudioSharingStreamSliderViewModel {
         return audioSharingStreamSliderViewModelFactory.create(this)
+    }
+
+    companion object {
+        const val KEY_VOLUME_PANEL_VERTICAL_SLIDERS = "volume_panel_vertical_sliders"
     }
 }

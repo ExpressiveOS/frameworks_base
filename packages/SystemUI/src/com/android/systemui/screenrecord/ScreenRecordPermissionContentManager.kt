@@ -186,10 +186,10 @@ class ScreenRecordPermissionContentManager(
         val a: ArrayAdapter<*> =
             ScreenRecordingAdapter(
                 containerView.context,
-                android.R.layout.simple_spinner_dropdown_item,
+                R.layout.screen_record_dropdown_item,
                 MODES,
             )
-        a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        a.setDropDownViewResource(R.layout.screen_record_dropdown_item)
         options.adapter = a
         options.setOnItemClickListenerInt { _: AdapterView<*>?, _: View?, _: Int, _: Long ->
             audioSwitch.isChecked = true

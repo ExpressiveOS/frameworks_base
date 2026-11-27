@@ -23,20 +23,30 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
+import android.graphics.Color;
 import android.graphics.Insets;
+import android.graphics.Rect;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.util.TypedValue;
+import android.view.CrossWindowBlurListeners;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewRootImpl;
 import android.view.Window;
 import android.view.WindowInsets.Type;
 import android.view.WindowManager;
 import android.view.WindowManager.LayoutParams;
+
+import com.android.internal.graphics.drawable.BackgroundBlurDrawable;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -104,6 +114,8 @@ public class SystemUIDialog extends AlertDialog {
     private int mLastNightMode = -1;
 
     private final List<Runnable> mOnCreateRunnables = new ArrayList<>();
+    @Nullable
+    private FrostedBlurController mFrostedBlurController;
 
     /**
      * @deprecated Don't subclass SystemUIDialog. Please subclass {@link Delegate} and pass it to
@@ -317,21 +329,8 @@ public class SystemUIDialog extends AlertDialog {
         mLastConfigurationHeightDp = config.screenHeightDp;
         final Window window = getWindow();
         updateWindowSize(window);
-        if (Flags.blurOnMoreSurfaces() && mBlurInteractor != null) {
-            final PowerManager pm = getContext().getSystemService(PowerManager.class);
-            final boolean isPowerSave = pm != null && pm.isPowerSaveMode();
-            final boolean blurSupported =
-                    Boolean.TRUE.equals(mBlurInteractor.isBlurCurrentlySupported().getValue())
-                            && !isPowerSave;
-            final LayoutParams lp = window.getAttributes();
-            if (blurSupported
-                    && (lp.flags & LayoutParams.FLAG_DIM_BEHIND) != 0
-                    && lp.getBlurBehindRadius() == 0) {
-                window.addFlags(LayoutParams.FLAG_BLUR_BEHIND);
-                lp.setBlurBehindRadius(getContext().getResources()
-                        .getDimensionPixelSize(R.dimen.max_window_blur_radius) / 2);
-                window.setAttributes(lp);
-            }
+        if (mFrostedBlurController == null) {
+            mFrostedBlurController = attachFrostedDialogBlur(this, null, -1f, mBlurInteractor);
         }
 
         for (int i = 0; i < mOnCreateRunnables.size(); i++) {
@@ -743,7 +742,301 @@ public class SystemUIDialog extends AlertDialog {
 
         final TypedValue outValue = new TypedValue();
         context.getTheme().resolveAttribute(android.R.attr.windowBackground, outValue, true);
-        viewWithBackground.setBackground(context.getDrawable(outValue.resourceId));
+        Drawable refreshed = context.getDrawable(outValue.resourceId);
+        viewWithBackground.setBackground(refreshed);
+        if (mFrostedBlurController != null) {
+            mFrostedBlurController.onOriginalBackgroundChanged(refreshed);
+        }
+    }
+
+    /**
+     * Attaches live frosted Kawase blur (surface + backdrop) to any dialog window, with automatic
+     * opaque fallback whenever Reduce Blur or Battery Saver is enabled.
+     */
+    public static void applyFrostedDialogBlur(@NonNull Dialog dialog) {
+        attachFrostedDialogBlur(dialog, null, -1f, null);
+    }
+
+    /**
+     * Attaches live frosted Kawase blur to a specific dialog card view (such as dialogs that draw
+     * their rounded card background on a child layout instead of the window background).
+     */
+    public static void applyFrostedSurfaceBlur(
+            @NonNull Dialog dialog, @NonNull View surfaceView, float cornerRadiusPx) {
+        if (dialog instanceof SystemUIDialog sysuiDialog) {
+            if (sysuiDialog.mFrostedBlurController != null) {
+                sysuiDialog.mFrostedBlurController.detach();
+            }
+            sysuiDialog.mFrostedBlurController = attachFrostedDialogBlur(
+                    dialog, surfaceView, cornerRadiusPx, sysuiDialog.mBlurInteractor);
+        } else {
+            attachFrostedDialogBlur(dialog, surfaceView, cornerRadiusPx, null);
+        }
+    }
+
+    @Nullable
+    private static FrostedBlurController attachFrostedDialogBlur(
+            @NonNull Dialog dialog,
+            @Nullable View explicitSurfaceView,
+            float explicitCornerRadiusPx,
+            @Nullable WindowRootViewBlurInteractor blurInteractor) {
+        if (!Flags.blurOnMoreSurfaces()) {
+            return null;
+        }
+        final Window window = dialog.getWindow();
+        if (window == null) {
+            return null;
+        }
+        final View decorView = window.getDecorView();
+        if (decorView == null) {
+            return null;
+        }
+        FrostedBlurController controller = new FrostedBlurController(
+                dialog, decorView, explicitSurfaceView, explicitCornerRadiusPx, blurInteractor);
+        controller.attach();
+        return controller;
+    }
+
+    private static boolean isTransparentDrawable(@Nullable Drawable drawable) {
+        if (drawable == null) {
+            return true;
+        }
+        if (drawable instanceof ColorDrawable colorDrawable) {
+            return Color.alpha(colorDrawable.getColor()) == 0;
+        }
+        if (drawable instanceof InsetDrawable insetDrawable) {
+            return isTransparentDrawable(insetDrawable.getDrawable());
+        }
+        return false;
+    }
+
+    private static final class FrostedBlurController implements View.OnAttachStateChangeListener {
+        private final Dialog mDialog;
+        private final View mDecorView;
+        @Nullable
+        private final View mExplicitSurfaceView;
+        private final float mExplicitCornerRadiusPx;
+        @Nullable
+        private final WindowRootViewBlurInteractor mBlurInteractor;
+
+        @Nullable
+        private View mResolvedSurfaceView;
+        @Nullable
+        private Drawable mOriginalBackground;
+        private boolean mListenersRegistered;
+        private boolean mAppliedBlurBehind;
+        private final Consumer<Boolean> mCrossWindowBlurListener = enabled -> updateBlurState();
+        private final BroadcastReceiver mPowerSaveReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                updateBlurState();
+            }
+        };
+
+        FrostedBlurController(
+                @NonNull Dialog dialog,
+                @NonNull View decorView,
+                @Nullable View explicitSurfaceView,
+                float explicitCornerRadiusPx,
+                @Nullable WindowRootViewBlurInteractor blurInteractor) {
+            mDialog = dialog;
+            mDecorView = decorView;
+            mExplicitSurfaceView = explicitSurfaceView;
+            mExplicitCornerRadiusPx = explicitCornerRadiusPx;
+            mBlurInteractor = blurInteractor;
+        }
+
+        void attach() {
+            mDecorView.addOnAttachStateChangeListener(this);
+            if (mDecorView.isAttachedToWindow()) {
+                onViewAttachedToWindow(mDecorView);
+            }
+        }
+
+        void detach() {
+            mDecorView.removeOnAttachStateChangeListener(this);
+            unregisterListeners();
+            restoreOpaqueSurface();
+            mResolvedSurfaceView = null;
+        }
+
+        void onOriginalBackgroundChanged(@Nullable Drawable newOriginalBackground) {
+            if (mExplicitSurfaceView != null) {
+                return;
+            }
+            mOriginalBackground = newOriginalBackground;
+            updateBlurState();
+        }
+
+        @Override
+        public void onViewAttachedToWindow(@NonNull View v) {
+            registerListeners();
+            updateBlurState();
+        }
+
+        @Override
+        public void onViewDetachedFromWindow(@NonNull View v) {
+            unregisterListeners();
+            restoreOpaqueSurface();
+            mResolvedSurfaceView = null;
+        }
+
+        private Context receiverContext() {
+            final Context ctx = mDialog.getContext();
+            final Context appCtx = ctx.getApplicationContext();
+            return appCtx != null ? appCtx : ctx;
+        }
+
+        private void registerListeners() {
+            if (mListenersRegistered) {
+                return;
+            }
+            final Context ctx = receiverContext();
+            if (CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED) {
+                CrossWindowBlurListeners.getInstance().addListener(
+                        ctx.getMainExecutor(), mCrossWindowBlurListener);
+            }
+            ctx.registerReceiver(
+                    mPowerSaveReceiver,
+                    new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+                    Context.RECEIVER_NOT_EXPORTED);
+            mListenersRegistered = true;
+        }
+
+        private void unregisterListeners() {
+            if (!mListenersRegistered) {
+                return;
+            }
+            final Context ctx = receiverContext();
+            if (CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED) {
+                CrossWindowBlurListeners.getInstance().removeListener(mCrossWindowBlurListener);
+            }
+            try {
+                ctx.unregisterReceiver(mPowerSaveReceiver);
+            } catch (IllegalArgumentException ignored) {
+                // Already unregistered.
+            }
+            mListenersRegistered = false;
+        }
+
+        private boolean shouldUseFrostedBlur() {
+            if (!Flags.blurOnMoreSurfaces()
+                    || !CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED) {
+                return false;
+            }
+            if (!CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled()) {
+                return false;
+            }
+            if (mBlurInteractor != null
+                    && !Boolean.TRUE.equals(
+                            mBlurInteractor.isBlurCurrentlySupported().getValue())) {
+                return false;
+            }
+            final PowerManager pm = mDialog.getContext().getSystemService(PowerManager.class);
+            return pm == null || !pm.isPowerSaveMode();
+        }
+
+        private float resolveCornerRadiusPx(@NonNull Context context) {
+            if (mExplicitCornerRadiusPx > 0f) {
+                return mExplicitCornerRadiusPx;
+            }
+            final TypedValue tv = new TypedValue();
+            if (context.getTheme().resolveAttribute(
+                    android.R.attr.dialogCornerRadius, tv, true)) {
+                final float resolved = tv.getDimension(context.getResources().getDisplayMetrics());
+                if (resolved > 0f) {
+                    return resolved;
+                }
+            }
+            return TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, 28f, context.getResources().getDisplayMetrics());
+        }
+
+        private void updateBlurState() {
+            final Window window = mDialog.getWindow();
+            if (window == null || !mDecorView.isAttachedToWindow()) {
+                return;
+            }
+            final Context context = window.getContext();
+            final boolean useBlur = shouldUseFrostedBlur();
+
+            // 1. Update backdrop FLAG_BLUR_BEHIND cleanly.
+            final LayoutParams lp = window.getAttributes();
+            if (useBlur) {
+                if ((lp.flags & LayoutParams.FLAG_DIM_BEHIND) != 0
+                        && lp.getBlurBehindRadius() == 0) {
+                    window.addFlags(LayoutParams.FLAG_BLUR_BEHIND);
+                    lp.setBlurBehindRadius(context.getResources()
+                            .getDimensionPixelSize(R.dimen.max_window_blur_radius) / 2);
+                    window.setAttributes(lp);
+                    mAppliedBlurBehind = true;
+                }
+            } else if (mAppliedBlurBehind) {
+                window.clearFlags(LayoutParams.FLAG_BLUR_BEHIND);
+                lp.setBlurBehindRadius(0);
+                window.setAttributes(lp);
+                mAppliedBlurBehind = false;
+            }
+
+            // 2. Resolve dialog card surface view and preserve its original opaque background.
+            final View surfaceView = mExplicitSurfaceView != null
+                    ? mExplicitSurfaceView
+                    : getViewWithBackground(mDialog);
+            if (surfaceView == null) {
+                return;
+            }
+            if (mResolvedSurfaceView != surfaceView) {
+                mResolvedSurfaceView = surfaceView;
+                mOriginalBackground = surfaceView.getBackground();
+            }
+            if (isTransparentDrawable(mOriginalBackground)) {
+                return;
+            }
+
+            if (!useBlur) {
+                restoreOpaqueSurface();
+                return;
+            }
+
+            final ViewRootImpl vri = surfaceView.getViewRootImpl();
+            if (vri == null) {
+                return;
+            }
+            try {
+                final BackgroundBlurDrawable blurDrawable = vri.createBackgroundBlurDrawable();
+                if (blurDrawable == null) {
+                    restoreOpaqueSurface();
+                    return;
+                }
+                final float cornerRadiusPx = resolveCornerRadiusPx(context);
+                final int surfaceBlurRadiusPx = context.getResources().getDimensionPixelSize(
+                        R.dimen.volume_dialog_background_surface_blur_radius);
+                blurDrawable.setCornerRadius(cornerRadiusPx);
+                blurDrawable.setBlurRadius(surfaceBlurRadiusPx);
+
+                final GradientDrawable frostedTint = new GradientDrawable();
+                frostedTint.setShape(GradientDrawable.RECTANGLE);
+                frostedTint.setCornerRadius(cornerRadiusPx);
+                frostedTint.setColor(context.getColor(R.color.volume_dialog_view_background_blur));
+
+                Drawable frosted = new LayerDrawable(new Drawable[] { blurDrawable, frostedTint });
+                if (mOriginalBackground instanceof InsetDrawable) {
+                    final Rect insets = new Rect();
+                    mOriginalBackground.getPadding(insets);
+                    frosted = new InsetDrawable(
+                            frosted, insets.left, insets.top, insets.right, insets.bottom);
+                }
+                surfaceView.setBackground(frosted);
+            } catch (RuntimeException e) {
+                restoreOpaqueSurface();
+            }
+        }
+
+        private void restoreOpaqueSurface() {
+            if (mResolvedSurfaceView != null && mOriginalBackground != null) {
+                mResolvedSurfaceView.setBackground(mOriginalBackground);
+            }
+        }
     }
 
     /**

@@ -78,6 +78,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import com.android.systemui.res.R as SysuiR
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -505,7 +507,7 @@ fun GlobalActionsScreen(
             when {
                 className.contains("Power") || className.contains("ShutDown") -> {
                     confirmationTitle = getActionLabel(tile.action, context)
-                    confirmationMessage = "Slide to power off"
+                    confirmationMessage = context.getString(SysuiR.string.global_actions_slide_to_power_off)
                     confirmationIconBitmap = tile.action.getIcon(context)?.toBitmap(96, 96)?.asImageBitmap()
                     confirmationColor = errorColor
                     confirmationReturnsToGrid = true
@@ -518,7 +520,7 @@ fun GlobalActionsScreen(
                         currentView = GlobalActionsView.RESTART_CHOICE
                     } else {
                         confirmationTitle = getActionLabel(tile.action, context)
-                        confirmationMessage = "Slide to restart"
+                        confirmationMessage = context.getString(SysuiR.string.global_actions_slide_to_restart)
                         confirmationIconBitmap = tile.action.getIcon(context)?.toBitmap(96, 96)?.asImageBitmap()
                         confirmationColor = errorColor
                         confirmationReturnsToGrid = true
@@ -541,7 +543,7 @@ fun GlobalActionsScreen(
 
     val handleRestartOptionClick: (GlobalActionsDialogLite.Action) -> Unit = { action ->
         confirmationTitle = getActionLabel(action, context)
-        confirmationMessage = "Slide to restart"
+        confirmationMessage = context.getString(SysuiR.string.global_actions_slide_to_restart)
         confirmationIconBitmap = action.getIcon(context)?.toBitmap(96, 96)?.asImageBitmap()
         confirmationColor = errorColor
         confirmationReturnsToGrid = false
@@ -704,20 +706,20 @@ private fun RestartChoiceMenu(
             .padding(16.dp)
             .pointerInput(Unit) { detectTapGestures { } },
         shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
         ),
-        tonalElevation = 6.dp,
-        shadowElevation = 8.dp
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
         Column(
             modifier = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Restart",
+                text = stringResource(SysuiR.string.global_actions_restart_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -746,8 +748,11 @@ private fun RestartChoiceMenu(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            TextButton(onClick = onBack) {
-                Text("Cancel")
+            FilledTonalButton(
+                onClick = onBack,
+                shape = CircleShape
+            ) {
+                Text(stringResource(SysuiR.string.global_actions_cancel))
             }
         }
     }
@@ -768,7 +773,7 @@ private fun RestartOptionTile(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
         modifier = modifier.height(100.dp)
     ) {
         Column(
@@ -796,7 +801,7 @@ private fun RestartOptionTile(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 modifier = Modifier.basicMarquee()
@@ -820,6 +825,7 @@ private fun PowerMenuContainer(
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val gridColumns = 4
+    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
 
     if (isLandscape) {
         Box(
@@ -828,7 +834,7 @@ private fun PowerMenuContainer(
             val animatedBias by animateFloatAsState(
                 targetValue = if (isEditMode) -1f else 0f,
                 label = "landscape_position_bias",
-                animationSpec = spring(stiffness = Spring.StiffnessLow)
+                animationSpec = if (animatorsEnabled) spring(stiffness = Spring.StiffnessLow) else snap()
             )
             
             val topPadding = if (isEditMode) 4.dp else 0.dp
@@ -839,15 +845,17 @@ private fun PowerMenuContainer(
                     .align(BiasAlignment(0f, animatedBias))
                     .padding(top = topPadding, start = 16.dp, end = 16.dp)
                     .pointerInput(Unit) { detectTapGestures { } }
-                    .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessLow)),
+                    .animateContentSize(
+                        animationSpec = if (animatorsEnabled) spring(stiffness = Spring.StiffnessLow) else snap()
+                    ),
                 shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surface,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
                     MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 ),
-                tonalElevation = 6.dp,
-                shadowElevation = 8.dp
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
@@ -870,8 +878,8 @@ private fun PowerMenuContainer(
 
             AnimatedVisibility(
                 visible = isEditMode && layoutState.inactiveTiles.isNotEmpty(),
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                enter = if (animatorsEnabled) slideInVertically(initialOffsetY = { it }) + fadeIn() else EnterTransition.None,
+                exit = if (animatorsEnabled) slideOutVertically(targetOffsetY = { it }) + fadeOut() else ExitTransition.None,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 16.dp)
@@ -881,9 +889,13 @@ private fun PowerMenuContainer(
                         .width(200.dp)
                         .pointerInput(Unit) { detectTapGestures { } },
                     shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 6.dp
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    ),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp
                 ) {
                     Column(
                         modifier = Modifier
@@ -893,11 +905,11 @@ private fun PowerMenuContainer(
                     ) {
                         AnimatedVisibility(
                             visible = true,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
+                            enter = if (animatorsEnabled) fadeIn() + expandVertically() else EnterTransition.None,
+                            exit = if (animatorsEnabled) fadeOut() + shrinkVertically() else ExitTransition.None
                         ) {
                             Text(
-                                text = "Add Actions",
+                                text = stringResource(SysuiR.string.global_actions_add_actions),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -921,15 +933,17 @@ private fun PowerMenuContainer(
                 .width(340.dp)
                 .padding(16.dp)
                 .pointerInput(Unit) { detectTapGestures { } }
-                .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessLow)),
+                .animateContentSize(
+                    animationSpec = if (animatorsEnabled) spring(stiffness = Spring.StiffnessLow) else snap()
+                ),
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             border = androidx.compose.foundation.BorderStroke(
                 1.dp,
                 MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             ),
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -948,13 +962,17 @@ private fun PowerMenuContainer(
                     onInteractionEnd = onInteractionEnd
                 )
 
-                AnimatedVisibility(visible = isEditMode && layoutState.inactiveTiles.isNotEmpty()) {
+                AnimatedVisibility(
+                    visible = isEditMode && layoutState.inactiveTiles.isNotEmpty(),
+                    enter = if (animatorsEnabled) fadeIn() + expandVertically() else EnterTransition.None,
+                    exit = if (animatorsEnabled) fadeOut() + shrinkVertically() else ExitTransition.None
+                ) {
                     Column(modifier = Modifier.padding(top = 24.dp)) {
                         Divider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
                         Spacer(modifier = Modifier.height(16.dp))
                         
                         Text(
-                            text = "Add Actions",
+                            text = stringResource(SysuiR.string.global_actions_add_actions),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

@@ -126,6 +126,11 @@ constructor(
         lp?.setFitInsetsIgnoringVisibility(true)
         dialog.window?.setAttributes(lp)
         dialog.window?.setContentView(mDialogView)
+        SystemUIDialog.applyFrostedSurfaceBlur(
+            dialog,
+            mDialogView,
+            mContext.resources.getDimension(R.dimen.media_output_dialog_corner_radius),
+        )
         dialog.window?.setTitle(
             mContext.getString(R.string.media_output_dialog_accessibility_title)
         )

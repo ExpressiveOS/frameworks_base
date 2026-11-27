@@ -40,6 +40,7 @@ import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.RemoteException;
 import android.os.UserHandle;
 import android.provider.Settings;
@@ -75,7 +76,7 @@ public class InstantAppNotifier
     public static final int NUM_TASKS_FOR_INSTANT_APP_INFO = 5;
 
     private final Context mContext;
-    private final Handler mHandler = new Handler();
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final UserTracker mUserTracker;
     private final Executor mMainExecutor;
     private final Executor mUiBgExecutor;

@@ -24,8 +24,8 @@ import android.graphics.Canvas
 import android.util.AttributeSet
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.DecelerateInterpolator
 import android.view.ViewPropertyAnimator
+import com.android.app.animation.Interpolators
 
 class PulseView @JvmOverloads constructor(
     context: Context,
@@ -41,7 +41,7 @@ class PulseView @JvmOverloads constructor(
     private var settingsRepo: PulseSettingsRepository? = null
     
     private var fadeAnimator: ValueAnimator? = null
-    private val fadeInterpolator = DecelerateInterpolator()
+    private val fadeInterpolator = Interpolators.EMPHASIZED_DECELERATE
     private var visibilityAnimator: ViewPropertyAnimator? = null
     private var captureMode: PulseAudioDataProcessor.CaptureMode =
         PulseAudioDataProcessor.CaptureMode.FFT
@@ -171,7 +171,7 @@ class PulseView @JvmOverloads constructor(
 
         currentAnimator?.cancel()
 
-        if (!animate) {
+        if (!animate || !ValueAnimator.areAnimatorsEnabled()) {
             currentAnimator = null
             alpha = if (visible) 1f else 0f
             this.visibility = if (visible) VISIBLE else GONE

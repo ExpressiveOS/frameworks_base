@@ -1,20 +1,27 @@
 package com.android.systemui.axdynamicbar.ui.compose
 
+import android.animation.ValueAnimator
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
 import android.graphics.drawable.LayerDrawable
 import android.util.TypedValue
+import android.view.HapticFeedbackConstants
 import android.widget.SeekBar
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,7 +31,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -41,7 +48,6 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,7 +68,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -106,7 +114,7 @@ internal fun MediaCard(event: IslandEvent.Media, interactor: IslandActions) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(ShapeCard)
-            .islandBlur(RadiusCard, CardBg)
+            .islandBlur(RadiusCard, CardBg, allowBlur = true)
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(SpaceXxl),
@@ -132,8 +140,12 @@ internal fun MediaCard(event: IslandEvent.Media, interactor: IslandActions) {
                     AnimatedContent(
                         targetState = event.albumArt,
                         transitionSpec = {
-                            fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
-                                fadeOut(motionScheme.fastEffectsSpec())
+                            if (ValueAnimator.areAnimatorsEnabled()) {
+                                fadeIn(motionScheme.defaultEffectsSpec()) togetherWith
+                                    fadeOut(motionScheme.fastEffectsSpec())
+                            } else {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            }
                         },
                         contentKey = { it?.hashCode() ?: 0 },
                         label = "media_card_art",
@@ -236,6 +248,7 @@ private fun MediaTransport(
             tint = accent,
             bg = tonalBg,
             size = ControlButtonSize,
+            hapticConstant = HapticFeedbackConstants.CLOCK_TICK,
             onClick = { interactor.skipPrev() },
         )
         TransportButton(
@@ -246,6 +259,7 @@ private fun MediaTransport(
             tint = accent,
             bg = accent.copy(alpha = AlphaAccent),
             size = PlayPauseSize,
+            hapticConstant = HapticFeedbackConstants.CONTEXT_CLICK,
             onClick = { interactor.togglePlayPause() },
         )
         TransportButton(
@@ -254,6 +268,7 @@ private fun MediaTransport(
             tint = accent,
             bg = tonalBg,
             size = ControlButtonSize,
+            hapticConstant = HapticFeedbackConstants.CLOCK_TICK,
             onClick = { interactor.skipNext() },
         )
     }
@@ -266,19 +281,36 @@ private fun TransportButton(
     tint: Color,
     bg: Color,
     size: androidx.compose.ui.unit.Dp,
+    hapticConstant: Int = HapticFeedbackConstants.CONTEXT_CLICK,
     onClick: () -> Unit,
 ) {
     var toggleCount by remember { mutableIntStateOf(0) }
-    Surface(
-        onClick = {
-            onClick()
-            toggleCount++
-        },
-        shape = CircleShape,
-        color = bg,
-        modifier = Modifier.size(size).squishAnimation(toggleCount),
+    val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .defaultMinSize(minWidth = PlayPauseSize, minHeight = PlayPauseSize)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = {
+                    view.performHapticFeedback(hapticConstant)
+                    onClick()
+                    toggleCount++
+                },
+            ),
     ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(size)
+                .squishAnimation(toggleCount)
+                .clip(CircleShape)
+                .background(bg, CircleShape)
+                .indication(interactionSource, LocalIndication.current),
+        ) {
             Icon(icon, contentDescription, tint = tint, modifier = Modifier.size(ControlIconSize))
         }
     }
@@ -496,7 +528,7 @@ private fun MediaSeekBar(
                         squiggle?.apply {
                             setTint(accentArgb)
                             setAlpha(alpha)
-                            animate = isPlaying && !isScrubbing
+                            animate = isPlaying && !isScrubbing && ValueAnimator.areAnimatorsEnabled()
                         }
                         layer?.alpha = alpha
                     },
@@ -576,16 +608,35 @@ internal fun RowScope.CompactMediaRow(
             )
     }
     Spacer(Modifier.width(SpaceMd))
-    Surface(
-        onClick = { interactor.togglePlayPause() },
-        shape = CircleShape,
-        color = accent.copy(alpha = AlphaAccent),
-        modifier = Modifier.size(36.dp),
+    val compactView = LocalView.current
+    val compactInteraction = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .defaultMinSize(minWidth = PlayPauseSize, minHeight = PlayPauseSize)
+            .clickable(
+                interactionSource = compactInteraction,
+                indication = null,
+                role = Role.Button,
+                onClick = {
+                    compactView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    interactor.togglePlayPause()
+                },
+            ),
     ) {
-        Box(contentAlignment = Alignment.Center) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(accent.copy(alpha = AlphaAccent), CircleShape)
+                .indication(compactInteraction, LocalIndication.current),
+        ) {
             Icon(
                 if (event.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                null,
+                stringResource(
+                    if (event.isPlaying) R.string.ax_dynamic_bar_pause else R.string.ax_dynamic_bar_play
+                ),
                 tint = accent,
                 modifier = Modifier.size(18.dp),
             )
@@ -604,6 +655,7 @@ private fun Modifier.squishAnimation(toggleCount: Int): Modifier {
             .collectLatest {
                 scaleX.snapTo(1f)
                 scaleY.snapTo(1f)
+                if (!ValueAnimator.areAnimatorsEnabled()) return@collectLatest
                 coroutineScope {
                     launch {
                         scaleX.animateTo(

@@ -23,18 +23,22 @@
         android:visibility="gone"
         >
     <LinearLayout android:orientation="vertical"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:gravity="center"
-            android:paddingHorizontal="8dp"
+            android:background="@drawable/eos_empty_shade_pill_bg"
+            android:paddingHorizontal="24dp"
+            android:paddingVertical="12dp"
             >
         <TextView
                 android:id="@+id/no_notifications"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:minHeight="64dp"
+                android:minHeight="40dp"
                 android:gravity="center"
+                android:fontFamily="google-sans-flex"
+                android:textFontWeight="500"
                 android:textAppearance="@style/TextAppearance.NotificationShadeText"
                 android:text="@string/empty_shade_text"/>
         <TextView
@@ -45,6 +49,8 @@
                 android:gravity="center"
                 android:drawablePadding="8dp"
                 android:visibility="gone"
+                android:fontFamily="google-sans-flex"
+                android:textFontWeight="500"
                 android:textAppearance="@style/TextAppearance.NotificationShadeText"
                 android:text="@string/unlock_to_see_notif_text"/>
     </LinearLayout>

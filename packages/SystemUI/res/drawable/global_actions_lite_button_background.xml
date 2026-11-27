@@ -20,7 +20,7 @@
     <item android:state_focused="false" >
         <shape android:shape="rectangle">
             <corners android:radius="@dimen/global_actions_corner_radius"/>
-            <solid android:color="@color/materialColorSurfaceContainerHighest"/>
+            <solid android:color="@color/materialColorSurfaceContainerHigh"/>
         </shape>
     </item>
     <item android:state_focused="true" >

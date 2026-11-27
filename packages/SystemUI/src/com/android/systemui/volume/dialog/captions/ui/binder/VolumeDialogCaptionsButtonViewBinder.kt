@@ -16,6 +16,7 @@
 
 package com.android.systemui.volume.dialog.captions.ui.binder
 
+import android.animation.ValueAnimator
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -25,6 +26,7 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.TransitionDrawable
 import android.os.Handler
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.View
 import com.android.app.tracing.coroutines.launchInTraced
 import com.android.app.tracing.coroutines.launchTraced
@@ -125,9 +127,12 @@ constructor(
                     }
 
                     if (transition != null) {
-                        if (index == 0) {
+                        val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
+                        if (index == 0 || !animatorsEnabled) {
                             if (isEnabled) {
                                 transition.startTransition(0)
+                            } else {
+                                transition.resetTransition()
                             }
                         } else {
                             if (isEnabled) {
@@ -145,6 +150,7 @@ constructor(
 
         captionsButton.setOnConfirmedTapListener(
             {
+                captionsButton.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                 viewModel.onButtonClicked()
                 Events.writeEvent(Events.EVENT_ODI_CAPTIONS_CLICK)
             },

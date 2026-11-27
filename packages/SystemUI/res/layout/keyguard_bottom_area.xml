@@ -72,7 +72,7 @@
             android:textAppearance="@style/TextAppearance.Keyguard.BottomArea"
             android:maxLines="2"
             android:ellipsize="end"
-            android:alpha=".8"
+            android:alpha="1.0"
             android:accessibilityLiveRegion="polite"
             android:visibility="gone"/>
 

@@ -1,11 +1,16 @@
 package com.android.systemui.axdynamicbar.ui.compose
 
+import android.animation.ValueAnimator
+import android.view.HapticFeedbackConstants
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.snap
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.animation.fadeIn
@@ -57,6 +62,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.dimensionResource
 import com.android.compose.animation.Expandable
@@ -127,11 +133,21 @@ fun AxDynamicBarChip(
     var currentExpandable by remember { mutableStateOf<SystemUiExpandable?>(null) }
 
     val motionScheme = MaterialTheme.motionScheme
+    val view = LocalView.current
+    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
 
     AnimatedVisibility(
         visible = state != null && (ignoreKeyguard || !isOnKeyguard),
-        enter = fadeIn(motionScheme.defaultEffectsSpec()) + scaleIn(initialScale = 0.8f, animationSpec = motionScheme.defaultSpatialSpec()),
-        exit = fadeOut(motionScheme.fastEffectsSpec()) + scaleOut(targetScale = 0.8f, animationSpec = motionScheme.fastSpatialSpec()),
+        enter = if (animatorsEnabled) {
+            fadeIn(motionScheme.defaultEffectsSpec()) + scaleIn(initialScale = 0.8f, animationSpec = motionScheme.defaultSpatialSpec())
+        } else {
+            EnterTransition.None
+        },
+        exit = if (animatorsEnabled) {
+            fadeOut(motionScheme.fastEffectsSpec()) + scaleOut(targetScale = 0.8f, animationSpec = motionScheme.fastSpatialSpec())
+        } else {
+            ExitTransition.None
+        },
         modifier = modifier
             .padding(start = 4.dp, end = 2.dp)
             .widthIn(min = 25.dp, max = 90.dp)
@@ -151,11 +167,13 @@ fun AxDynamicBarChip(
                             
                             if (dragging) {
                                 change.consume()
+                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                                 if (totalDx > 0) viewModel.cyclePrev()
                                 else viewModel.cycleNext()
                             } else if (!decided) {
 
                                 change.consume()
+                                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                                 if (viewModel.chipTapClosesPanel(down.uptimeMillis)) {
                                     viewModel.statusBarExpansion.collapse()
                                 } else {
@@ -204,7 +222,7 @@ fun AxDynamicBarChip(
             },
     ) {
         val visibilityBlurAlpha by transition.animateFloat(
-            transitionSpec = { motionScheme.fastEffectsSpec() },
+            transitionSpec = { if (ValueAnimator.areAnimatorsEnabled()) motionScheme.fastEffectsSpec() else snap() },
             label = "chip_blur_visibility",
         ) { if (it == EnterExitState.Visible) 1f else 0f }
 
@@ -221,33 +239,43 @@ fun AxDynamicBarChip(
                 AnimatedContent(
                     targetState = chipDisplayKey(displayEvent, isAlert),
                     transitionSpec = {
-                        ((
-                            fadeIn(motionScheme.defaultEffectsSpec()) +
-                                scaleIn(
-                                    initialScale = 0.92f,
-                                    animationSpec = motionScheme.defaultSpatialSpec(),
-                                )
-                            ) togetherWith (
-                            fadeOut(motionScheme.fastEffectsSpec()) +
-                                scaleOut(
-                                    targetScale = 0.92f,
-                                    animationSpec = motionScheme.fastSpatialSpec(),
-                                )
-                            ))
-                            .using(sizeTransform = null)
+                        if (ValueAnimator.areAnimatorsEnabled()) {
+                            ((
+                                fadeIn(motionScheme.defaultEffectsSpec()) +
+                                    scaleIn(
+                                        initialScale = 0.92f,
+                                        animationSpec = motionScheme.defaultSpatialSpec(),
+                                    )
+                                ) togetherWith (
+                                fadeOut(motionScheme.fastEffectsSpec()) +
+                                    scaleOut(
+                                        targetScale = 0.92f,
+                                        animationSpec = motionScheme.fastSpatialSpec(),
+                                    )
+                                ))
+                                .using(sizeTransform = null)
+                        } else {
+                            (EnterTransition.None togetherWith ExitTransition.None)
+                                .using(sizeTransform = null)
+                        }
                     },
                     label = "chip_event",
                 ) {
+                    val contentAnimatorsEnabled = ValueAnimator.areAnimatorsEnabled()
                     val contentBlurAlpha by transition.animateFloat(
-                        transitionSpec = { motionScheme.fastEffectsSpec() },
+                        transitionSpec = { if (ValueAnimator.areAnimatorsEnabled()) motionScheme.fastEffectsSpec() else snap() },
                         label = "chip_blur_content",
                     ) { if (it == EnterExitState.Visible) 1f else 0f }
                     val event = displayEvent
                     val accent by animateColorAsState(
-                        chipAccentColorFor(event), motionScheme.fastEffectsSpec(), label = "accent",
+                        chipAccentColorFor(event),
+                        if (contentAnimatorsEnabled) motionScheme.fastEffectsSpec() else snap(),
+                        label = "accent",
                     )
                     val contentColor by animateColorAsState(
-                        chipContentColorFor(event), motionScheme.fastEffectsSpec(), label = "content",
+                        chipContentColorFor(event),
+                        if (contentAnimatorsEnabled) motionScheme.fastEffectsSpec() else snap(),
+                        label = "content",
                     )
                 val useCircleStyle = chipStyle == 1 &&
                         !isAlert &&
@@ -276,10 +304,14 @@ fun AxDynamicBarChip(
                     // swapped so a tier change (an alarm starting to ring) interpolates.
                     val tier = if (isAlert) ChipTier.ACTIVE else tierFor(event)
                     val chipHeight by animateDpAsState(
-                        tier.chipHeight, motionScheme.defaultSpatialSpec(), label = "chip_height",
+                        tier.chipHeight,
+                        if (contentAnimatorsEnabled) motionScheme.defaultSpatialSpec() else snap(),
+                        label = "chip_height",
                     )
                     val chipCorner by animateDpAsState(
-                        tier.chipCornerRadius, motionScheme.defaultSpatialSpec(), label = "chip_corner",
+                        tier.chipCornerRadius,
+                        if (contentAnimatorsEnabled) motionScheme.defaultSpatialSpec() else snap(),
+                        label = "chip_corner",
                     )
 
                 Box(
@@ -499,6 +531,7 @@ private fun Modifier.squishAnimation(toggleCount: Int): Modifier {
             .collectLatest {
                 scaleX.snapTo(1f)
                 scaleY.snapTo(1f)
+                if (!ValueAnimator.areAnimatorsEnabled()) return@collectLatest
                 coroutineScope {
                     launch {
                         scaleX.animateTo(

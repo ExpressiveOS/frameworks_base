@@ -1255,8 +1255,8 @@
 
     <!-- Biometric Auth Credential values -->
     <dimen name="biometric_auth_icon_size">48dp</dimen>
-    <dimen name="biometric_auth_close_button_size">40dp</dimen>
-    <dimen name="biometric_auth_back_button_size">40dp</dimen>
+    <dimen name="biometric_auth_close_button_size">48dp</dimen>
+    <dimen name="biometric_auth_back_button_size">48dp</dimen>
 
     <!-- Biometric Auth pattern view size, better to align keyguard_security_width -->
     <dimen name="biometric_auth_pattern_view_size">348dp</dimen>
@@ -1584,7 +1584,7 @@
     <dimen name="media_output_dialog_margin_horizontal">16dp</dimen>
     <dimen name="media_output_dialog_app_icon_size">16dp</dimen>
     <dimen name="media_output_dialog_app_icon_bottom_margin">11dp</dimen>
-    <dimen name="media_output_dialog_corner_radius">20dp</dimen>
+    <dimen name="media_output_dialog_corner_radius">28dp</dimen>
     <dimen name="media_output_dialog_button_gap">8dp</dimen>
     <dimen name="media_output_item_content_vertical_margin">4dp</dimen>
     <dimen name="media_output_item_content_vertical_margin_active">0dp</dimen>

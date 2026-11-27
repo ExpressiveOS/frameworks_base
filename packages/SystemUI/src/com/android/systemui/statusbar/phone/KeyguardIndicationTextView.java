@@ -33,7 +33,6 @@ import androidx.core.graphics.ColorUtils;
 
 import com.android.app.animation.Interpolators;
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.systemui.Flags;
 import com.android.systemui.keyguard.KeyguardIndication;
 import com.android.systemui.res.R;
 import com.android.systemui.shared.shadow.DoubleShadowTextView;
@@ -252,8 +251,8 @@ public class KeyguardIndicationTextView extends DoubleShadowTextView {
             if (mKeyguardIndicationInfo.getBackground() != null) {
                 setTextAppearance(sButtonStyleId);
             } else {
-                // If text is transparent or dark color, don't draw any shadow
-                if (Flags.indicationTextA11yFix() && ColorUtils.calculateLuminance(
+                // Ensure bright lockscreen/AOD indication hints always render with double shadow
+                if (ColorUtils.calculateLuminance(
                         mKeyguardIndicationInfo.getTextColor().getDefaultColor())
                         > MIN_TEXT_SHADOW_LUMINANCE) {
                     setTextAppearance(sStyleWithDoubleShadowTextId);

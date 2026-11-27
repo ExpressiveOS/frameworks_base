@@ -25,6 +25,30 @@ import com.android.internal.graphics.ColorUtils
 import com.android.systemui.res.R
 
 object ShadeColors {
+    // High-opacity obsidian frosted scrims for Pure Black Theme when blur is active (~88% panel,
+    // ~90-92% notification scrim preserving depth & true OLED black feel).
+    private const val BLACK_THEME_SHADE_PANEL_BLUR = 0xE0000000.toInt()
+    private const val BLACK_THEME_NOTIFICATION_SCRIM_BLUR = 0xE60D0D0D.toInt()
+    private const val BLACK_THEME_CLASSIC_NOTIFICATION_SCRIM_BLUR = 0xEB0A0A0A.toInt()
+    private const val BLACK_THEME_NOTIFICATION_SCRIM_FALLBACK = 0xFF0D0D0D.toInt()
+    private const val SETTING_BERRY_BLACK_THEME = "berry_black_theme"
+
+    @JvmStatic
+    fun isBlackTheme(context: Context): Boolean {
+        val isNightMode =
+            (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+        if (!isNightMode) {
+            return false
+        }
+        return Settings.Secure.getIntForUser(
+            context.contentResolver,
+            SETTING_BERRY_BLACK_THEME,
+            0,
+            UserHandle.USER_CURRENT,
+        ) == 1
+    }
+
     /**
      * Calculate notification shade panel color.
      *
@@ -36,7 +60,9 @@ object ShadeColors {
     @JvmStatic
     fun shadePanel(context: Context, blurSupported: Boolean, withScrim: Boolean): Int {
         return if (blurSupported) {
-            if (withScrim) {
+            if (isBlackTheme(context)) {
+                shadePanelStandard(context)
+            } else if (withScrim) {
                 ColorUtils.compositeColors(
                     shadePanelStandard(context),
                     shadePanelScrimBehind(context),
@@ -75,6 +101,17 @@ object ShadeColors {
         blurSupported: Boolean,
         composited: Boolean,
     ): Int {
+        if (isBlackTheme(context)) {
+            return if (blurSupported) {
+                if (composited) {
+                    BLACK_THEME_CLASSIC_NOTIFICATION_SCRIM_BLUR
+                } else {
+                    BLACK_THEME_NOTIFICATION_SCRIM_BLUR
+                }
+            } else {
+                BLACK_THEME_NOTIFICATION_SCRIM_FALLBACK
+            }
+        }
         val surfaceEffect0Color =
             context.resources.getColor(
                 com.android.internal.R.color.customColorSurfaceEffect0,
@@ -91,6 +128,9 @@ object ShadeColors {
 
     @JvmStatic
     private fun shadePanelStandard(context: Context): Int {
+        if (isBlackTheme(context)) {
+            return BLACK_THEME_SHADE_PANEL_BLUR
+        }
         val layerAbove =
             context.resources.getColor(com.android.internal.R.color.shade_panel_fg, context.theme)
         val layerBelow =
@@ -99,13 +139,8 @@ object ShadeColors {
     }
 
     @JvmStatic
-     private fun shadePanelFallback(context: Context): Int {
-        val isNightMode = (context.resources.configuration.uiMode and
-                Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val useBlackTheme = Settings.Secure.getIntForUser(
-            context.contentResolver, "berry_black_theme", 0, UserHandle.USER_CURRENT
-        ) == 1
-        return if (useBlackTheme && isNightMode) {
+    private fun shadePanelFallback(context: Context): Int {
+        return if (isBlackTheme(context)) {
             Color.BLACK
         } else {
             context.getColor(R.color.shade_panel_fallback)
@@ -114,6 +149,9 @@ object ShadeColors {
 
     @JvmStatic
     private fun notificationScrimStandard(context: Context): Int {
+        if (isBlackTheme(context)) {
+            return BLACK_THEME_NOTIFICATION_SCRIM_BLUR
+        }
         return ColorUtils.setAlphaComponent(
             context.getColor(R.color.notification_scrim_base),
             (0.5f * 255).toInt(),
@@ -122,6 +160,9 @@ object ShadeColors {
 
     @JvmStatic
     private fun notificationScrimFallback(context: Context): Int {
+        if (isBlackTheme(context)) {
+            return BLACK_THEME_NOTIFICATION_SCRIM_FALLBACK
+        }
         return context.getColor(R.color.notification_scrim_fallback)
     }
 }

@@ -5,22 +5,32 @@ package com.android.systemui.axdynamicbar.shared
 import android.app.ActivityOptions
 import android.app.Notification
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.PowerManager
+import android.view.HapticFeedbackConstants
 import kotlin.math.min
 import com.android.axion.blur.AxBlurSurfaceDefaults
 import com.android.axion.blur.axBlurBackground
+import com.android.axion.blur.rememberAxBlurEnabled
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -48,10 +58,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -59,6 +74,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -168,25 +185,67 @@ internal val ChipHighlightWidth = 0.5.dp
  * replaces a separate border.
  */
 @Composable
+internal fun rememberIsPowerSaveMode(): Boolean {
+    val context = LocalContext.current
+    val powerManager = remember(context) { context.getSystemService(PowerManager::class.java) }
+    var isPowerSave by remember(powerManager) {
+        mutableStateOf(powerManager?.isPowerSaveMode == true)
+    }
+    DisposableEffect(context, powerManager) {
+        if (powerManager == null) {
+            onDispose {}
+        } else {
+            val receiver =
+                object : BroadcastReceiver() {
+                    override fun onReceive(ctx: Context, intent: Intent) {
+                        isPowerSave = powerManager.isPowerSaveMode
+                    }
+                }
+            context.registerReceiver(
+                receiver,
+                IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+                Context.RECEIVER_NOT_EXPORTED,
+            )
+            isPowerSave = powerManager.isPowerSaveMode
+            onDispose { runCatching { context.unregisterReceiver(receiver) } }
+        }
+    }
+    return isPowerSave
+}
+
+@Composable
 internal fun Modifier.islandBlur(
     cornerRadius: Dp,
     fallbackColor: Color,
     tint: Color? = null,
     alpha: Float = LocalBlurAlpha.current,
     highlightWidth: Dp = AxBlurSurfaceDefaults.HighlightWidth,
-): Modifier =
-    axBlurBackground(
-        // A blur region in the status bar window makes SurfaceFlinger composite the app below
-        // on the GPU every frame while the island shows, which drops frames when scrolling.
-        // Draw the island on its solid fallback instead.
-        enabled = false,
+    allowBlur: Boolean = false,
+): Modifier {
+    val blurEnabled = allowBlur && rememberAxBlurEnabled() && !rememberIsPowerSaveMode()
+    val isDark = isSystemInDarkTheme()
+    val resolvedTint =
+        tint
+            ?: if (allowBlur) {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                    alpha = if (isDark) 0.84f else 0.80f
+                )
+            } else {
+                AxBlurSurfaceDefaults.tintColor()
+            }
+    return axBlurBackground(
+        // Status-bar chips keep enabled = false so SurfaceFlinger doesn't GPU-composite the app
+        // underneath on every scroll frame. Floating overlay panels opt in via allowBlur = true,
+        // gated on system blur settings and Battery Saver with opaque surfaceContainerHigh fallback.
+        enabled = blurEnabled,
         fallbackColor = fallbackColor,
-        tintColor = tint ?: AxBlurSurfaceDefaults.tintColor(),
+        tintColor = resolvedTint,
         cornerRadius = cornerRadius,
         alpha = alpha,
         highlight = AxBlurSurfaceDefaults.highlightBrush(),
         highlightWidth = highlightWidth,
     )
+}
 
 /**
  * Emphasis tone for an island event.
@@ -482,14 +541,30 @@ internal fun ActionChip(
 ) {
     val height = if (compact) SizeActionIcon else SizeActionHeight
     val horizontal = if (compact) SpaceLg else SpacePanel
-    Surface(
-        onClick = onClick,
-        shape = ShapeChip,
-        color = bg,
-        modifier = modifier.border(1.2.dp, color.copy(alpha = 0.12f), ShapeChip),
+    val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .defaultMinSize(minWidth = SizeButton, minHeight = SizeButton)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    onClick()
+                },
+            ),
     ) {
         Row(
-            modifier = Modifier.height(height).padding(horizontal = horizontal),
+            modifier = Modifier
+                .height(height)
+                .clip(ShapeChip)
+                .background(bg, ShapeChip)
+                .border(1.2.dp, color.copy(alpha = 0.12f), ShapeChip)
+                .indication(interactionSource, LocalIndication.current)
+                .padding(horizontal = horizontal),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(SpaceMd, Alignment.CenterHorizontally),
         ) {
@@ -507,7 +582,7 @@ internal fun ActionChip(
     }
 }
 
-/** Circular, icon-only tile action that fits in a tile's header row. */
+/** Circular, icon-only tile action that fits in a tile's header row with a >= 48dp touch target. */
 @Composable
 internal fun ActionIconButton(
     icon: ImageVector,
@@ -518,8 +593,30 @@ internal fun ActionIconButton(
     size: Dp = SizeActionIcon,
     onClick: () -> Unit,
 ) {
-    Surface(onClick = onClick, shape = CircleShape, color = bg, modifier = modifier.size(size)) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(size)) {
+    val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .defaultMinSize(minWidth = SizeButton, minHeight = SizeButton)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    onClick()
+                },
+            ),
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(bg, CircleShape)
+                .indication(interactionSource, LocalIndication.current),
+        ) {
             Icon(icon, contentDescription, tint = tint, modifier = Modifier.size(SizeIconSm))
         }
     }

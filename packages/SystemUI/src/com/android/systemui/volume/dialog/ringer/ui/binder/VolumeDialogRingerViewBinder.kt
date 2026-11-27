@@ -198,6 +198,9 @@ constructor(
             }
 
             view.addOnAttachStateChangeListener(onAttachStateChangeListener)
+            coroutineContext.job.invokeOnCompletion {
+                view.removeOnAttachStateChangeListener(onAttachStateChangeListener)
+            }
         }
 
         viewModel.ringerViewModel
@@ -321,9 +324,15 @@ constructor(
                                         null,
                                         R.anim.volume_dialog_ringer_open,
                                     )
-                                drawerContainer.transitionToState(
-                                    R.id.volume_dialog_ringer_drawer_open
-                                )
+                                if (ValueAnimator.areAnimatorsEnabled()) {
+                                    drawerContainer.transitionToState(
+                                        R.id.volume_dialog_ringer_drawer_open
+                                    )
+                                } else {
+                                    drawerContainer.jumpToState(
+                                        R.id.volume_dialog_ringer_drawer_open
+                                    )
+                                }
                                 ringerBackgroundView.background =
                                     ringerBackgroundView.background.mutate()
                             }
@@ -455,7 +464,9 @@ constructor(
 
                 val animatedBind =
                     launchTraced("VDRVB#bindButtons") {
-                        delay(CLOSE_DRAWER_DELAY)
+                        if (ValueAnimator.areAnimatorsEnabled()) {
+                            delay(CLOSE_DRAWER_DELAY)
+                        }
                         bindButtons(
                             viewModel,
                             uiModel,
@@ -597,7 +608,11 @@ constructor(
                 R.anim.volume_dialog_ringer_close,
             )
         updateCloseState(this, selectedIndex, orientation, ringerBackground)
-        transitionToState(R.id.volume_dialog_ringer_drawer_close)
+        if (ValueAnimator.areAnimatorsEnabled()) {
+            transitionToState(R.id.volume_dialog_ringer_drawer_close)
+        } else {
+            jumpToState(R.id.volume_dialog_ringer_drawer_close)
+        }
     }
 
     private suspend fun ImageButton.animateTo(

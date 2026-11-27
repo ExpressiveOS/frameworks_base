@@ -17,6 +17,7 @@ package com.android.systemui.fragments;
 import android.app.Fragment;
 import android.content.res.Configuration;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.view.View;
@@ -48,7 +49,7 @@ public class FragmentService implements Dumpable {
      * value: A {@link Provider} for the Fragment
      */
     private final ArrayMap<String, Provider<? extends Fragment>> mInjectionMap = new ArrayMap<>();
-    private final Handler mHandler = new Handler();
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final FragmentHostManager.Factory mFragmentHostManagerFactory;
 
     private ConfigurationController.ConfigurationListener mConfigurationListener =

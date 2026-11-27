@@ -30,7 +30,10 @@ import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.AlertDialog;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.PixelFormat;
@@ -52,6 +55,9 @@ import android.view.ViewPropertyAnimator;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.os.PowerManager;
+import android.view.CrossWindowBlurListeners;
+import java.util.function.Consumer;
 import android.view.animation.Interpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -163,6 +169,15 @@ public class AuthContainerView extends LinearLayout
     private final AuthPanelController mPanelController;
     private final ViewGroup mLayout;
     private final ImageView mBackgroundView;
+    private boolean mCrossWindowBlurRegistered;
+    private final Consumer<Boolean> mCrossWindowBlurListener =
+            enabled -> updateBackdropBlur();
+    private final BroadcastReceiver mPowerSaveReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            updateBackdropBlur();
+        }
+    };
     private final View mPanelView;
     private final float mTranslationY;
     @VisibleForTesting @ContainerState int mContainerState = STATE_UNKNOWN;
@@ -539,6 +554,17 @@ public class AuthContainerView extends LinearLayout
                         .start();
             });
         }
+        if (Flags.blurOnMoreSurfaces() && CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED
+                && !mCrossWindowBlurRegistered) {
+            CrossWindowBlurListeners.getInstance().addListener(
+                    mContext.getMainExecutor(), mCrossWindowBlurListener);
+            mContext.registerReceiver(
+                    mPowerSaveReceiver,
+                    new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+                    Context.RECEIVER_NOT_EXPORTED);
+            mCrossWindowBlurRegistered = true;
+            updateBackdropBlur();
+        }
         OnBackInvokedDispatcher dispatcher = findOnBackInvokedDispatcher();
         if (dispatcher != null) {
             dispatcher.registerOnBackInvokedCallback(
@@ -585,6 +611,15 @@ public class AuthContainerView extends LinearLayout
 
     @Override
     public void onDetachedFromWindow() {
+        if (mCrossWindowBlurRegistered) {
+            CrossWindowBlurListeners.getInstance().removeListener(mCrossWindowBlurListener);
+            try {
+                mContext.unregisterReceiver(mPowerSaveReceiver);
+            } catch (IllegalArgumentException ignored) {
+                // Already unregistered.
+            }
+            mCrossWindowBlurRegistered = false;
+        }
         OnBackInvokedDispatcher dispatcher = findOnBackInvokedDispatcher();
         if (dispatcher != null) {
             findOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(mBackCallback);
@@ -600,8 +635,49 @@ public class AuthContainerView extends LinearLayout
     }
 
     public void show(WindowManager wm) {
-        wm.addView(this, getLayoutParams(mWindowToken, mConfig.mPromptInfo.getTitle(),
-                mPromptViewModel.getPromptKind().getValue().isCredential()));
+        final WindowManager.LayoutParams lp = getLayoutParams(
+                mWindowToken,
+                mConfig.mPromptInfo.getTitle(),
+                mPromptViewModel.getPromptKind().getValue().isCredential());
+        applyBackdropBlurParams(lp, isBackdropBlurEnabled());
+        wm.addView(this, lp);
+    }
+
+    private boolean isBackdropBlurEnabled() {
+        if (!Flags.blurOnMoreSurfaces() || !CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED) {
+            return false;
+        }
+        final PowerManager pm = mContext.getSystemService(PowerManager.class);
+        if (pm != null && pm.isPowerSaveMode()) {
+            return false;
+        }
+        return CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled();
+    }
+
+    private void applyBackdropBlurParams(WindowManager.LayoutParams lp, boolean enabled) {
+        if (enabled) {
+            lp.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+            lp.setBlurBehindRadius(
+                    getResources().getDimensionPixelSize(R.dimen.max_window_blur_radius) / 2);
+        } else {
+            lp.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+            lp.setBlurBehindRadius(0);
+        }
+    }
+
+    private void updateBackdropBlur() {
+        if (!isAttachedToWindow() || mWindowManager == null || getViewRootImpl() == null) {
+            return;
+        }
+        final WindowManager.LayoutParams lp = getViewRootImpl().mWindowAttributes;
+        final boolean shouldBlur = isBackdropBlurEnabled();
+        final boolean currentlyBlurred =
+                (lp.flags & WindowManager.LayoutParams.FLAG_BLUR_BEHIND) != 0
+                        && lp.getBlurBehindRadius() > 0;
+        if (shouldBlur != currentlyBlurred) {
+            applyBackdropBlurParams(lp, shouldBlur);
+            mWindowManager.updateViewLayout(this, lp);
+        }
     }
 
     private void forceExecuteAnimatedIn() {

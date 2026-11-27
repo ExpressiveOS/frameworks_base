@@ -361,14 +361,14 @@ public class InternetDialogDelegateLegacy implements
         mHotspotToggle = mDialogView.requireViewById(R.id.hotspot_toggle);
         mWiFiToggle = mDialogView.requireViewById(R.id.wifi_toggle);
         mWifiConnectedSpace = mDialogView.requireViewById(R.id.wifi_connected_space);
-        mBackgroundOn = context.getDrawable(R.drawable.settingslib_switch_bar_bg_on);
+        mBackgroundOn = context.getDrawable(R.drawable.eos_dialog_row_bg_active);
         mInternetDialogTitle.setText(getDialogTitleText());
         mInternetDialogTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        mBackgroundOff = context.getDrawable(R.drawable.internet_dialog_selected_effect);
+        mBackgroundOff = context.getDrawable(R.drawable.eos_dialog_row_bg_single);
         mSecondaryBackgroundOn = mBackgroundOn.getConstantState().newDrawable().mutate();
         setOnClickListener(dialog);
         setHotspotLayout();
-        mTurnWifiOnLayout.setBackground(null);
+        mTurnWifiOnLayout.setBackground(mBackgroundOff);
         mAirplaneModeButton.setVisibility(
                 mInternetDetailsContentController.isAirplaneModeEnabled() ? View.VISIBLE
                         : View.GONE);
@@ -692,10 +692,10 @@ public class InternetDialogDelegateLegacy implements
                         mCanConfigMobileData ? View.VISIBLE : View.INVISIBLE);
                 mMobileToggleDivider.setVisibility(
                         mCanConfigMobileData ? View.VISIBLE : View.INVISIBLE);
-                int primaryColor = isNetworkConnected
-                        ? R.color.connected_network_primary_color
-                        : R.color.disconnected_network_primary_color;
-                mMobileToggleDivider.setBackgroundColor(context.getColor(primaryColor));
+                int dividerColor = isNetworkConnected
+                        ? context.getColor(R.color.connected_network_primary_color)
+                        : context.getColor(com.android.internal.R.color.materialColorOutlineVariant);
+                mMobileToggleDivider.setBackgroundColor(dividerColor);
 
                 mFivegLayout.setVisibility(mShouldShowFivegToggle ? View.VISIBLE : View.GONE);
                 boolean enabled = mInternetDetailsContentController.isFivegEnabled();
@@ -706,7 +706,7 @@ public class InternetDialogDelegateLegacy implements
                 mFivegToggle.setVisibility(mCanConfigMobileData ? View.VISIBLE : View.INVISIBLE);
                 mFivegToggleDivider.setVisibility(
                         mCanConfigMobileData ? View.VISIBLE : View.INVISIBLE);
-                mFivegToggleDivider.setBackgroundColor(dialog.getContext().getColor(primaryColor));
+                mFivegToggleDivider.setBackgroundColor(dividerColor);
 
                 // Display the info for the non-DDS if it's actively being used
 
@@ -848,7 +848,7 @@ public class InternetDialogDelegateLegacy implements
                 showBackground ? R.dimen.internet_dialog_wifi_network_height
                 : R.dimen.internet_dialog_wifi_toggle_height);
         mTurnWifiOnLayout.setLayoutParams(lp);
-        mTurnWifiOnLayout.setBackground(showBackground ? mBackgroundOn : null);
+        mTurnWifiOnLayout.setBackground(showBackground ? mBackgroundOn : mBackgroundOff);
         mWifiConnectedSpace.setVisibility(showBackground ? View.VISIBLE : View.GONE);
 
         if (!mCanChangeWifiState && mWiFiToggle.isEnabled()) {

@@ -20,6 +20,7 @@ import android.content.Context
 import android.content.res.Resources
 import android.database.ContentObserver
 import android.graphics.Rect
+import android.os.SystemClock
 import android.os.UserHandle
 import android.provider.Settings
 import android.view.MotionEvent
@@ -320,6 +321,61 @@ constructor(
         val rawX = tmpScreenLoc[0] + localX
         val rawY = tmpScreenLoc[1] + localY
         return !isExcludedChipTouch(rawX, rawY, view)
+    }
+
+    /**
+     * Handles a Compose Flexiglass tap from `StatusBarRoot`, honoring multi-tap burst preemption
+     * and [DEFER_MULTI_TAP_MS] deferral when double-tap sleep or triple-tap freeform is enabled.
+     */
+    fun handleComposeTap(
+        localX: Float,
+        localY: Float,
+        statusBarView: PhoneStatusBarView?,
+        onAllowed: () -> Unit,
+    ) {
+        val now = SystemClock.uptimeMillis()
+        if (pendingCancelRunnable != null) {
+            cancelPendingRunnable()
+            inMultiTapBurst = true
+            lastBurstDownUptimeMillis = now
+            lastBurstUpUptimeMillis = now
+            return
+        }
+        if (inMultiTapBurst) {
+            val expired =
+                if (lastBurstUpUptimeMillis >= 0L) {
+                    (now - lastBurstUpUptimeMillis) > MULTI_TAP_BURST_RESET_MS
+                } else {
+                    val fallbackTimeout =
+                        MULTI_TAP_BURST_RESET_MS + ViewConfiguration.getLongPressTimeout().toLong()
+                    (now - lastBurstDownUptimeMillis) > fallbackTimeout
+                }
+            if (!expired) {
+                lastBurstUpUptimeMillis = now
+                return
+            }
+            inMultiTapBurst = false
+            lastBurstDownUptimeMillis = -1L
+            lastBurstUpUptimeMillis = -1L
+        }
+        if (!shouldAllowTap(localX, localY, statusBarView)) {
+            return
+        }
+        if (isDoubleTapSleepEnabled || isTripleTapFreeformEnabled) {
+            cancelPendingRunnable()
+            pendingCancelRunnable =
+                mainExecutor.executeDelayed(
+                    {
+                        pendingCancelRunnable = null
+                        if (!inMultiTapBurst && isContextAllowed(statusBarView)) {
+                            onAllowed()
+                        }
+                    },
+                    DEFER_MULTI_TAP_MS,
+                )
+        } else {
+            onAllowed()
+        }
     }
 
     /** Cancels any active tap tracking or pending delayed scroll runnable. */

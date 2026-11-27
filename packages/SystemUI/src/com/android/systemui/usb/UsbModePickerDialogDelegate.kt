@@ -37,7 +37,6 @@ import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import com.android.compose.theme.PlatformTheme
 import com.android.systemui.CoreStartable
 import com.android.systemui.broadcast.BroadcastDispatcher
@@ -151,10 +150,7 @@ class UsbModePickerDialogDelegate @Inject constructor(
         statusText: String,
         currentFunctions: Long,
     ) {
-        val isCurrentlyInDarkTheme = isSystemInDarkTheme()
-        val cachedDarkTheme = remember { isCurrentlyInDarkTheme }
-
-        PlatformTheme(isDarkTheme = cachedDarkTheme) {
+        PlatformTheme(isDarkTheme = isSystemInDarkTheme()) {
             UsbModePickerContent(
                 modes = initialModes,
                 statusText = statusText,
