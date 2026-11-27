@@ -60,7 +60,10 @@ import com.android.systemui.util.settings.FakeSettings
 import com.android.systemui.util.time.FakeSystemClock
 import com.android.wm.shell.scrolltotop.ScrollToTop
 import com.google.common.truth.Truth.assertThat
+import android.os.Looper
+import dagger.Lazy
 import java.util.Optional
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.After
@@ -182,20 +185,20 @@ class StatusBarScrollToTopGestureHandlerTest : SysuiTestCase() {
             StatusBarScrollToTopGestureHandler(
                 displayId = DISPLAY_ID,
                 context = context,
-                statusBarWindowStateController = statusBarWindowStateController,
-                ongoingActivityChipsViewModel = ongoingActivityChipsViewModel,
-                scrollToTopInteractor = scrollToTopInteractor,
+                statusBarWindowStateController = Lazy { statusBarWindowStateController },
+                ongoingActivityChipsViewModel = Lazy { ongoingActivityChipsViewModel },
+                scrollToTopInteractor = Lazy { scrollToTopInteractor },
                 systemSettings = fakeSettings,
                 userTracker = fakeUserTracker,
                 mainExecutor = fakeExecutor,
-                statusBarStateController = statusBarStateController,
-                keyguardStateController = keyguardStateController,
-                panelExpansionInteractor = panelExpansionInteractor,
-                shadeInteractor = shadeInteractor,
-                headsUpManager = headsUpManager,
-                accessibilityManager = accessibilityManager,
-                axDynamicBarInteractor = axDynamicBarInteractor,
-                axDynamicBarStatusBarExpansion = axDynamicBarExpansion,
+                statusBarStateController = Lazy { statusBarStateController },
+                keyguardStateController = Lazy { keyguardStateController },
+                panelExpansionInteractor = Lazy { panelExpansionInteractor },
+                shadeInteractor = Lazy { shadeInteractor },
+                headsUpManager = Lazy { headsUpManager },
+                accessibilityManager = Lazy { accessibilityManager },
+                axDynamicBarInteractor = Lazy { axDynamicBarInteractor },
+                axDynamicBarStatusBarExpansion = Lazy { axDynamicBarExpansion },
             )
     }
 
@@ -204,6 +207,54 @@ class StatusBarScrollToTopGestureHandlerTest : SysuiTestCase() {
         if (::underTest.isInitialized) {
             underTest.stop()
         }
+    }
+
+    @Test(timeout = 10_000)
+    fun init_onBackgroundThreadWithoutLooper_doesNotInstantiateUiDependenciesOrCrash() {
+        val failure = AtomicReference<Throwable?>(null)
+        val bgThread =
+            Thread({
+                try {
+                    assertThat(Looper.myLooper()).isNull()
+                    val handler =
+                        StatusBarScrollToTopGestureHandler(
+                            displayId = DISPLAY_ID,
+                            context = context,
+                            statusBarWindowStateController =
+                                Lazy { error("statusBarWindowStateController resolved eagerly") },
+                            ongoingActivityChipsViewModel =
+                                Lazy { error("ongoingActivityChipsViewModel resolved eagerly") },
+                            scrollToTopInteractor =
+                                Lazy { error("scrollToTopInteractor resolved eagerly") },
+                            systemSettings = fakeSettings,
+                            userTracker = fakeUserTracker,
+                            mainExecutor = fakeExecutor,
+                            statusBarStateController =
+                                Lazy { error("statusBarStateController resolved eagerly") },
+                            keyguardStateController =
+                                Lazy { error("keyguardStateController resolved eagerly") },
+                            panelExpansionInteractor =
+                                Lazy { error("panelExpansionInteractor resolved eagerly") },
+                            shadeInteractor =
+                                Lazy { error("shadeInteractor resolved eagerly") },
+                            headsUpManager =
+                                Lazy { error("headsUpManager resolved eagerly") },
+                            accessibilityManager =
+                                Lazy { error("accessibilityManager resolved eagerly") },
+                            axDynamicBarInteractor =
+                                Lazy { error("axDynamicBarInteractor resolved eagerly") },
+                            axDynamicBarStatusBarExpansion =
+                                Lazy { error("axDynamicBarStatusBarExpansion resolved eagerly") },
+                        )
+                    handler.stop()
+                } catch (t: Throwable) {
+                    failure.set(t)
+                }
+            }, "SystemUIBg-Test")
+        bgThread.start()
+        bgThread.join(5_000L)
+        assertThat(bgThread.isAlive).isFalse()
+        assertThat(failure.get()).isNull()
     }
 
     @Test(timeout = 10_000)

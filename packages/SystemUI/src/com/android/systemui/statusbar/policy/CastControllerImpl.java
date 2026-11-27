@@ -26,6 +26,7 @@ import android.media.projection.MediaProjectionInfo;
 import android.media.projection.MediaProjectionManager;
 import android.media.projection.StopReason;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.ArrayMap;
 
 import androidx.annotation.NonNull;
@@ -77,7 +78,10 @@ public class CastControllerImpl implements CastController {
         mProjectionManager = (MediaProjectionManager)
                 context.getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         mProjection = mProjectionManager.getActiveProjectionInfo();
-        mProjectionManager.addCallback(mProjectionCallback, new Handler());
+        Looper myLooper = Looper.myLooper();
+        mProjectionManager.addCallback(
+                mProjectionCallback,
+                new Handler(myLooper != null ? myLooper : Looper.getMainLooper()));
         dumpManager.registerNormalDumpable(TAG, this);
     }
 

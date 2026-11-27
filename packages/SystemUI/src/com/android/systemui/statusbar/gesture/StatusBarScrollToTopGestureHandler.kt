@@ -49,6 +49,7 @@ import com.android.systemui.statusbar.policy.KeyguardStateController
 import com.android.systemui.statusbar.window.StatusBarWindowStateController
 import com.android.systemui.util.concurrency.DelayableExecutor
 import com.android.systemui.util.settings.SystemSettings
+import dagger.Lazy
 import javax.inject.Inject
 import kotlin.math.abs
 
@@ -62,20 +63,20 @@ class StatusBarScrollToTopGestureHandler
 constructor(
     @DisplayId private val displayId: Int,
     @DisplayAware private val context: Context,
-    @DisplayAware private val statusBarWindowStateController: StatusBarWindowStateController,
-    @DisplayAware private val ongoingActivityChipsViewModel: OngoingActivityChipsViewModel,
-    private val scrollToTopInteractor: ScrollToTopInteractor,
+    @DisplayAware private val statusBarWindowStateController: Lazy<StatusBarWindowStateController>,
+    @DisplayAware private val ongoingActivityChipsViewModel: Lazy<OngoingActivityChipsViewModel>,
+    private val scrollToTopInteractor: Lazy<ScrollToTopInteractor>,
     private val systemSettings: SystemSettings,
     private val userTracker: UserTracker,
     @Main private val mainExecutor: DelayableExecutor,
-    private val statusBarStateController: StatusBarStateController,
-    private val keyguardStateController: KeyguardStateController,
-    private val panelExpansionInteractor: PanelExpansionInteractor,
-    private val shadeInteractor: ShadeInteractor,
-    private val headsUpManager: HeadsUpManager,
-    private val accessibilityManager: AccessibilityManager,
-    private val axDynamicBarInteractor: AxDynamicBarInteractor,
-    private val axDynamicBarStatusBarExpansion: AxDynamicBarStatusBarExpansion,
+    private val statusBarStateController: Lazy<StatusBarStateController>,
+    private val keyguardStateController: Lazy<KeyguardStateController>,
+    private val panelExpansionInteractor: Lazy<PanelExpansionInteractor>,
+    private val shadeInteractor: Lazy<ShadeInteractor>,
+    private val headsUpManager: Lazy<HeadsUpManager>,
+    private val accessibilityManager: Lazy<AccessibilityManager>,
+    private val axDynamicBarInteractor: Lazy<AxDynamicBarInteractor>,
+    private val axDynamicBarStatusBarExpansion: Lazy<AxDynamicBarStatusBarExpansion>,
 ) : SystemUIDisplaySubcomponent.LifecycleListener {
 
     @Volatile
@@ -280,13 +281,13 @@ constructor(
                             {
                                 pendingCancelRunnable = null
                                 if (!inMultiTapBurst && isContextAllowed(statusBarView)) {
-                                    scrollToTopInteractor.onScrollToTop(displayId, targetX)
+                                    scrollToTopInteractor.get().onScrollToTop(displayId, targetX)
                                 }
                             },
                             DEFER_MULTI_TAP_MS,
                         )
                 } else {
-                    scrollToTopInteractor.onScrollToTop(displayId, targetX)
+                    scrollToTopInteractor.get().onScrollToTop(displayId, targetX)
                 }
             }
 
@@ -382,47 +383,43 @@ constructor(
 
     private fun isContextAllowed(statusBarView: PhoneStatusBarView?): Boolean {
         if (!isEnabled) return false
-        if (accessibilityManager.isTouchExplorationEnabled) return false
+        if (accessibilityManager.get().isTouchExplorationEnabled) return false
 
-        if (statusBarStateController.state != StatusBarState.SHADE) return false
+        val sbState = statusBarStateController.get()
+        if (sbState.state != StatusBarState.SHADE) return false
+        if (sbState.isDozing || sbState.isDreaming || sbState.isPulsing || sbState.isExpanded) {
+            return false
+        }
+
+        val kgState = keyguardStateController.get()
         if (
-            statusBarStateController.isDozing ||
-                statusBarStateController.isDreaming ||
-                statusBarStateController.isPulsing ||
-                statusBarStateController.isExpanded
+            (kgState.isShowing && !kgState.isOccluded) ||
+                kgState.isPrimaryBouncerShowing ||
+                kgState.isKeyguardGoingAway
         ) {
             return false
         }
 
+        val panel = panelExpansionInteractor.get()
+        if (!panel.isFullyCollapsed || panel.isTracking || panel.isCollapsing) {
+            return false
+        }
+
+        val shade = shadeInteractor.get()
         if (
-            (keyguardStateController.isShowing && !keyguardStateController.isOccluded) ||
-                keyguardStateController.isPrimaryBouncerShowing ||
-                keyguardStateController.isKeyguardGoingAway
+            shade.isAnyExpanded.value ||
+                shade.isQsExpanded.value ||
+                shade.isUserInteracting.value
         ) {
             return false
         }
 
-        if (
-            !panelExpansionInteractor.isFullyCollapsed ||
-                panelExpansionInteractor.isTracking ||
-                panelExpansionInteractor.isCollapsing
-        ) {
+        if (axDynamicBarStatusBarExpansion.get().isExpanded.value) return false
+        val hun = headsUpManager.get()
+        if (hun.hasPinnedHeadsUp() || hun.isHeadsUpAnimatingAwayValue()) {
             return false
         }
-
-        if (
-            shadeInteractor.isAnyExpanded.value ||
-                shadeInteractor.isQsExpanded.value ||
-                shadeInteractor.isUserInteracting.value
-        ) {
-            return false
-        }
-
-        if (axDynamicBarStatusBarExpansion.isExpanded.value) return false
-        if (headsUpManager.hasPinnedHeadsUp() || headsUpManager.isHeadsUpAnimatingAwayValue()) {
-            return false
-        }
-        if (!statusBarWindowStateController.windowIsShowing()) return false
+        if (!statusBarWindowStateController.get().windowIsShowing()) return false
 
         val view = statusBarView ?: return false
         if (
@@ -528,14 +525,15 @@ constructor(
     }
 
     private fun hasActiveAxDynamicBarChip(): Boolean {
-        if (!axDynamicBarInteractor.settings.isEnabled.value) return false
-        if (axDynamicBarInteractor.isOnKeyguard.value) return false
-        val uiState = axDynamicBarInteractor.uiState.value
+        val ax = axDynamicBarInteractor.get()
+        if (!ax.settings.isEnabled.value) return false
+        if (ax.isOnKeyguard.value) return false
+        val uiState = ax.uiState.value
         return uiState.shouldShow || uiState.notificationAlert != null
     }
 
     private fun hasActiveOngoingActivityChip(): Boolean {
-        return ongoingActivityChipsViewModel.chips.value.active.any { !it.isHidden }
+        return ongoingActivityChipsViewModel.get().chips.value.active.any { !it.isHidden }
     }
 
     private fun containsVisibleClickableChildAt(
