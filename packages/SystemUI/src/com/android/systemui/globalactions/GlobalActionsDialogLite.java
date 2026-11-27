@@ -85,6 +85,7 @@ import android.util.Log;
 import android.util.ArraySet;
 import android.view.ContextThemeWrapper;
 import android.view.GestureDetector;
+import android.view.HapticFeedbackConstants;
 import android.view.IWindowManager;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -107,6 +108,9 @@ import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 
 import androidx.annotation.NonNull;
+import androidx.dynamicanimation.animation.DynamicAnimation;
+import androidx.dynamicanimation.animation.SpringAnimation;
+import androidx.dynamicanimation.animation.SpringForce;
 import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.lifecycle.LifecycleRegistry;
@@ -231,6 +235,56 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
     private static final int DIALOG_WINDOW_TYPE = TYPE_STATUS_BAR_SUB_PANEL;
 
     private static final String SETTINGS_KEY_USE_COMPOSE_DIALOG = "global_actions_use_compose_dialog";
+
+    private static final float ACTION_PRESS_SCALE = 0.94f;
+    private static final float ACTION_SPRING_STIFFNESS = 450f;
+    private static final float ACTION_SPRING_DAMPING = 0.72f;
+    private static final float WINDOW_SCRIM_ALPHA_BLUR = 0.54f;
+    private static final float WINDOW_SCRIM_ALPHA_FALLBACK = 0.85f;
+
+    static boolean isWindowBlurActive(@NonNull Context context, @NonNull BlurUtils blurUtils) {
+        if (!blurUtils.supportsBlursOnWindows()) {
+            return false;
+        }
+        final PowerManager pm = context.getSystemService(PowerManager.class);
+        return pm == null || !pm.isPowerSaveMode();
+    }
+
+    private static void bindExpressiveActionFeedback(@NonNull View targetView) {
+        targetView.setOnTouchListener((v, event) -> {
+            if (!v.isEnabled()) {
+                return false;
+            }
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    animateActionScale(v, ACTION_PRESS_SCALE);
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    animateActionScale(v, 1f);
+                    break;
+                default:
+                    break;
+            }
+            return false;
+        });
+    }
+
+    private static void animateActionScale(@NonNull View view, float targetScale) {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            view.setScaleX(1f);
+            view.setScaleY(1f);
+            return;
+        }
+        SpringForce springX = new SpringForce(targetScale)
+                .setStiffness(ACTION_SPRING_STIFFNESS)
+                .setDampingRatio(ACTION_SPRING_DAMPING);
+        SpringForce springY = new SpringForce(targetScale)
+                .setStiffness(ACTION_SPRING_STIFFNESS)
+                .setDampingRatio(ACTION_SPRING_DAMPING);
+        new SpringAnimation(view, DynamicAnimation.SCALE_X).setSpring(springX).start();
+        new SpringAnimation(view, DynamicAnimation.SCALE_Y).setSpring(springY).start();
+    }
 
     @NonNull
     private final Context mContext;
@@ -2085,10 +2139,17 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
                 }
             });
 
-            view.setOnClickListener(v -> onClickItem(position));
+            view.setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.CONFIRM);
+                onClickItem(position);
+            });
             if (action instanceof LongPressAction) {
-                view.setOnLongClickListener(v -> onLongClickItem(position));
+                view.setOnLongClickListener(v -> {
+                    v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);
+                    return onLongClickItem(position);
+                });
             }
+            bindExpressiveActionFeedback(view);
             return view;
         }
 
@@ -2165,10 +2226,17 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
             int viewLayoutResource = com.android.systemui.res.R.layout.global_actions_power_item;
             View view = convertView != null ? convertView
                     : LayoutInflater.from(mContext).inflate(viewLayoutResource, parent, false);
-            view.setOnClickListener(v -> onClickItem(position));
+            view.setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.CONFIRM);
+                onClickItem(position);
+            });
             if (action instanceof LongPressAction) {
-                view.setOnLongClickListener(v -> onLongClickItem(position));
+                view.setOnLongClickListener(v -> {
+                    v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);
+                    return onLongClickItem(position);
+                });
             }
+            bindExpressiveActionFeedback(view);
             ImageView icon = view.findViewById(R.id.icon);
             TextView messageView = view.findViewById(R.id.message);
             messageView.setSelected(true); // necessary for marquee to work
@@ -2241,15 +2309,19 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
             View view = convertView != null ? convertView : LayoutInflater.from(mContext).inflate(
                     com.android.systemui.res.R.layout.global_actions_grid_item_lite, parent, false);
             view.setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.CONFIRM);
                 if (mDelegate != null) {
                     mDelegate.dismissWithoutAnimation();
                 }
                 action.onPress();
             });
+            bindExpressiveActionFeedback(view);
             ImageView icon = view.findViewById(R.id.icon);
             icon.setImageDrawable(action.getIcon(mContext));
             icon.setColorFilter(Color.TRANSPARENT);
             TextView messageView = view.findViewById(R.id.message);
+            messageView.setTypeface(
+                    Typeface.create(FontStyles.GSF_LABEL_LARGE_EMPHASIZED, Typeface.NORMAL));
             messageView.setText(action.getMessage() != null
                     ? action.getMessage() : mContext.getText(action.getMessageResId()));
             return view;
@@ -2861,6 +2933,7 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
         public void onClick(View v) {
             if (!(v.getTag() instanceof Integer)) return;
 
+            v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
             int index = (Integer) v.getTag();
             mAudioManager.setRingerMode(indexToRingerMode(index));
             mHandler.sendEmptyMessageDelayed(MESSAGE_DISMISS, DIALOG_DISMISS_DELAY);
@@ -3340,11 +3413,17 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
             mGlobalActionsLayout.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             mGlobalActionsLayout.setRotationListener(this::onRotate);
             mGlobalActionsLayout.setAdapter(mAdapter);
+            final boolean supportsWindowBlur = isWindowBlurActive(mContext, mBlurUtils);
             final WindowRootViewBlurInteractor blurInteractor = dialog.getBlurInteractor();
-            collectFlow(mGlobalActionsLayout, blurInteractor.isBlurCurrentlySupported(),
-                    mGlobalActionsLayout::setIsBlurSupported);
-            mGlobalActionsLayout.setIsBlurSupported(
-                    blurInteractor.isBlurCurrentlySupported().getValue());
+            if (blurInteractor != null) {
+                collectFlow(mGlobalActionsLayout, blurInteractor.isBlurCurrentlySupported(),
+                        supported -> mGlobalActionsLayout.setIsBlurSupported(
+                                supported && isWindowBlurActive(mContext, mBlurUtils)));
+                mGlobalActionsLayout.setIsBlurSupported(
+                        blurInteractor.isBlurCurrentlySupported().getValue() && supportsWindowBlur);
+            } else {
+                mGlobalActionsLayout.setIsBlurSupported(supportsWindowBlur);
+            }
             ViewGroup container =
                     dialog.findViewById(com.android.systemui.res.R.id.global_actions_container);
             container.setOnTouchListener((v, event) -> {
@@ -3356,7 +3435,10 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
                     com.android.systemui.res.R.id.global_actions_overflow_button);
             if (overflowButton != null) {
                 if (mOverflowAdapter.getCount() > 0) {
-                    overflowButton.setOnClickListener((view) -> showPowerOverflowMenu(dialog));
+                    overflowButton.setOnClickListener((view) -> {
+                        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);
+                        showPowerOverflowMenu(dialog);
+                    });
                     LinearLayout.LayoutParams params =
                             (LinearLayout.LayoutParams) mGlobalActionsLayout.getLayoutParams();
                     params.setMarginEnd(0);
@@ -3380,17 +3462,17 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
             window.setTitle(""); // prevent Talkback from speaking first item name twice
             window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            if (mBlurUtils.supportsBlursOnWindows()) {
-                // Enable blur behind
-                // Enable dim behind since we are setting some amount dim for the blur.
+            if (supportsWindowBlur) {
+                // Enable Kawase blur behind with balanced scrim
                 window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
-                // Set blur behind radius
                 int blurBehindRadius = mContext.getResources()
                         .getDimensionPixelSize(com.android.systemui.res.R.dimen.max_window_blur_radius);
                 window.getAttributes().setBlurBehindRadius(blurBehindRadius);
-                window.setDimAmount(0.54f);
+                window.setDimAmount(WINDOW_SCRIM_ALPHA_BLUR);
             } else {
-                window.setDimAmount(0.88f);
+                window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+                window.getAttributes().setBlurBehindRadius(0);
+                window.setDimAmount(WINDOW_SCRIM_ALPHA_FALLBACK);
             }
             // If user entered from the lock screen and smart lock was enabled, disable it
             int user = mSelectedUserInteractor.getSelectedUserId();
@@ -3561,6 +3643,19 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
         /** Run either the enter or exit animation, then run {@code then}. */
         private void startAnimation(@NonNull SystemUIDialog dialog, boolean isEnter,
                 @Nullable Runnable then) {
+            Window window = dialog.getWindow();
+            if (!ValueAnimator.areAnimatorsEnabled()) {
+                float endAlpha = isEnter ? 1f : 0f;
+                mGlobalActionsLayout.setAlpha(endAlpha);
+                mGlobalActionsLayout.setTranslationX(0f);
+                mGlobalActionsLayout.setTranslationY(0f);
+                window.setDimAmount(mInitialWindowDimAmount * endAlpha);
+                if (then != null) {
+                    then.run();
+                }
+                return;
+            }
+
             ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
 
             // Note: these specs should be the same as in popup_enter_material and
@@ -3569,15 +3664,14 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
             Resources resources = dialog.getContext().getResources();
             if (isEnter) {
                 translationPx = resources.getDimension(R.dimen.popup_enter_animation_from_y_delta);
-                animator.setInterpolator(Interpolators.STANDARD);
+                animator.setInterpolator(Interpolators.EMPHASIZED_DECELERATE);
                 animator.setDuration(resources.getInteger(R.integer.config_activityDefaultDur));
             } else {
                 translationPx = resources.getDimension(R.dimen.popup_exit_animation_to_y_delta);
-                animator.setInterpolator(Interpolators.STANDARD_ACCELERATE);
+                animator.setInterpolator(Interpolators.EMPHASIZED_ACCELERATE);
                 animator.setDuration(resources.getInteger(R.integer.config_activityShortDur));
             }
 
-            Window window = dialog.getWindow();
             final int rotation = dialog.getContext().getDisplay().getRotation();
 
             animator.addUpdateListener(valueAnimator -> {

@@ -16,11 +16,11 @@
 
 package com.android.systemui.toast
 
+import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.view.View
 import android.view.animation.LinearInterpolator
-import android.view.animation.PathInterpolator
-import android.animation.AnimatorSet
+import com.android.app.animation.Interpolators
 
 class ToastDefaultAnimation {
     /**
@@ -37,7 +37,7 @@ class ToastDefaultAnimation {
                 return null
             }
             val linearInterp = LinearInterpolator()
-            val scaleInterp = PathInterpolator(0f, 0f, 0f, 1f)
+            val scaleInterp = Interpolators.EMPHASIZED_DECELERATE
             val sX = ObjectAnimator.ofFloat(view, "scaleX", 0.9f, 1f).apply {
                 interpolator = scaleInterp
                 duration = 333
@@ -75,7 +75,7 @@ class ToastDefaultAnimation {
                 return null
             }
             val linearInterp = LinearInterpolator()
-            val scaleInterp = PathInterpolator(0.3f, 0f, 1f, 1f)
+            val scaleInterp = Interpolators.EMPHASIZED_ACCELERATE
             val viewScaleX = ObjectAnimator.ofFloat(view, "scaleX", 1f, 0.9f).apply {
                 interpolator = scaleInterp
                 duration = 250

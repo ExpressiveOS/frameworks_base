@@ -25,6 +25,7 @@ import com.android.systemui.colorextraction.fakeSysuiColorExtractor
 import com.android.systemui.deviceentry.domain.interactor.deviceEntryInteractor
 import com.android.systemui.kosmos.Kosmos
 import com.android.systemui.shade.fakeShadeController
+import com.android.systemui.statusbar.BlurUtils
 import com.android.systemui.statusbar.phone.fakeLightBarController
 import com.android.systemui.statusbar.phone.systemUIDialogDotFactory
 import com.android.systemui.statusbar.policy.keyguardStateController
@@ -43,6 +44,8 @@ val Kosmos.actionsDialogLiteDelegateFactory:
             adapter,
             overflowAdapter,
             powerAdapter,
+            restartAdapter,
+            usersAdapter,
             statusBarWindowController,
             keyguardShowing,
             onRefreshCallback,
@@ -52,6 +55,8 @@ val Kosmos.actionsDialogLiteDelegateFactory:
                 adapter,
                 overflowAdapter,
                 powerAdapter,
+                restartAdapter,
+                usersAdapter,
                 statusBarWindowController,
                 keyguardShowing,
                 onRefreshCallback,
@@ -69,6 +74,7 @@ val Kosmos.actionsDialogLiteDelegateFactory:
                 dialogTransitionAnimator,
                 systemUIDialogDotFactory,
                 deviceEntryInteractor,
+                mock<BlurUtils>(),
             )
         }
     }

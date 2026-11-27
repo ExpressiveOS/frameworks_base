@@ -25,8 +25,8 @@ import android.graphics.Outline;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewOutlineProvider;
-import android.view.animation.AccelerateDecelerateInterpolator;
 
+import com.android.app.animation.Interpolators;
 import com.android.systemui.res.R;
 
 import java.lang.annotation.Retention;
@@ -161,7 +161,7 @@ public class AuthPanelController extends ViewOutlineProvider {
         final float cornerRadius = mUseFullScreen ? 0 : mContext.getResources()
                 .getDimension(R.dimen.biometric_dialog_corner_size);
 
-        if (animateDurationMs > 0) {
+        if (animateDurationMs > 0 && ValueAnimator.areAnimatorsEnabled()) {
             // Animate margin
             ValueAnimator marginAnimator = ValueAnimator.ofInt(mMargin, margin);
             marginAnimator.addUpdateListener((animation) -> {
@@ -190,7 +190,7 @@ public class AuthPanelController extends ViewOutlineProvider {
             // Play together
             AnimatorSet as = new AnimatorSet();
             as.setDuration(animateDurationMs);
-            as.setInterpolator(new AccelerateDecelerateInterpolator());
+            as.setInterpolator(Interpolators.EMPHASIZED);
             as.playTogether(cornerAnimator, heightAnimator, widthAnimator, marginAnimator);
             as.start();
 

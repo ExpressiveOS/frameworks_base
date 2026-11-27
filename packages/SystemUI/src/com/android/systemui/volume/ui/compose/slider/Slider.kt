@@ -18,6 +18,7 @@
 
 package com.android.systemui.volume.ui.compose.slider
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring
@@ -170,6 +171,11 @@ fun Slider(
         if (sliderState.isDragging) return@SideEffect
         if (animatable.targetValue != debouncedValue && sliderState.value != debouncedValue) {
             coroutineScope.launchTraced("Slider#animateValue") {
+                if (!ValueAnimator.areAnimatorsEnabled()) {
+                    animatable.snapTo(debouncedValue)
+                    sliderState.value = debouncedValue
+                    return@launchTraced
+                }
                 if (!animatable.isRunning) {
                     // Set initial value. sliderState.value should equal to the current
                     // animation value otherwise, so there is no need to update it

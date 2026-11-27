@@ -16,6 +16,7 @@
 
 package com.android.systemui.brightness.ui.compose
 
+import android.animation.ValueAnimator
 import android.content.BroadcastReceiver
 import android.content.ContentResolver
 import android.content.Context
@@ -24,6 +25,7 @@ import android.content.IntentFilter
 import android.database.ContentObserver
 import android.media.AudioManager
 import android.os.UserHandle
+import android.os.VibrationEffect
 import android.os.Vibrator
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
@@ -35,6 +37,8 @@ import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -146,14 +150,14 @@ import platform.test.motion.compose.values.motionTestValues
 fun BrightnessSlider(
     gammaValue: Int,
     valueRange: IntRange,
-    autoMode: Boolean,
+    autoMode: Boolean = false,
     iconResProvider: (Float) -> Int,
     imageLoader: suspend (Int, Context) -> Icon.Loaded?,
     restriction: PolicyRestriction,
     onRestrictedClick: (PolicyRestriction.Restricted) -> Unit,
     onDrag: (Int) -> Unit,
     onStop: (Int) -> Unit,
-    onIconClick: suspend () -> Unit,
+    onIconClick: suspend () -> Unit = {},
     overriddenByAppState: Boolean,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
@@ -162,9 +166,11 @@ fun BrightnessSlider(
     dimensions: BrightnessSliderDimensions = BrightnessSliderDimensions.Default,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val cr = context.contentResolver
 
     var hapticsEnabled by remember { mutableStateOf(readEnableHaptics(cr)) }
+    val hasRichSliderPrimitives = rememberHasRichSliderPrimitives(context)
 
     val shapeMode = rememberSliderShapeMode()
     val trackCornerDp: Dp = trackCornerFor(shapeMode)
@@ -174,7 +180,11 @@ fun BrightnessSlider(
 
     var value by remember(gammaValue) { mutableIntStateOf(gammaValue) }
     val animatedValue by
-        animateFloatAsState(targetValue = value.toFloat(), label = "BrightnessSliderAnimatedValue")
+        animateFloatAsState(
+            targetValue = value.toFloat(),
+            animationSpec = if (ValueAnimator.areAnimatorsEnabled()) spring() else snap(),
+            label = "BrightnessSliderAnimatedValue",
+        )
     val floatValueRange = valueRange.first.toFloat()..valueRange.last.toFloat()
     val isRestricted = restriction is PolicyRestriction.Restricted
     val contentDescription = stringResource(R.string.accessibility_brightness)
@@ -187,9 +197,14 @@ fun BrightnessSlider(
                     floatValueRange,
                     Orientation.Horizontal,
                     SliderHapticFeedbackConfig(
-                        maxVelocityToScale = 1f /* slider progress(from 0 to 1) per sec */
+                        lowerBookendScale = 0.25f,
+                        upperBookendScale = 1.0f,
+                        maxVelocityToScale = 1f /* slider progress(from 0 to 1) per sec */,
                     ),
-                    SeekableSliderTrackerConfig(),
+                    SeekableSliderTrackerConfig(
+                        lowerBookendThreshold = 0.01f,
+                        upperBookendThreshold = 0.99f,
+                    ),
                 )
             }
         } else {
@@ -298,7 +313,16 @@ fun BrightnessSlider(
                 if (enabled) {
                     if (!overriddenByAppState) {
                         hapticsViewModel?.onValueChange(it)
-                        value = it.toInt()
+                        val newValue = it.toInt().coerceIn(valueRange.first, valueRange.last)
+                        if (
+                            hapticsEnabled &&
+                                !hasRichSliderPrimitives &&
+                                newValue != value &&
+                                (newValue <= valueRange.first || newValue >= valueRange.last)
+                        ) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                        }
+                        value = newValue
                         onDrag(value)
                     }
                 }
@@ -451,7 +475,7 @@ fun BrightnessSlider(
                                 }
                             },
                     trackCornerSize = trackCornerDp,
-                    trackInsideCornerSize = 2.dp,
+                    trackInsideCornerSize = 4.dp,
                     drawStopIndicator = null,
                     thumbTrackGapSize = ThumbTrackGapSize,
                     colors = colors,
@@ -491,6 +515,7 @@ private fun VolumeSlider(
     dimensions: BrightnessSliderDimensions = BrightnessSliderDimensions.Default,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val cr = context.contentResolver
 
     val audioManager = remember(context) { context.getSystemService(AudioManager::class.java) }
@@ -509,6 +534,7 @@ private fun VolumeSlider(
     val floatValueRange = minVolume.toFloat()..safeMax.toFloat()
 
     var hapticsEnabled by remember { mutableStateOf(readEnableHaptics(cr)) }
+    val hasRichSliderPrimitives = rememberHasRichSliderPrimitives(context)
     val showRinger = rememberShowRingerMode()
 
     val shapeMode = rememberSliderShapeMode()
@@ -549,7 +575,11 @@ private fun VolumeSlider(
         }
     }
     val animatedValue by
-        animateFloatAsState(targetValue = value.toFloat(), label = "VolumeSliderAnimatedValue")
+        animateFloatAsState(
+            targetValue = value.toFloat(),
+            animationSpec = if (ValueAnimator.areAnimatorsEnabled()) spring() else snap(),
+            label = "VolumeSliderAnimatedValue",
+        )
 
     DisposableEffect(context, audioManager) {
         val receiver =
@@ -607,9 +637,14 @@ private fun VolumeSlider(
                     floatValueRange,
                     Orientation.Horizontal,
                     SliderHapticFeedbackConfig(
-                        maxVelocityToScale = 1f /* slider progress(from 0 to 1) per sec */
+                        lowerBookendScale = 0.25f,
+                        upperBookendScale = 1.0f,
+                        maxVelocityToScale = 1f /* slider progress(from 0 to 1) per sec */,
                     ),
-                    SeekableSliderTrackerConfig(),
+                    SeekableSliderTrackerConfig(
+                        lowerBookendThreshold = 0.01f,
+                        upperBookendThreshold = 0.99f,
+                    ),
                 )
             }
         } else {
@@ -650,6 +685,13 @@ private fun VolumeSlider(
                 hapticsViewModel?.onValueChange(it)
                 val newValue = it.roundToInt().coerceIn(minVolume, safeMax)
                 if (newValue != value) {
+                    if (
+                        hapticsEnabled &&
+                            !hasRichSliderPrimitives &&
+                            (newValue <= minVolume || newValue >= safeMax)
+                    ) {
+                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                    }
                     value = newValue
                     setStreamVolume(audioManager, streamType, newValue)
                 }
@@ -781,7 +823,7 @@ private fun VolumeSlider(
                             }
                         },
                     trackCornerSize = trackCornerDp,
-                    trackInsideCornerSize = 2.dp,
+                    trackInsideCornerSize = 4.dp,
                     drawStopIndicator = null,
                     thumbTrackGapSize = ThumbTrackGapSize,
                     colors = colors,
@@ -800,6 +842,7 @@ private fun VolumeSlider(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun VolumeRingerButton(
     hapticsEnabled: Boolean,
@@ -840,6 +883,8 @@ private fun VolumeRingerButton(
 
     val isOn = ringerMode != AudioManager.RINGER_MODE_SILENT
     val ringerBrush: Brush? = if (isOn) gradientColors?.diagonal() else null
+    val motionScheme = MaterialTheme.motionScheme
+    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
 
     val backgroundColor by
         animateColorAsState(
@@ -848,7 +893,9 @@ private fun VolumeRingerButton(
                     MaterialTheme.colorScheme.primary
                 } else {
                     LocalAndroidColorScheme.current.surfaceEffect1
-                }
+                },
+            animationSpec = if (animatorsEnabled) motionScheme.defaultEffectsSpec() else snap(),
+            label = "VolumeRingerBackgroundColor",
         )
     val iconTint by
         animateColorAsState(
@@ -857,11 +904,15 @@ private fun VolumeRingerButton(
                     MaterialTheme.colorScheme.onPrimary
                 } else {
                     MaterialTheme.colorScheme.onSurface
-                }
+                },
+            animationSpec = if (animatorsEnabled) motionScheme.defaultEffectsSpec() else snap(),
+            label = "VolumeRingerIconTint",
         )
     val animatedCornerRadius by
         animateDpAsState(
-            targetValue = if (isOn) SliderTrackRoundedCorner else buttonSize / 2
+            targetValue = if (isOn) SliderTrackRoundedCorner else buttonSize / 2,
+            animationSpec = if (animatorsEnabled) motionScheme.defaultSpatialSpec() else snap(),
+            label = "VolumeRingerCornerRadius",
         )
     val shapeMode = rememberSliderShapeMode()
     val ringerShape =
@@ -1111,6 +1162,7 @@ private fun setStreamVolume(audioManager: AudioManager?, streamType: Int, volume
     runCatching { audioManager?.setStreamVolume(streamType, volume, 0) }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun drawAutoBrightnessButton(
     autoMode: Boolean,
@@ -1122,19 +1174,25 @@ private fun drawAutoBrightnessButton(
     val view = LocalView.current
     val coroutineScope = rememberCoroutineScope()
     val autoBrush: Brush? = if (autoMode) gradientColors?.diagonal() else null
+    val motionScheme = MaterialTheme.motionScheme
+    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
     val backgroundColor by animateColorAsState(
         targetValue = if (autoMode) {
             MaterialTheme.colorScheme.primary
         } else {
             LocalAndroidColorScheme.current.surfaceEffect1
-        }
+        },
+        animationSpec = if (animatorsEnabled) motionScheme.defaultEffectsSpec() else snap(),
+        label = "AutoBrightnessBackgroundColor",
     )
     val iconTint by animateColorAsState(
         targetValue = if (autoMode) {
             MaterialTheme.colorScheme.onPrimary
         } else {
             MaterialTheme.colorScheme.onSurface
-        }
+        },
+        animationSpec = if (animatorsEnabled) motionScheme.defaultEffectsSpec() else snap(),
+        label = "AutoBrightnessIconTint",
     )
     val painterRes = if (autoMode) {
         R.drawable.ic_qs_brightness_auto_on
@@ -1151,7 +1209,9 @@ private fun drawAutoBrightnessButton(
             SliderTrackRoundedCorner
         } else {
             buttonSize / 2
-        }
+        },
+        animationSpec = if (animatorsEnabled) motionScheme.defaultSpatialSpec() else snap(),
+        label = "AutoBrightnessCornerRadius",
     )
     val shapeMode = rememberSliderShapeMode()
     val autoIconShape = when (shapeMode) {
@@ -1184,6 +1244,7 @@ private fun drawAutoBrightnessButton(
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun BrightnessSliderContainer(
     viewModel: BrightnessSliderViewModel,
@@ -1234,11 +1295,19 @@ fun BrightnessSliderContainer(
     // when stopping dragging
     val containerColor by
         animateColorAsState(
-            if (dragging && viewModel.supportsMirroring) {
-                containerColors.mirrorColor
-            } else {
-                containerColors.idleColor
-            }
+            targetValue =
+                if (dragging && viewModel.supportsMirroring) {
+                    containerColors.mirrorColor
+                } else {
+                    containerColors.idleColor
+                },
+            animationSpec =
+                if (ValueAnimator.areAnimatorsEnabled()) {
+                    MaterialTheme.motionScheme.defaultEffectsSpec()
+                } else {
+                    snap()
+                },
+            label = "BrightnessSliderContainerColor",
         )
 
     val backgroundFrameSize =
@@ -1396,18 +1465,32 @@ data class BrightnessSliderDimensions(
             BrightnessSliderDimensions(
                 iconSize = DpSize(28.dp, 28.dp),
                 thumbHeight = 52.dp,
-                thumbWidth = 4.dp,
+                thumbWidth = 5.dp,
                 trackHeight = 40.dp,
                 verticalPadding = 6.dp,
-                backgroundRoundedCorner = 24.dp,
+                backgroundRoundedCorner = 28.dp,
                 backgroundFrameWidth = 10.dp,
                 backgroundFrameHeight = 6.dp,
             )
     }
 }
 
+@Composable
+private fun rememberHasRichSliderPrimitives(context: Context): Boolean =
+    remember(context) {
+        runCatching {
+                val vibrator = context.getSystemService(Vibrator::class.java)
+                vibrator != null &&
+                    vibrator.areAllPrimitivesSupported(
+                        VibrationEffect.Composition.PRIMITIVE_LOW_TICK,
+                        VibrationEffect.Composition.PRIMITIVE_TICK,
+                    )
+            }
+            .getOrDefault(false)
+    }
+
 private object InternalDimensions {
-    val SliderTrackRoundedCorner = 12.dp
+    val SliderTrackRoundedCorner = 20.dp
     val IconPadding = 6.dp
     val ThumbTrackGapSize = 6.dp
 }
@@ -1418,10 +1501,18 @@ private object AnimationSpecs {
 }
 
 private suspend fun Animatable<Float, AnimationVector1D>.appear() =
-    animateTo(targetValue = 1f, animationSpec = IconAppearSpec)
+    if (ValueAnimator.areAnimatorsEnabled()) {
+        animateTo(targetValue = 1f, animationSpec = IconAppearSpec)
+    } else {
+        snapTo(1f)
+    }
 
 private suspend fun Animatable<Float, AnimationVector1D>.disappear() =
-    animateTo(targetValue = 0f, animationSpec = IconDisappearSpec)
+    if (ValueAnimator.areAnimatorsEnabled()) {
+        animateTo(targetValue = 0f, animationSpec = IconDisappearSpec)
+    } else {
+        snapTo(0f)
+    }
 
 @VisibleForTesting
 object BrightnessSliderMotionTestKeys {

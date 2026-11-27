@@ -38,6 +38,8 @@ object VolumeHapticsConfigsProvider {
             // Create a set of continuous configs
             hapticFeedbackConfig =
                 SliderHapticFeedbackConfig(
+                    lowerBookendScale = 0.25f,
+                    upperBookendScale = 1.0f,
                     progressBasedDragMinScale = 0.1f,
                     progressBasedDragMaxScale = 0.85f,
                     additionalVelocityMaxBump = 0.25f,

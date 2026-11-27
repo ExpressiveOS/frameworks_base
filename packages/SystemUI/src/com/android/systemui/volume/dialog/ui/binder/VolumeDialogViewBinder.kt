@@ -16,6 +16,7 @@
 
 package com.android.systemui.volume.dialog.ui.binder
 
+import android.animation.ValueAnimator
 import android.app.Dialog
 import android.content.Context
 import android.view.Gravity
@@ -59,8 +60,10 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.scan
 
-private const val SPRING_STIFFNESS = 700f
-private const val SPRING_DAMPING_RATIO = 0.9f
+private const val SPRING_STIFFNESS_ENTER = 450f
+private const val SPRING_DAMPING_RATIO_ENTER = 0.75f
+private const val SPRING_STIFFNESS_EXIT = 600f
+private const val SPRING_DAMPING_RATIO_EXIT = SpringForce.DAMPING_RATIO_NO_BOUNCY
 
 private const val FRACTION_HIDE = 0f
 private const val FRACTION_SHOW = 1f
@@ -201,13 +204,17 @@ constructor(
 
         view.applyAnimationProgress(FRACTION_HIDE, isLeft)
         val animationValueHolder = FloatValueHolder(FRACTION_HIDE)
+        val enterSpring =
+            SpringForce()
+                .setStiffness(SPRING_STIFFNESS_ENTER)
+                .setDampingRatio(SPRING_DAMPING_RATIO_ENTER)
+        val exitSpring =
+            SpringForce()
+                .setStiffness(SPRING_STIFFNESS_EXIT)
+                .setDampingRatio(SPRING_DAMPING_RATIO_EXIT)
         val animation: SpringAnimation =
             SpringAnimation(animationValueHolder)
-                .setSpring(
-                    SpringForce()
-                        .setStiffness(SPRING_STIFFNESS)
-                        .setDampingRatio(SPRING_DAMPING_RATIO)
-                )
+                .setSpring(enterSpring)
                 .setMinimumVisibleChange(ANIMATION_MINIMUM_VISIBLE_CHANGE)
                 .addUpdateListener { _, value, _ -> view.applyAnimationProgress(value, isLeft) }
         var junkListener: DynamicAnimation.OnAnimationUpdateListener? = null
@@ -219,17 +226,31 @@ constructor(
                     is VolumeDialogVisibilityModel.Visible -> {
                         tracer.traceVisibilityEnd(it)
                         junkListener?.let(animation::removeUpdateListener)
-                        junkListener =
-                            jankListenerFactory.show(view).also(animation::addUpdateListener)
-                        animation.suspendAnimate(FRACTION_SHOW)
+                        if (!ValueAnimator.areAnimatorsEnabled()) {
+                            animation.cancel()
+                            animationValueHolder.value = FRACTION_SHOW
+                            view.applyAnimationProgress(FRACTION_SHOW, isLeft)
+                        } else {
+                            animation.spring = enterSpring
+                            junkListener =
+                                jankListenerFactory.show(view).also(animation::addUpdateListener)
+                            animation.suspendAnimate(FRACTION_SHOW)
+                        }
                     }
 
                     is VolumeDialogVisibilityModel.Dismissed -> {
                         tracer.traceVisibilityEnd(it)
                         junkListener?.let(animation::removeUpdateListener)
-                        junkListener =
-                            jankListenerFactory.dismiss(view).also(animation::addUpdateListener)
-                        animation.suspendAnimate(FRACTION_HIDE)
+                        if (!ValueAnimator.areAnimatorsEnabled()) {
+                            animation.cancel()
+                            animationValueHolder.value = FRACTION_HIDE
+                            view.applyAnimationProgress(FRACTION_HIDE, isLeft)
+                        } else {
+                            animation.spring = exitSpring
+                            junkListener =
+                                jankListenerFactory.dismiss(view).also(animation::addUpdateListener)
+                            animation.suspendAnimate(FRACTION_HIDE)
+                        }
                         dialog.dismiss()
                     }
 
@@ -246,7 +267,7 @@ constructor(
      * @param isLeft whether the dialog is positioned on the left side of the screen.
      */
     private fun View.applyAnimationProgress(fraction: Float, isLeft: Boolean) {
-        alpha = ceil(fraction)
+        alpha = ceil(fraction.coerceIn(0f, 1f))
 
         val startTranslationX = if (isLeft) {
             -width.toFloat()
@@ -258,7 +279,7 @@ constructor(
     }
 
     private suspend fun View.applyVerticalOffset(offsetPx: Float, shouldAnimate: Boolean) {
-        if (!shouldAnimate) {
+        if (!shouldAnimate || !ValueAnimator.areAnimatorsEnabled()) {
             translationY = offsetPx
             return
         }

@@ -26,6 +26,7 @@ import android.content.res.Configuration;
 import android.graphics.Insets;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.util.TypedValue;
@@ -42,6 +43,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.StyleRes;
 
 import com.android.systemui.Dependency;
+import com.android.systemui.Flags;
 import com.android.systemui.animation.DialogTransitionAnimator;
 import com.android.systemui.broadcast.BroadcastDispatcher;
 import com.android.systemui.dagger.qualifiers.Application;
@@ -315,6 +317,22 @@ public class SystemUIDialog extends AlertDialog {
         mLastConfigurationHeightDp = config.screenHeightDp;
         final Window window = getWindow();
         updateWindowSize(window);
+        if (Flags.blurOnMoreSurfaces() && mBlurInteractor != null) {
+            final PowerManager pm = getContext().getSystemService(PowerManager.class);
+            final boolean isPowerSave = pm != null && pm.isPowerSaveMode();
+            final boolean blurSupported =
+                    Boolean.TRUE.equals(mBlurInteractor.isBlurCurrentlySupported().getValue())
+                            && !isPowerSave;
+            final LayoutParams lp = window.getAttributes();
+            if (blurSupported
+                    && (lp.flags & LayoutParams.FLAG_DIM_BEHIND) != 0
+                    && lp.getBlurBehindRadius() == 0) {
+                window.addFlags(LayoutParams.FLAG_BLUR_BEHIND);
+                lp.setBlurBehindRadius(getContext().getResources()
+                        .getDimensionPixelSize(R.dimen.max_window_blur_radius) / 2);
+                window.setAttributes(lp);
+            }
+        }
 
         for (int i = 0; i < mOnCreateRunnables.size(); i++) {
             mOnCreateRunnables.get(i).run();

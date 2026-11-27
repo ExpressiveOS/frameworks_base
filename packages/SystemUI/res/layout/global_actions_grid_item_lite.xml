@@ -40,6 +40,7 @@
             android:marqueeRepeatLimit="marquee_forever"
             android:singleLine="true"
             android:textSize="14sp"
+            android:fontFamily="@*android:string/config_bodyFontFamilyMedium"
             android:gravity="center"
             android:textColor="@color/materialColorOnSurface"
             android:textAppearance="?android:attr/textAppearanceSmall" />

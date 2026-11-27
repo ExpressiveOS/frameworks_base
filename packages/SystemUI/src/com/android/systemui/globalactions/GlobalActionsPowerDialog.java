@@ -77,14 +77,16 @@ public class GlobalActionsPowerDialog {
                 context.getTheme()));
         window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        if (blurUtils.supportsBlursOnWindows()) {
+        if (GlobalActionsDialogLite.isWindowBlurActive(context, blurUtils)) {
             window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
             int blurBehindRadius = context.getResources()
                     .getDimensionPixelSize(com.android.systemui.res.R.dimen.max_window_blur_radius);
             window.getAttributes().setBlurBehindRadius(blurBehindRadius);
             window.setDimAmount(0.54f);
         } else {
-            window.setDimAmount(0.88f);
+            window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
+            window.getAttributes().setBlurBehindRadius(0);
+            window.setDimAmount(0.85f);
         }
 
         return dialog;

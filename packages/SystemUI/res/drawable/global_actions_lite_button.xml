@@ -18,6 +18,7 @@
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:androidprv="http://schemas.android.com/apk/prv/res/android"
-    android:shape="oval">
+    android:shape="rectangle">
+  <corners android:radius="@dimen/global_actions_corner_radius"/>
   <solid android:color="@color/materialColorSurfaceContainerHighest"/>
 </shape>

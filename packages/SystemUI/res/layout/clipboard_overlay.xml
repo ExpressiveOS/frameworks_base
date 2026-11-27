@@ -48,10 +48,10 @@
         android:layout_height="wrap_content"
         android:gravity="center"
         android:maxWidth="@*android:dimen/toast_width"
-        android:background="@android:drawable/toast_frame"
+        android:background="@drawable/toast_background"
         android:elevation="@*android:dimen/toast_elevation"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
         android:layout_marginEnd="@dimen/overlay_action_container_margin_horizontal"
         android:layout_marginStart="@dimen/overlay_action_container_margin_horizontal"
         android:layout_marginBottom="@dimen/overlay_action_container_margin_bottom"
@@ -65,6 +65,9 @@
             android:maxLines="2"
             android:paddingTop="12dp"
             android:paddingBottom="12dp"
+            android:textSize="14sp"
+            android:fontFamily="@*android:string/config_bodyFontFamilyMedium"
+            android:textColor="@color/materialColorOnSurface"
             android:textAppearance="@*android:style/TextAppearance.Toast"/>
     </FrameLayout>
     <!-- Negative horizontal margin because this container background must render beyond the thing
@@ -142,6 +145,7 @@
         app:layout_constraintStart_toStartOf="@id/preview_border"
         app:layout_constraintBottom_toBottomOf="@id/preview_border">
         <TextView android:id="@+id/text_preview"
+                  android:fontFamily="@*android:string/config_bodyFontFamilyMedium"
                   android:textFontWeight="500"
                   android:padding="8dp"
                   android:gravity="center|start"
@@ -149,9 +153,9 @@
                   android:autoSizeTextType="uniform"
                   android:autoSizeMinTextSize="@dimen/clipboard_overlay_min_font"
                   android:autoSizeMaxTextSize="@dimen/clipboard_overlay_max_font"
-                  android:textColor="@color/materialColorOnSecondary"
-                  android:textColorLink="@color/materialColorOnSecondary"
-                  android:background="@color/materialColorSecondary"
+                  android:textColor="@color/materialColorOnSecondaryContainer"
+                  android:textColorLink="@color/materialColorOnSecondaryContainer"
+                  android:background="@color/materialColorSecondaryContainer"
                   android:layout_width="@dimen/clipboard_preview_size"
                   android:layout_height="@dimen/clipboard_preview_size"/>
         <ImageView
@@ -164,12 +168,13 @@
         <TextView
             android:id="@+id/hidden_preview"
             android:visibility="gone"
+            android:fontFamily="@*android:string/config_bodyFontFamilyMedium"
             android:textFontWeight="500"
             android:padding="8dp"
             android:gravity="center"
             android:textSize="14sp"
-            android:textColor="@color/materialColorOnSecondary"
-            android:background="@color/materialColorSecondary"
+            android:textColor="@color/materialColorOnSecondaryContainer"
+            android:background="@color/materialColorSecondaryContainer"
             android:layout_width="@dimen/clipboard_preview_size"
             android:layout_height="@dimen/clipboard_preview_size"/>
     </FrameLayout>
@@ -189,12 +194,12 @@
         android:background="@drawable/clipboard_minimized_background_inset">
         <ImageView
             android:src="@drawable/ic_content_paste"
-            android:tint="@color/materialColorOnSecondary"
+            android:tint="@color/materialColorOnSurface"
             android:layout_width="24dp"
             android:layout_height="24dp"/>
         <ImageView
             android:src="@*android:drawable/ic_chevron_end"
-            android:tint="@color/materialColorOnSecondary"
+            android:tint="@color/materialColorOnSurfaceVariant"
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:paddingEnd="-8dp"

@@ -17,6 +17,7 @@
 package com.android.systemui.volume.dialog.ringer.ui.binder
 
 import android.animation.ArgbEvaluator
+import android.animation.ValueAnimator
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.drawable.Drawable
@@ -25,7 +26,9 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.gui.EarlyWakeupInfo
 import android.os.Binder
+import android.os.PowerManager
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.SurfaceControl
 import android.view.View
@@ -84,8 +87,8 @@ constructor(
 
     private val roundnessSpringForce =
         SpringForce(1F).apply {
-            stiffness = 800F
-            dampingRatio = 0.6F
+            stiffness = 650F
+            dampingRatio = 0.62F
         }
     private val colorSpringForce =
         SpringForce(1F).apply {
@@ -353,9 +356,11 @@ constructor(
 
     private fun View.setIsBlurSupported(supported: Boolean) {
         if (viewModel.showBlur) {
+            val powerManager = context.getSystemService(PowerManager::class.java)
+            val effectiveSupported = supported && powerManager?.isPowerSaveMode != true
             val layers = (background as LayerDrawable)
             (layers.getDrawable(0) as BackgroundBlurDrawable).setBlurRadius(
-                if (supported) {
+                if (effectiveSupported) {
                     context.resources.getDimensionPixelSize(
                         R.dimen.volume_dialog_background_surface_blur_radius
                     )
@@ -365,7 +370,7 @@ constructor(
             )
             (layers.getDrawable(1) as GradientDrawable).setColor(
                 context.getColor(
-                    if (supported) R.color.volume_dialog_view_background_blur
+                    if (effectiveSupported) R.color.volume_dialog_view_background_blur
                     else R.color.volume_dialog_view_background_blur_fallback
                 )
             )
@@ -551,7 +556,14 @@ constructor(
                 ColorStateList.valueOf(context.getColor(internalR.color.materialColorOnSurface))
             background = background.mutate()
         }
-        setOnClickListener {
+        setOnClickListener { buttonView ->
+            buttonView.performHapticFeedback(
+                if (isOpen && !isSelected) {
+                    HapticFeedbackConstants.CONFIRM
+                } else {
+                    HapticFeedbackConstants.CLOCK_TICK
+                }
+            )
             viewModel.onRingerButtonClicked(buttonViewModel.ringerMode, isSelected)
         }
     }
@@ -592,11 +604,20 @@ constructor(
         ringerButtonUiModel: RingerButtonUiModel,
         onProgressChanged: (Float, Boolean) -> Unit = { _, _ -> },
     ) {
+        val radius = backgroundShape().cornerRadius
+        val cornerRadiusDiff = ringerButtonUiModel.cornerRadius - radius
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            backgroundShape().setColor(ringerButtonUiModel.backgroundColor)
+            imageTintList = ColorStateList.valueOf(ringerButtonUiModel.tintColor)
+            onProgressChanged(1F, cornerRadiusDiff > 0F)
+            backgroundShape().cornerRadius = ringerButtonUiModel.cornerRadius.toFloat()
+            background.invalidateSelf()
+            return
+        }
+
         val roundnessAnimation =
             SpringAnimation(FloatValueHolder(0F), 1F).setSpring(roundnessSpringForce)
         val colorAnimation = SpringAnimation(FloatValueHolder(0F), 1F).setSpring(colorSpringForce)
-        val radius = backgroundShape().cornerRadius
-        val cornerRadiusDiff = ringerButtonUiModel.cornerRadius - backgroundShape().cornerRadius
 
         roundnessAnimation.minimumVisibleChange = BUTTON_MIN_VISIBLE_CHANGE
         colorAnimation.minimumVisibleChange = BUTTON_MIN_VISIBLE_CHANGE

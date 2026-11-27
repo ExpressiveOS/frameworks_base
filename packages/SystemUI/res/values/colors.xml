@@ -44,12 +44,12 @@
     <color name="notification_scrim_fallback">@android:color/system_surface_dim_light</color>
 
     <!-- The color of the background in the separated list of the Global Actions menu -->
-    <color name="global_actions_separated_background">#F5F5F5</color>
+    <color name="global_actions_separated_background">@color/materialColorSurfaceContainerHigh</color>
 
     <!-- The color of the background in the grid of the Global Actions menu -->
-    <color name="global_actions_grid_background">#F1F3F4</color>
+    <color name="global_actions_grid_background">@color/materialColorSurfaceContainerHigh</color>
     <color name="global_actions_grid_background_blur">@color/customColorSurfaceEffect0</color>
-    <color name="global_actions_grid_background_blur_fallback">@android:color/system_accent1_200</color>
+    <color name="global_actions_grid_background_blur_fallback">@color/materialColorSurfaceContainerHigh</color>
 
     <!-- Colors for Power Menu Lite -->
     <color name="global_actions_lite_button_background_focused">#808080</color>
@@ -205,7 +205,7 @@
     <color name="volume_dialog_background_color">@android:color/transparent</color>
     <color name="volume_dialog_background_color_above_blur">@android:color/transparent</color>
     <color name="volume_dialog_view_background_blur">@color/customColorSurfaceEffect0</color>
-    <color name="volume_dialog_view_background_blur_fallback">@android:color/system_accent1_200</color>
+    <color name="volume_dialog_view_background_blur_fallback">@color/materialColorSurfaceContainerHigh</color>
 
     <!-- media -->
     <color name="media_seamless_border">?android:attr/colorAccent</color>

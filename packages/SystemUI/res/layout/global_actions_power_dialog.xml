@@ -18,6 +18,8 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:orientation="vertical"
+    android:background="@drawable/global_actions_lite_background"
+    android:padding="@dimen/global_actions_lite_padding"
     android:divider="@drawable/global_actions_list_divider"
     android:showDividers="middle"
 />

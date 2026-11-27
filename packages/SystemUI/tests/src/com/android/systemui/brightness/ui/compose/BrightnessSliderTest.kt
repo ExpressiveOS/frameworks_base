@@ -30,6 +30,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SmallTest
 import com.android.compose.theme.PlatformTheme
@@ -40,6 +41,7 @@ import com.android.systemui.haptics.slider.sliderHapticsViewModelFactory
 import com.android.systemui.res.R
 import com.android.systemui.testKosmos
 import com.android.systemui.util.policy.PolicyRestriction
+import com.google.common.truth.Truth.assertThat
 import java.util.Locale
 import org.junit.Rule
 import org.junit.Test
@@ -61,7 +63,7 @@ class BrightnessSliderTest : SysuiTestCase() {
 
     private var localeConfiguration by mutableStateOf(englishLocaleConfiguration)
 
-    @Test
+    @Test(timeout = 10_000)
     fun stateDescription_hasPercentage() {
         val value = 25
         val range = 0..200
@@ -92,7 +94,7 @@ class BrightnessSliderTest : SysuiTestCase() {
             .assert(hasStateDescription("12%"))
     }
 
-    @Test
+    @Test(timeout = 10_000)
     fun stateDescription_updatesWithValue() {
         var value by mutableIntStateOf(25)
         val range = 0..200
@@ -125,7 +127,7 @@ class BrightnessSliderTest : SysuiTestCase() {
             .assert(hasStateDescription("75%"))
     }
 
-    @Test
+    @Test(timeout = 10_000)
     fun stateDescription_updatesWithConfiguration() {
         val value = 25
         val range = 0..200
@@ -156,5 +158,12 @@ class BrightnessSliderTest : SysuiTestCase() {
         composeRule
             .onNodeWithText(context.getString(R.string.accessibility_brightness))
             .assert(hasStateDescription("12 %")) // extra NBSP
+    }
+
+    @Test(timeout = 10_000)
+    fun defaultDimensions_usesExpressivePillGeometry() {
+        assertThat(BrightnessSliderDimensions.Default.backgroundRoundedCorner).isEqualTo(28.dp)
+        assertThat(BrightnessSliderDimensions.Default.thumbWidth).isEqualTo(5.dp)
+        assertThat(BrightnessSliderDimensions.Default.trackHeight).isEqualTo(40.dp)
     }
 }

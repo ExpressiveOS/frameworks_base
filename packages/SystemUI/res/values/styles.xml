@@ -191,13 +191,13 @@
     </style>
 
     <style name="TextAppearance.AuthCredential.Title" parent="TextAppearance.Material3.HeadlineSmall" >
-        <item name="android:fontFamily">@*android:string/config_headlineFontFamily</item>
+        <item name="android:fontFamily">variable-headline-small-emphasized</item>
         <item name="android:textColor">@color/materialColorOnSurface</item>
     </style>
 
     <style name="TextAppearance.AuthCredential.Subtitle" parent="TextAppearance.Material3.BodyMedium" >
         <item name="android:fontFamily">@*android:string/config_bodyFontFamily</item>
-        <item name="android:textColor">@color/materialColorOnSurface</item>
+        <item name="android:textColor">@color/materialColorOnSurfaceVariant</item>
     </style>
 
     <style name="TextAppearance.AuthCredential.Description" parent="TextAppearance.Material3.BodyMedium" >
@@ -349,7 +349,7 @@
     </style>
 
     <style name="AuthNonCredentialPanelStyle">
-        <item name="android:background">@color/materialColorSurfaceContainerLow</item>
+        <item name="android:background">@color/materialColorSurfaceContainerHigh</item>
     </style>
 
     <style name="AuthCredentialPanelStyle" parent="AuthNonCredentialPanelStyle">
@@ -383,9 +383,9 @@
         <item name="android:textColor">@color/materialColorPrimary</item>
     </style>
 
-    <style name="AuthCredentialNegativeButtonStyle" parent="TextAppearance.Material3.LabelLarge">
+    <style name="AuthCredentialNegativeButtonStyle" parent="Widget.Dialog.Button.BorderButton">
+        <item name="android:buttonCornerRadius">1000dp</item>
         <item name="android:fontFamily">@*android:string/config_bodyFontFamilyMedium</item>
-        <item name="android:background">@color/transparent</item>
         <item name="android:textColor">@color/materialColorPrimary</item>
     </style>
 
@@ -593,11 +593,12 @@
     <style name="Theme.SystemUI.DayNightDialog" parent="@android:style/Theme.DeviceDefault.Light.Dialog"/>
 
     <style name="Theme.SystemUI.Dialog" parent="@style/Theme.SystemUI.DayNightDialog">
-        <item name="android:buttonCornerRadius">28dp</item>
+        <item name="android:dialogCornerRadius">28dp</item>
+        <item name="android:buttonCornerRadius">1000dp</item>
         <item name="android:buttonBarPositiveButtonStyle">@style/Widget.Dialog.Button</item>
         <item name="android:buttonBarNegativeButtonStyle">@style/Widget.Dialog.Button.BorderButton</item>
         <item name="android:buttonBarNeutralButtonStyle">@style/Widget.Dialog.Button.BorderButton</item>
-        <item name="android:colorBackground">@color/materialColorSurfaceBright</item>
+        <item name="android:colorBackground">@color/materialColorSurfaceContainerHigh</item>
         <item name="android:alertDialogStyle">@style/ScrollableAlertDialogStyle</item>
         <item name="android:buttonBarStyle">@style/ButtonBarStyle</item>
         <item name="android:buttonBarButtonStyle">@style/Widget.Dialog.Button.Large</item>
@@ -1362,7 +1363,7 @@
     <style name="Widget" />
     <style name="Widget.Dialog" />
     <style name="Widget.Dialog.Button">
-        <item name="android:buttonCornerRadius">28dp</item>
+        <item name="android:buttonCornerRadius">1000dp</item>
         <item name="android:background">@drawable/qs_dialog_btn_filled</item>
         <item name="android:textColor">@color/qs_dialog_btn_filled_text_color</item>
         <item name="android:textSize">14sp</item>

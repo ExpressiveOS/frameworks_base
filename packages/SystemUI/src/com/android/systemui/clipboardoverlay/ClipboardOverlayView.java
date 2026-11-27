@@ -36,7 +36,12 @@ import android.graphics.Insets;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Region;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Icon;
+import android.graphics.drawable.InsetDrawable;
+import android.graphics.drawable.LayerDrawable;
+import android.os.PowerManager;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -44,11 +49,12 @@ import android.util.MathUtils;
 import android.util.TypedValue;
 import android.view.DisplayCutout;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewRootImpl;
 import android.view.WindowInsets;
 import android.view.animation.LinearInterpolator;
-import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -58,6 +64,9 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat;
 
+import com.android.app.animation.Interpolators;
+import com.android.internal.graphics.drawable.BackgroundBlurDrawable;
+import com.android.systemui.Flags;
 import com.android.systemui.res.R;
 import com.android.systemui.screenshot.DraggableConstraintLayout;
 import com.android.systemui.screenshot.FloatingWindowUtil;
@@ -187,11 +196,61 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
     }
 
     @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        applyFrostedShelfBlurIfSupported();
+    }
+
+    private void applyFrostedShelfBlurIfSupported() {
+        if (!Flags.blurOnMoreSurfaces() || mActionContainerBackground == null) {
+            return;
+        }
+        final ViewRootImpl vri = getViewRootImpl();
+        if (vri == null) {
+            return;
+        }
+        final PowerManager pm = mContext.getSystemService(PowerManager.class);
+        if (pm != null && pm.isPowerSaveMode()) {
+            return;
+        }
+        if (!(mActionContainerBackground.getBackground() instanceof InsetDrawable insetBg)) {
+            return;
+        }
+        if (!(insetBg.getDrawable() instanceof GradientDrawable rawShape)) {
+            return;
+        }
+        try {
+            final BackgroundBlurDrawable blurDrawable = vri.createBackgroundBlurDrawable();
+            if (blurDrawable == null) {
+                return;
+            }
+            final GradientDrawable shape = (GradientDrawable) rawShape.mutate();
+            blurDrawable.setCornerRadius(FloatingWindowUtil.dpToPx(mDisplayMetrics, 1000f));
+            blurDrawable.setBlurRadius(getResources().getDimensionPixelSize(
+                    R.dimen.volume_dialog_background_surface_blur_radius));
+            shape.setColor(mContext.getColor(R.color.volume_dialog_view_background_blur));
+            final int insetPx = getResources().getDimensionPixelSize(
+                    R.dimen.overlay_action_container_minimum_edge_spacing);
+            mActionContainerBackground.setBackground(new InsetDrawable(
+                    new LayerDrawable(new Drawable[]{blurDrawable, shape}),
+                    insetPx, 0, insetPx, 0));
+        } catch (RuntimeException ignored) {
+            // Keep tonal surfaceContainerHigh fallback if blur drawable cannot be created.
+        }
+    }
+
+    @Override
     public void setCallbacks(SwipeDismissCallbacks callbacks) {
         super.setCallbacks(callbacks);
         ClipboardOverlayCallbacks clipboardCallbacks = (ClipboardOverlayCallbacks) callbacks;
-        mClipboardPreview.setOnClickListener(v -> clipboardCallbacks.onPreviewTapped());
-        mMinimizedPreview.setOnClickListener(v -> clipboardCallbacks.onMinimizedViewTapped());
+        mClipboardPreview.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);
+            clipboardCallbacks.onPreviewTapped();
+        });
+        mMinimizedPreview.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);
+            clipboardCallbacks.onMinimizedViewTapped();
+        });
         mClipboardCallbacks = clipboardCallbacks;
     }
 
@@ -368,19 +427,20 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
 
     Animator getEnterAnimation() {
         TimeInterpolator linearInterpolator = new LinearInterpolator();
-        TimeInterpolator scaleInterpolator = new PathInterpolator(0, 0, 0, 1f);
+        TimeInterpolator scaleInterpolator = Interpolators.EMPHASIZED_DECELERATE;
         AnimatorSet enterAnim = new AnimatorSet();
+        final boolean animEnabled = ValueAnimator.areAnimatorsEnabled();
 
         ValueAnimator rootAnim = ValueAnimator.ofFloat(0, 1);
         rootAnim.setInterpolator(linearInterpolator);
-        rootAnim.setDuration(66);
+        rootAnim.setDuration(animEnabled ? 66 : 0);
         rootAnim.addUpdateListener(animation -> {
             setAlpha(animation.getAnimatedFraction());
         });
 
         ValueAnimator scaleAnim = ValueAnimator.ofFloat(0, 1);
         scaleAnim.setInterpolator(scaleInterpolator);
-        scaleAnim.setDuration(333);
+        scaleAnim.setDuration(animEnabled ? 333 : 0);
         scaleAnim.addUpdateListener(animation -> {
             float previewScale = MathUtils.lerp(.9f, 1f, animation.getAnimatedFraction());
             mMinimizedPreview.setScaleX(previewScale);
@@ -403,7 +463,7 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
 
         ValueAnimator alphaAnim = ValueAnimator.ofFloat(0, 1);
         alphaAnim.setInterpolator(linearInterpolator);
-        alphaAnim.setDuration(283);
+        alphaAnim.setDuration(animEnabled ? 283 : 0);
         alphaAnim.addUpdateListener(animation -> {
             float alpha = animation.getAnimatedFraction();
             mMinimizedPreview.setAlpha(alpha);
@@ -417,7 +477,7 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
         mPreviewBorder.setAlpha(0);
         mClipboardPreview.setAlpha(0);
         enterAnim.play(rootAnim).with(scaleAnim);
-        enterAnim.play(alphaAnim).after(50).after(rootAnim);
+        enterAnim.play(alphaAnim).after(animEnabled ? 50 : 0).after(rootAnim);
 
         enterAnim.addListener(new AnimatorListenerAdapter() {
             @Override
@@ -443,17 +503,18 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
 
     Animator getExitAnimation() {
         TimeInterpolator linearInterpolator = new LinearInterpolator();
-        TimeInterpolator scaleInterpolator = new PathInterpolator(.3f, 0, 1f, 1f);
+        TimeInterpolator scaleInterpolator = Interpolators.EMPHASIZED_ACCELERATE;
         AnimatorSet exitAnim = new AnimatorSet();
+        final boolean animEnabled = ValueAnimator.areAnimatorsEnabled();
 
         ValueAnimator rootAnim = ValueAnimator.ofFloat(0, 1);
         rootAnim.setInterpolator(linearInterpolator);
-        rootAnim.setDuration(100);
+        rootAnim.setDuration(animEnabled ? 100 : 0);
         rootAnim.addUpdateListener(anim -> setAlpha(1 - anim.getAnimatedFraction()));
 
         ValueAnimator scaleAnim = ValueAnimator.ofFloat(0, 1);
         scaleAnim.setInterpolator(scaleInterpolator);
-        scaleAnim.setDuration(250);
+        scaleAnim.setDuration(animEnabled ? 250 : 0);
         scaleAnim.addUpdateListener(animation -> {
             float previewScale = MathUtils.lerp(1f, .9f, animation.getAnimatedFraction());
             mMinimizedPreview.setScaleX(previewScale);
@@ -476,7 +537,7 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
 
         ValueAnimator alphaAnim = ValueAnimator.ofFloat(0, 1);
         alphaAnim.setInterpolator(linearInterpolator);
-        alphaAnim.setDuration(166);
+        alphaAnim.setDuration(animEnabled ? 166 : 0);
         alphaAnim.addUpdateListener(animation -> {
             float alpha = 1 - animation.getAnimatedFraction();
             mMinimizedPreview.setAlpha(alpha);
@@ -486,7 +547,7 @@ public class ClipboardOverlayView extends DraggableConstraintLayout {
         });
 
         exitAnim.play(alphaAnim).with(scaleAnim);
-        exitAnim.play(rootAnim).after(150).after(alphaAnim);
+        exitAnim.play(rootAnim).after(animEnabled ? 150 : 0).after(alphaAnim);
         return exitAnim;
     }
 

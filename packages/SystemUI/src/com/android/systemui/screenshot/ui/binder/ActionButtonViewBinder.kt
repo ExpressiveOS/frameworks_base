@@ -16,6 +16,7 @@
 
 package com.android.systemui.screenshot.ui.binder
 
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -52,7 +53,10 @@ class ActionButtonViewBinder @Inject constructor() {
 
         setMargins(iconView, textView, viewModel.appearance.label?.isNotEmpty() ?: false)
         if (viewModel.onClicked != null) {
-            view.setOnClickListener { viewModel.onClicked.invoke() }
+            view.setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                viewModel.onClicked.invoke()
+            }
         } else {
             view.setOnClickListener(null)
         }

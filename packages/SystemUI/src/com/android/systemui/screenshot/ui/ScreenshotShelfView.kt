@@ -20,6 +20,11 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.graphics.Region
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
+import android.os.PowerManager
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.GestureDetector.SimpleOnGestureListener
@@ -32,6 +37,7 @@ import android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_GESTURAL
 import android.view.accessibility.AccessibilityEvent
 import android.widget.FrameLayout
 import android.widget.ImageView
+import com.android.systemui.Flags
 import com.android.systemui.res.R
 import com.android.systemui.screenshot.FloatingWindowUtil
 
@@ -120,6 +126,31 @@ class ScreenshotShelfView(context: Context, attrs: AttributeSet? = null) :
             userInteractionCallback?.invoke()
             false
         })
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        applyFrostedShelfBlurIfSupported()
+    }
+
+    private fun applyFrostedShelfBlurIfSupported() {
+        if (!Flags.blurOnMoreSurfaces()) return
+        val vri = viewRootImpl ?: return
+        val pm = context.getSystemService(PowerManager::class.java)
+        if (pm?.isPowerSaveMode == true) return
+        val insetBg = actionsContainerBackground.background as? InsetDrawable ?: return
+        val shape = (insetBg.drawable?.mutate() as? GradientDrawable) ?: return
+        val blurDrawable = runCatching { vri.createBackgroundBlurDrawable() }.getOrNull() ?: return
+        val pillRadiusPx = FloatingWindowUtil.dpToPx(displayMetrics, 1000f)
+        val blurRadiusPx =
+            resources.getDimensionPixelSize(R.dimen.volume_dialog_background_surface_blur_radius)
+        blurDrawable.setCornerRadius(pillRadiusPx)
+        blurDrawable.setBlurRadius(blurRadiusPx)
+        shape.setColor(context.getColor(R.color.volume_dialog_view_background_blur))
+        val insetPx =
+            resources.getDimensionPixelSize(R.dimen.overlay_action_container_minimum_edge_spacing)
+        actionsContainerBackground.background =
+            InsetDrawable(LayerDrawable(arrayOf<Drawable>(blurDrawable, shape)), insetPx, 0, insetPx, 0)
     }
 
     fun getObservedRegion(): Region {

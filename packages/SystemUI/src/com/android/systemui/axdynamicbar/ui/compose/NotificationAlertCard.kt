@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.android.systemui.axdynamicbar.ui.compose
 
+import android.animation.ValueAnimator
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.RemoteInput
@@ -7,8 +10,10 @@ import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.Log
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.snap
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MotionScheme
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -125,12 +130,18 @@ private object AlertCardElements {
     val CardExpand = ElementKey("AlertCardExpand")
 }
 
-private const val SPRING_STIFFNESS = 500f
-private const val SPRING_DAMPING = 0.9f
+private val ExpressiveAlertMotionScheme = MotionScheme.expressive()
+
+private fun alertCardSpatialSpec(): FiniteAnimationSpec<Float> =
+    if (ValueAnimator.areAnimatorsEnabled()) {
+        ExpressiveAlertMotionScheme.defaultSpatialSpec()
+    } else {
+        snap()
+    }
 
 private val alertCardTransitions = transitions {
     from(AlertCardScenes.Compact, to = AlertCardScenes.Expanded) {
-        spec = spring(stiffness = SPRING_STIFFNESS, dampingRatio = SPRING_DAMPING)
+        spec = alertCardSpatialSpec()
         sharedElement(AlertCardElements.AppIcon)
         fade(AlertCardElements.CompactLabel)
         fade(AlertCardElements.CompactExpand)
@@ -138,7 +149,7 @@ private val alertCardTransitions = transitions {
         fade(AlertCardElements.CardExpand)
     }
     from(AlertCardScenes.Compact, to = AlertCardScenes.Collapsed) {
-        spec = spring(stiffness = SPRING_STIFFNESS, dampingRatio = SPRING_DAMPING)
+        spec = alertCardSpatialSpec()
         sharedElement(AlertCardElements.AppIcon)
         fade(AlertCardElements.CompactLabel)
         fade(AlertCardElements.CompactExpand)
@@ -146,7 +157,7 @@ private val alertCardTransitions = transitions {
         fade(AlertCardElements.CardExpand)
     }
     from(AlertCardScenes.Collapsed, to = AlertCardScenes.Expanded) {
-        spec = spring(stiffness = SPRING_STIFFNESS, dampingRatio = SPRING_DAMPING)
+        spec = alertCardSpatialSpec()
         sharedElement(AlertCardElements.AppIcon)
         sharedElement(AlertCardElements.Avatar)
         sharedElement(AlertCardElements.SenderName)

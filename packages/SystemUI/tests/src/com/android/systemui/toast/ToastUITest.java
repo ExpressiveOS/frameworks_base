@@ -39,6 +39,7 @@ import android.app.ITransientNotificationCallback;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.display.DisplayManager;
 import android.os.Binder;
 import android.os.Build;
@@ -438,6 +439,27 @@ public class ToastUITest extends SysuiTestCase {
         verify(mToastLogger).logOnSkipToastForInvalidDisplay(PACKAGE_NAME_1, TOKEN_1.toString(),
                 invalidDisplayId);
         verifyNoMoreInteractions(mWindowManager);
+    }
+
+    @Test
+    public void testShowToast_usesExpressivePillBackgroundAndPreservesViews() {
+        final Thread testThread = Thread.currentThread();
+        final java.util.concurrent.ScheduledExecutorService watchdog =
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        watchdog.schedule(testThread::interrupt, 10, java.util.concurrent.TimeUnit.SECONDS);
+        try {
+            mToastUI.showToast(UID_1, PACKAGE_NAME_1, TOKEN_1, TEXT, WINDOW_TOKEN_1,
+                    Toast.LENGTH_LONG, null, Display.DEFAULT_DISPLAY);
+
+            verify(mWindowManager).addView(mViewCaptor.capture(), any());
+            View view = mViewCaptor.getValue();
+            assertThat(view.getBackground()).isInstanceOf(GradientDrawable.class);
+            assertThat((View) view.findViewById(R.id.icon)).isNotNull();
+            assertThat((View) view.findViewById(R.id.text)).isNotNull();
+        } finally {
+            watchdog.shutdownNow();
+            Thread.interrupted();
+        }
     }
 
     private View verifyWmAddViewAndAttachToParent() {

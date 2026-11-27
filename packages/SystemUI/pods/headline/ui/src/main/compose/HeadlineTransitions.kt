@@ -14,11 +14,15 @@
  * limitations under the License.
  */
 
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.android.systemui.headline.ui.compose
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import android.animation.ValueAnimator
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.snap
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MotionScheme
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -146,11 +150,22 @@ internal fun TransitionState.Transition.isGoneTransition(): Boolean {
     return fromContent == GoneScene || toContent == GoneScene
 }
 
+private val ExpressiveHeadlineMotionScheme = MotionScheme.expressive()
+
+private fun headlineSpatialSpec(fast: Boolean = false): FiniteAnimationSpec<Float> =
+    if (ValueAnimator.areAnimatorsEnabled()) {
+        if (fast) {
+            ExpressiveHeadlineMotionScheme.fastSpatialSpec()
+        } else {
+            ExpressiveHeadlineMotionScheme.defaultSpatialSpec()
+        }
+    } else {
+        snap()
+    }
+
 /** The definition of the transition from/to the Gone scene. */
 private fun TransitionBuilder.goneTransition() {
-    // TODO(b/449675581): Use bouncy springs once there is overscroll.
-    // TODO(b/449675581): Use MotionScheme springs.
-    spec = spring(Spring.DampingRatioNoBouncy, Spring.StiffnessLow)
+    spec = headlineSpatialSpec()
 
     val dots = appearingDot() or disappearingDot()
     fade(dots)
@@ -169,9 +184,7 @@ private fun TransitionBuilder.goneTransition() {
 
 /** The definition of the transition between 2 items that is triggered, i.e. *not* swipe-based. */
 private fun TransitionBuilder.headlineTransition() {
-    // TODO(b/449675581): Use bouncy springs once there is overscroll.
-    // TODO(b/449675581): Use MotionScheme springs.
-    spec = tween(500)
+    spec = headlineSpatialSpec()
 
     // Fade in the pill content that disappears. We make sure that the contents are faded out before
     // we reach 50% of the transition, otherwise the start/end content might overlap a bit, which
@@ -283,9 +296,7 @@ private fun TransitionBuilder.interpolatePillSizeAndOffset(matcher: ElementMatch
 
 /** The transformations that happen when the user release their finger after a swipe. */
 private fun TransitionBuilder.headlineSwipeTransitionAfterRelease() {
-    // TODO(b/449675581): Use bouncy springs once there is overscroll.
-    // TODO(b/449675581): Use MotionScheme springs.
-    spec = tween(500)
+    spec = headlineSpatialSpec(fast = true)
 
     // TODO(b/449675581): Find out what the actual swipe distance should be.
     distance = FixedDistance(200.dp)

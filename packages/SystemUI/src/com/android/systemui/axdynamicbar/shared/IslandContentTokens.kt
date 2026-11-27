@@ -61,7 +61,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -247,7 +246,7 @@ internal val IslandTone.onContainer: Color
 internal val SubtleGray: Color
     @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 internal val CardBg: Color
-    @Composable get() = MaterialTheme.colorScheme.surfaceBright
+    @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
 internal val DarkCard: Color
     @Composable get() = MaterialTheme.colorScheme.surfaceContainerHigh
 internal val OnCardText: Color
@@ -380,26 +379,26 @@ internal val TsCaption: TextStyle
         platformStyle = PlatformTextStyle(includeFontPadding = false),
     )
 
-/** Mono so ticking digits don't make the readout jitter. */
+/** Tabular numerals (`tnum`) on google-sans-flex so ticking digits don't make the readout jitter. */
 internal val PillMono: TextStyle
     @Composable get() = MaterialTheme.typography.labelSmallEmphasized.copy(
-        fontFamily = FontFamily.Monospace,
+        fontFeatureSettings = "tnum",
         platformStyle = PlatformTextStyle(includeFontPadding = false),
     )
 
 internal val TsMono: TextStyle
-    @Composable get() = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace)
+    @Composable get() = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
 
 /** A ticking number inside an expanded row. */
 internal val TsCounter: TextStyle
     @Composable get() = MaterialTheme.typography.labelLargeEmphasized.copy(
-        fontFamily = FontFamily.Monospace,
+        fontFeatureSettings = "tnum",
     )
 
 /** Headline value of a compact expanded tile (countdown, stopwatch, recording time). */
 internal val TsValue: TextStyle
-    @Composable get() = MaterialTheme.typography.headlineSmall.copy(
-        fontFamily = FontFamily.Monospace,
+    @Composable get() = MaterialTheme.typography.headlineSmallEmphasized.copy(
+        fontFeatureSettings = "tnum",
     )
 
 @Composable

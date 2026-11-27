@@ -16,6 +16,7 @@
 
 package com.android.systemui.globalactions.compose
 
+import android.animation.ValueAnimator
 import android.app.Dialog
 import android.content.Context
 import android.content.SharedPreferences
@@ -25,6 +26,11 @@ import android.os.PowerManager
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.WindowManager
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.text.font.DeviceFontFamilyName
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -201,22 +207,30 @@ class GlobalActionsComposeDialog(
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        val supportsWindowBlur =
+            blurUtils.supportsBlursOnWindows() && powerManager?.isPowerSaveMode != true
+
         window?.apply {
             setType(WindowManager.LayoutParams.TYPE_VOLUME_OVERLAY)
             addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
             addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
             
-            if (blurUtils.supportsBlursOnWindows()) {
+            if (supportsWindowBlur) {
                 addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
                 attributes = attributes.apply {
                     blurBehindRadius = context.resources.getDimensionPixelSize(
                         com.android.systemui.res.R.dimen.max_window_blur_radius
                     )
                 }
-                setDimAmount(0.4f)
+                setDimAmount(0.54f)
             } else {
-                setDimAmount(0.7f)
+                clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+                attributes = attributes.apply {
+                    blurBehindRadius = 0
+                }
+                setDimAmount(0.85f)
             }
             
             setLayout(
@@ -235,6 +249,7 @@ class GlobalActionsComposeDialog(
                         actions = actions,
                         restartActions = restartActions,
                         prefs = prefs,
+                        blurEnabled = supportsWindowBlur,
                         onActionClick = onActionClick,
                         onActionLongClick = onActionLongClick,
                         realDismiss = {
@@ -279,6 +294,14 @@ class GlobalActionsComposeDialog(
     }
 }
 
+private val ExpressiveSansFontFamily = FontFamily(
+    Font(DeviceFontFamilyName("google-sans-flex"), FontWeight.Normal),
+    Font(DeviceFontFamilyName("google-sans-flex"), FontWeight.Medium),
+    Font(DeviceFontFamilyName("google-sans-flex"), FontWeight.SemiBold),
+    Font(DeviceFontFamilyName("google-sans-flex"), FontWeight.Bold),
+)
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MaterialExpressiveTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -287,15 +310,18 @@ private fun MaterialExpressiveTheme(content: @Composable () -> Unit) {
     val colorScheme = remember(context, darkTheme) { if (darkTheme) {
         val accentPrimary = Color(context.getColor(android.R.color.system_accent1_200))
         val accentSecondary = Color(context.getColor(android.R.color.system_accent2_200))
-        val surfaceContainer = Color(context.getColor(android.R.color.system_neutral1_900))
-        val surfaceVariant = Color(context.getColor(android.R.color.system_neutral2_800))
+        val surfaceContainer = Color(context.getColor(android.R.color.system_surface_container_high_dark))
+        val surfaceVariant = Color(context.getColor(android.R.color.system_surface_container_highest_dark))
         
         darkColorScheme(
             primary = accentPrimary,
             secondary = accentSecondary,
             surface = surfaceContainer,
+            surfaceContainerHigh = surfaceContainer,
             surfaceVariant = surfaceVariant,
-            onSurface = Color.White,
+            onSurface = Color(context.getColor(android.R.color.system_on_surface_dark)),
+            onSurfaceVariant = Color(context.getColor(android.R.color.system_on_surface_variant_dark)),
+            outlineVariant = Color(context.getColor(android.R.color.system_outline_variant_dark)),
             background = Color.Transparent,
             error = Color(0xFFE25C5C),
             onError = Color(0xFF410002)
@@ -303,29 +329,46 @@ private fun MaterialExpressiveTheme(content: @Composable () -> Unit) {
     } else {
         val accentPrimary = Color(context.getColor(android.R.color.system_accent1_600))
         val accentSecondary = Color(context.getColor(android.R.color.system_accent2_600))
-        val surfaceContainer = Color(context.getColor(android.R.color.system_neutral1_50))
-        val surfaceVariant = Color(context.getColor(android.R.color.system_neutral2_100))
+        val surfaceContainer = Color(context.getColor(android.R.color.system_surface_container_high_light))
+        val surfaceVariant = Color(context.getColor(android.R.color.system_surface_container_highest_light))
         
         lightColorScheme(
             primary = accentPrimary,
             secondary = accentSecondary,
             surface = surfaceContainer,
+            surfaceContainerHigh = surfaceContainer,
             surfaceVariant = surfaceVariant,
-            onSurface = Color.Black,
+            onSurface = Color(context.getColor(android.R.color.system_on_surface_light)),
             background = Color.Transparent,
-            onSurfaceVariant = Color.DarkGray,
+            onSurfaceVariant = Color(context.getColor(android.R.color.system_on_surface_variant_light)),
+            outlineVariant = Color(context.getColor(android.R.color.system_outline_variant_light)),
             error = Color(0xFFB3261E),
             onError = Color.White
         )
     } }
 
-    MaterialTheme(
+    val baseTypography = Typography()
+    val expressiveTypography = remember {
+        baseTypography.copy(
+            headlineMedium = baseTypography.headlineMedium.copy(fontFamily = ExpressiveSansFontFamily),
+            headlineSmall = baseTypography.headlineSmall.copy(fontFamily = ExpressiveSansFontFamily),
+            titleMedium = baseTypography.titleMedium.copy(fontFamily = ExpressiveSansFontFamily),
+            titleSmall = baseTypography.titleSmall.copy(fontFamily = ExpressiveSansFontFamily),
+            bodyLarge = baseTypography.bodyLarge.copy(fontFamily = ExpressiveSansFontFamily),
+            labelLarge = baseTypography.labelLarge.copy(fontFamily = ExpressiveSansFontFamily),
+            labelMedium = baseTypography.labelMedium.copy(fontFamily = ExpressiveSansFontFamily),
+        )
+    }
+
+    MaterialExpressiveTheme(
         colorScheme = colorScheme,
+        motionScheme = MotionScheme.expressive(),
         shapes = Shapes(
             small = RoundedCornerShape(16.dp),
             medium = RoundedCornerShape(24.dp),
-            large = RoundedCornerShape(32.dp)
+            large = RoundedCornerShape(28.dp)
         ),
+        typography = expressiveTypography,
         content = content
     )
 }
@@ -388,6 +431,7 @@ fun GlobalActionsScreen(
     actions: List<GlobalActionsDialogLite.Action>,
     restartActions: List<GlobalActionsDialogLite.Action> = emptyList(),
     prefs: SharedPreferences,
+    blurEnabled: Boolean = false,
     onActionClick: (GlobalActionsDialogLite.Action) -> Unit,
     onActionLongClick: ((GlobalActionsDialogLite.Action) -> Boolean)?,
     realDismiss: () -> Unit
@@ -575,11 +619,16 @@ fun GlobalActionsScreen(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
+            val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
             AnimatedContent(
                 targetState = currentView,
                 transitionSpec = {
-                    (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.9f))
-                    .togetherWith(fadeOut(animationSpec = tween(200)))
+                    if (animatorsEnabled) {
+                        (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.9f))
+                            .togetherWith(fadeOut(animationSpec = tween(200)))
+                    } else {
+                        EnterTransition.None.togetherWith(ExitTransition.None)
+                    }
                 },
                 label = "view_transition"
             ) { state ->
@@ -591,7 +640,8 @@ fun GlobalActionsScreen(
                             iconBitmap = confirmationIconBitmap,
                             color = confirmationColor,
                             onConfirm = { pendingConfirmationAction?.invoke() },
-                            onCancel = { handleDismiss() }
+                            onCancel = { handleDismiss() },
+                            blurEnabled = blurEnabled
                         )
                     }
                     GlobalActionsView.RESTART_CHOICE -> {
@@ -604,8 +654,21 @@ fun GlobalActionsScreen(
                     GlobalActionsView.GRID -> {
                         AnimatedVisibility(
                             visibleState = visibleState,
-                            enter = fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f, animationSpec = tween(300)),
-                            exit = fadeOut(animationSpec = tween(250)) + scaleOut(targetScale = 0.95f, animationSpec = tween(250))
+                            enter = if (animatorsEnabled) {
+                                fadeIn(animationSpec = tween(260)) +
+                                    scaleIn(
+                                        initialScale = 0.94f,
+                                        animationSpec = spring(dampingRatio = 0.72f, stiffness = 450f)
+                                    )
+                            } else {
+                                EnterTransition.None
+                            },
+                            exit = if (animatorsEnabled) {
+                                fadeOut(animationSpec = tween(200)) +
+                                    scaleOut(targetScale = 0.95f, animationSpec = tween(200))
+                            } else {
+                                ExitTransition.None
+                            }
                         ) {
                             PowerMenuContainer(
                                 layoutState = layoutState,
@@ -640,8 +703,12 @@ private fun RestartChoiceMenu(
             .width(340.dp)
             .padding(16.dp)
             .pointerInput(Unit) { detectTapGestures { } },
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        ),
         tonalElevation = 6.dp,
         shadowElevation = 8.dp
     ) {
@@ -773,8 +840,12 @@ private fun PowerMenuContainer(
                     .padding(top = topPadding, start = 16.dp, end = 16.dp)
                     .pointerInput(Unit) { detectTapGestures { } }
                     .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessLow)),
-                shape = RoundedCornerShape(32.dp),
+                shape = RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                ),
                 tonalElevation = 6.dp,
                 shadowElevation = 8.dp
             ) {
@@ -851,8 +922,12 @@ private fun PowerMenuContainer(
                 .padding(16.dp)
                 .pointerInput(Unit) { detectTapGestures { } }
                 .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessLow)),
-            shape = RoundedCornerShape(32.dp),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            ),
             tonalElevation = 6.dp,
             shadowElevation = 8.dp
         ) {
@@ -1203,9 +1278,23 @@ private fun TileItem(
     val currentOnDragStart by rememberUpdatedState(onDragStart)
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
     val currentOnDrag by rememberUpdatedState(onDrag)
+    val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && !isEditMode) 0.94f else 1f,
+        animationSpec = if (animatorsEnabled) {
+            spring(dampingRatio = 0.72f, stiffness = 450f)
+        } else {
+            snap()
+        },
+        label = "tile_press_scale"
+    )
 
     Box(
         modifier = modifier
+            .scale(pressScale)
             .pointerInput(isEditMode) {
                 if (isEditMode) {
                     detectDragGesturesAfterLongPress(
@@ -1218,10 +1307,14 @@ private fun TileItem(
             }
     ) {
         Surface(
-            onClick = onClick,
+            onClick = {
+                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                onClick()
+            },
+            interactionSource = interactionSource,
             enabled = !isEditMode,
             modifier = Modifier.fillMaxSize().pointerInput(Unit) { },
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(28.dp),
             color = backgroundColor,
             border = if(isEditMode) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.5f)) else null
         ) {

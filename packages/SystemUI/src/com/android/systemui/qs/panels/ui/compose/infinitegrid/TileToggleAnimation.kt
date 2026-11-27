@@ -16,6 +16,7 @@
 
 package com.android.systemui.qs.panels.ui.compose.infinitegrid
 
+import android.animation.ValueAnimator
 import android.database.ContentObserver
 import android.os.UserHandle
 import android.provider.Settings
@@ -55,7 +56,7 @@ import kotlinx.coroutines.launch
 
 fun Modifier.tileToggleAnimation(animationStyle: Int, state: Int): Modifier =
     composed {
-        if (animationStyle == 0) return@composed this
+        if (animationStyle == 0 || !ValueAnimator.areAnimatorsEnabled()) return@composed this
 
         val trackedState = remember { mutableIntStateOf(state) }
         val lastToggleState = remember { mutableIntStateOf(state) }

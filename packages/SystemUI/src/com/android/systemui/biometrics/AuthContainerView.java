@@ -25,6 +25,7 @@ import static com.android.systemui.biometrics.shared.model.FaceSensorInfoKt.toFa
 import static com.android.systemui.biometrics.shared.model.FingerprintSensorInfoKt.toFingerprintSensorInfo;
 
 import android.animation.Animator;
+import android.animation.ValueAnimator;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -339,7 +340,7 @@ public class AuthContainerView extends LinearLayout
         mFallbackViewModelFactory = fallbackViewModelFactory;
         mTranslationY = getResources()
                 .getDimension(R.dimen.biometric_dialog_animation_translation_offset);
-        mLinearOutSlowIn = Interpolators.LINEAR_OUT_SLOW_IN;
+        mLinearOutSlowIn = Interpolators.EMPHASIZED_DECELERATE;
         mBiometricCallback = new BiometricCallback();
         mMSDLPlayer = msdlPlayer;
 
@@ -522,7 +523,10 @@ public class AuthContainerView extends LinearLayout
             mContainerState = STATE_ANIMATING_IN;
             setY(mTranslationY);
             setAlpha(0f);
-            final long animateDuration = mConfig.mSkipAnimation ? 0 : ANIMATION_DURATION_SHOW_MS;
+            final long animateDuration =
+                    (mConfig.mSkipAnimation || !ValueAnimator.areAnimatorsEnabled())
+                            ? 0
+                            : ANIMATION_DURATION_SHOW_MS;
             postOnAnimation(() -> {
                 animate()
                         .alpha(1f)
@@ -727,13 +731,16 @@ public class AuthContainerView extends LinearLayout
             removeWindowIfAttached();
         };
 
-        final long animateDuration = mConfig.mSkipAnimation ? 0 : ANIMATION_DURATION_AWAY_MS;
+        final long animateDuration =
+                (mConfig.mSkipAnimation || !ValueAnimator.areAnimatorsEnabled())
+                        ? 0
+                        : ANIMATION_DURATION_AWAY_MS;
         postOnAnimation(() -> {
             final ViewPropertyAnimator animator = animate()
                     .alpha(0f)
                     .translationY(mTranslationY)
                     .setDuration(animateDuration)
-                    .setInterpolator(mLinearOutSlowIn)
+                    .setInterpolator(Interpolators.EMPHASIZED_ACCELERATE)
                     .setListener(getJankListener(this, DISMISS, animateDuration))
                     .withLayer();
 

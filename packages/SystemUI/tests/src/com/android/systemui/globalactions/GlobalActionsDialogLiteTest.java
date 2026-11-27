@@ -93,6 +93,7 @@ import com.android.systemui.plugins.GlobalActions;
 import com.android.systemui.settings.UserContextProvider;
 import com.android.systemui.settings.UserTracker;
 import com.android.systemui.shade.ShadeController;
+import com.android.systemui.statusbar.BlurUtils;
 import com.android.systemui.statusbar.VibratorHelper;
 import com.android.systemui.statusbar.policy.ConfigurationController;
 import com.android.systemui.statusbar.policy.KeyguardStateController;
@@ -155,6 +156,7 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
     @Mock private PowerManager mPowerManager;
     @Mock private EmergencyAffordanceManager mEmergencyAffordanceManager;
     @Mock private ScreenshotHelper mScreenshotHelper;
+    @Mock private BlurUtils mBlurUtils;
 
     private TestableLooper mTestableLooper;
     private SecureSettings mSecureSettings;
@@ -1783,8 +1785,63 @@ public class GlobalActionsDialogLiteTest extends SysuiTestCase {
                 mBroadcastSender,
                 mEmergencyAffordanceManager,
                 mScreenshotHelper,
-                mDelegateFactory);
+                mDelegateFactory,
+                mBlurUtils);
         globalActionsDialogLite.setZeroDialogPressDelayForTesting();
         return globalActionsDialogLite;
+    }
+
+    @Test
+    public void testIsWindowBlurActive_enabledWhenBlurSupportedAndNotPowerSave() {
+        final Thread testThread = Thread.currentThread();
+        final java.util.concurrent.ScheduledExecutorService watchdog =
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        watchdog.schedule(testThread::interrupt, 10, java.util.concurrent.TimeUnit.SECONDS);
+        try {
+            mContext.addMockSystemService(PowerManager.class, mPowerManager);
+            when(mBlurUtils.supportsBlursOnWindows()).thenReturn(true);
+            when(mPowerManager.isPowerSaveMode()).thenReturn(false);
+
+            assertThat(GlobalActionsDialogLite.isWindowBlurActive(mContext, mBlurUtils)).isTrue();
+        } finally {
+            watchdog.shutdownNow();
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    public void testIsWindowBlurActive_disabledWhenPowerSaveModeActive() {
+        final Thread testThread = Thread.currentThread();
+        final java.util.concurrent.ScheduledExecutorService watchdog =
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        watchdog.schedule(testThread::interrupt, 10, java.util.concurrent.TimeUnit.SECONDS);
+        try {
+            mContext.addMockSystemService(PowerManager.class, mPowerManager);
+            when(mBlurUtils.supportsBlursOnWindows()).thenReturn(true);
+            when(mPowerManager.isPowerSaveMode()).thenReturn(true);
+
+            assertThat(GlobalActionsDialogLite.isWindowBlurActive(mContext, mBlurUtils)).isFalse();
+        } finally {
+            watchdog.shutdownNow();
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    public void testIsWindowBlurActive_disabledWhenBlurUnsupported() {
+        final Thread testThread = Thread.currentThread();
+        final java.util.concurrent.ScheduledExecutorService watchdog =
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        watchdog.schedule(testThread::interrupt, 10, java.util.concurrent.TimeUnit.SECONDS);
+        try {
+            mContext.addMockSystemService(PowerManager.class, mPowerManager);
+            when(mBlurUtils.supportsBlursOnWindows()).thenReturn(false);
+            when(mPowerManager.isPowerSaveMode()).thenReturn(false);
+
+            assertThat(GlobalActionsDialogLite.isWindowBlurActive(mContext, mBlurUtils)).isFalse();
+        } finally {
+            watchdog.shutdownNow();
+            Thread.interrupted();
+        }
     }
 }

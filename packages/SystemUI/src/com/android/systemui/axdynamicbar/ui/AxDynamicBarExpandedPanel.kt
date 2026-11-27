@@ -2,6 +2,7 @@
 
 package com.android.systemui.axdynamicbar.ui
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.PixelFormat
 import android.view.Gravity
@@ -9,8 +10,11 @@ import android.view.MotionEvent
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -132,11 +136,12 @@ constructor(
                     hideOverlayJob = null
                     showOverlay()
                 } else {
-                    
                     hideOverlayJob?.cancel()
                     hideOverlayJob =
                         applicationScope.launch {
-                            delay(400)
+                            if (ValueAnimator.areAnimatorsEnabled()) {
+                                delay(400)
+                            }
                             hideOverlay()
                         }
                 }
@@ -343,31 +348,44 @@ private fun OverlayContent(viewModel: AxDynamicBarChipViewModel, statusBarHeight
 
     val origin = TransformOrigin(0.5f, 0f)
     val motionScheme = MaterialTheme.motionScheme
+    val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
 
     val expandedBlurAlpha by animateFloatAsState(
         targetValue = if (isExpanded) 1f else 0f,
-        animationSpec = motionScheme.fastEffectsSpec(),
+        animationSpec = if (animatorsEnabled) motionScheme.fastEffectsSpec() else snap(),
         label = "expanded_blur_alpha",
     )
     val alertBlurAlpha by animateFloatAsState(
         targetValue = if (showNotif) 1f else 0f,
-        animationSpec = motionScheme.fastEffectsSpec(),
+        animationSpec = if (animatorsEnabled) motionScheme.fastEffectsSpec() else snap(),
         label = "alert_blur_alpha",
     )
+    val panelEnter =
+        if (animatorsEnabled) {
+            fadeIn(motionScheme.defaultEffectsSpec()) + scaleIn(
+                animationSpec = motionScheme.defaultSpatialSpec(),
+                initialScale = 0.4f,
+                transformOrigin = origin,
+            )
+        } else {
+            EnterTransition.None
+        }
+    val panelExit =
+        if (animatorsEnabled) {
+            fadeOut(motionScheme.fastEffectsSpec()) + scaleOut(
+                animationSpec = motionScheme.fastSpatialSpec(),
+                targetScale = 0.4f,
+                transformOrigin = origin,
+            )
+        } else {
+            ExitTransition.None
+        }
 
     CompositionLocalProvider(LocalBlurAlpha provides expandedBlurAlpha) {
         AnimatedVisibility(
             visibleState = expandedVisible,
-            enter = fadeIn(motionScheme.defaultEffectsSpec()) + scaleIn(
-                animationSpec = motionScheme.defaultSpatialSpec(),
-                initialScale = 0.4f,
-                transformOrigin = origin,
-            ),
-            exit = fadeOut(motionScheme.fastEffectsSpec()) + scaleOut(
-                animationSpec = motionScheme.fastSpatialSpec(),
-                targetScale = 0.4f,
-                transformOrigin = origin,
-            ),
+            enter = panelEnter,
+            exit = panelExit,
         ) {
             Box(
                 modifier = Modifier
@@ -446,16 +464,8 @@ private fun OverlayContent(viewModel: AxDynamicBarChipViewModel, statusBarHeight
     CompositionLocalProvider(LocalBlurAlpha provides alertBlurAlpha) {
         AnimatedVisibility(
             visibleState = notifVisible,
-            enter = fadeIn(motionScheme.defaultEffectsSpec()) + scaleIn(
-                animationSpec = motionScheme.defaultSpatialSpec(),
-                initialScale = 0.4f,
-                transformOrigin = origin,
-            ),
-            exit = fadeOut(motionScheme.fastEffectsSpec()) + scaleOut(
-                animationSpec = motionScheme.fastSpatialSpec(),
-                targetScale = 0.4f,
-                transformOrigin = origin,
-            ),
+            enter = panelEnter,
+            exit = panelExit,
         ) {
             Box(
                 modifier = Modifier

@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-@file:OptIn(ExperimentalFoundationApi::class)
+@file:OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 
 package com.android.systemui.qs.panels.ui.compose.infinitegrid
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.Resources
 import android.database.ContentObserver
@@ -29,6 +30,7 @@ import android.service.quicksettings.Tile.STATE_INACTIVE
 import androidx.annotation.VisibleForTesting
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -48,6 +50,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -211,10 +214,18 @@ fun ContentScope.Tile(
         val shapeMode = rememberTileShapeMode()
         val animationStyle = rememberQSTileAnimationStyle()
         val wantCircle = shapeMode == 4 && iconOnly
+        val motionScheme = MaterialTheme.motionScheme
+        val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
         val tileShape =
             if (wantCircle && !classicStyle) CircleShape
             else TileDefaults.animateTileShapeAsState(uiState, shapeMode).value
-        val animatedColor by animateColorAsState(colors.background, label = "QSTileBackgroundColor")
+        val animatedColor by
+            animateColorAsState(
+                targetValue = colors.background,
+                animationSpec =
+                    if (animatorsEnabled) motionScheme.defaultEffectsSpec() else snap(),
+                label = "QSTileBackgroundColor",
+            )
         val isDualTarget = uiState.handlesToggleClick
         val interactionSource = remember { MutableInteractionSource() }
 
@@ -224,7 +235,13 @@ fun ContentScope.Tile(
             val marginBottom =
                 with(LocalDensity.current) { QuickSettingsShade.Dimensions.VerticalPadding.toPx() }
 
-            val animatedCornerRadius by animateDpAsState(TileDefaults.tileRadius(uiState))
+            val animatedCornerRadius by
+                animateDpAsState(
+                    targetValue = TileDefaults.tileRadius(uiState),
+                    animationSpec =
+                        if (animatorsEnabled) motionScheme.defaultSpatialSpec() else snap(),
+                    label = "QSTileRevealCornerRadius",
+                )
 
             val inactiveCornerRadius = InactiveIconCornerRadius
             surfaceRevealModifier =
@@ -1017,6 +1034,7 @@ private object TileDefaults {
 
     @Composable
     fun animateShapeAsState(targetValue: Dp, label: String, shapeMode: Int): State<RoundedCornerShape> {
+        val motionScheme = MaterialTheme.motionScheme
         val animatedCornerRadius by animateDpAsState(
             targetValue = when (shapeMode) {
                     1 -> InactiveTileCornerRadius /* Circle-ish */
@@ -1025,6 +1043,12 @@ private object TileDefaults {
                     4 -> InactiveTileCornerRadius /* Circle */
                     else -> targetValue
                  },
+            animationSpec =
+                if (ValueAnimator.areAnimatorsEnabled()) {
+                    motionScheme.defaultSpatialSpec()
+                } else {
+                    snap()
+                },
             label = label
         )
 

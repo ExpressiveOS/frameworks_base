@@ -54,6 +54,7 @@ import com.android.systemui.broadcast.BroadcastDispatcher;
 import com.android.systemui.display.data.repository.FakeDisplayRepository;
 import com.android.systemui.kosmos.KosmosJavaAdapter;
 import com.android.systemui.model.SysUiState;
+import com.android.systemui.res.R;
 import com.android.systemui.window.domain.interactor.WindowRootViewBlurInteractor;
 
 import org.junit.After;
@@ -321,6 +322,27 @@ public class SystemUIDialogTest extends SysuiTestCase {
         inOrder.verify(mDelegate).onWindowFocusChanged(dialog, /* hasFocus= */ true);
         inOrder.verify(mDelegate).onConfigurationChanged(dialog, configuration);
         inOrder.verify(mDelegate).onStop(dialog);
+    }
+
+    @Test
+    public void expressiveDialogTheme_resolves28dpCornerRadius() {
+        final Thread testThread = Thread.currentThread();
+        final java.util.concurrent.ScheduledExecutorService watchdog =
+                java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        watchdog.schedule(testThread::interrupt, 10, java.util.concurrent.TimeUnit.SECONDS);
+        try {
+            SystemUIDialog dialog = createDialogWithDelegate(mContext, mDelegate,
+                    true /* shouldAcsdDismissDialog */, mBlurInteractor);
+            dialog.show();
+            float expectedPx = dialog.getContext().getResources().getDimension(
+                    R.dimen.dialog_corner_radius);
+            assertThat(expectedPx).isGreaterThan(0f);
+            assertTrue(dialog.isShowing());
+            dialog.dismiss();
+        } finally {
+            watchdog.shutdownNow();
+            Thread.interrupted();
+        }
     }
 
     private static SystemUIDialog createDialogWithDelegate(Context context,

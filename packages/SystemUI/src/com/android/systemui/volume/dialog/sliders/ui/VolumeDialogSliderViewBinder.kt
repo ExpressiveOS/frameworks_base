@@ -16,8 +16,12 @@
 
 package com.android.systemui.volume.dialog.sliders.ui
 
+import android.database.ContentObserver
 import android.os.UserHandle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.View
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.interaction.DragInteraction
@@ -28,14 +32,19 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -98,14 +107,31 @@ constructor(
 @Composable
 private fun rememberVolumeHapticsEnabled(): Boolean {
     val context = LocalContext.current
-    return remember {
+    val cr = context.contentResolver
+    fun readEnabled(): Boolean =
         Settings.Secure.getIntForUser(
-            context.contentResolver,
+            cr,
             Settings.Secure.VOLUME_DIALOG_HAPTIC_FEEDBACK,
             1,
             UserHandle.USER_CURRENT,
         ) != 0
+    var enabled by remember { mutableStateOf(readEnabled()) }
+    DisposableEffect(cr) {
+        val observer =
+            object : ContentObserver(null) {
+                override fun onChange(selfChange: Boolean) {
+                    context.mainExecutor.execute { enabled = readEnabled() }
+                }
+            }
+        cr.registerContentObserver(
+            Settings.Secure.getUriFor(Settings.Secure.VOLUME_DIALOG_HAPTIC_FEEDBACK),
+            false,
+            observer,
+            UserHandle.USER_ALL,
+        )
+        onDispose { cr.unregisterContentObserver(observer) }
     }
+    return enabled
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -160,13 +186,40 @@ private fun VolumeDialogSlider(
     val sliderStateModel = collectedSliderStateModel ?: return
     val interactionSource = remember { MutableInteractionSource() }
     val isHapticsEnabled = rememberVolumeHapticsEnabled()
+    val context = LocalContext.current
+    val hostView = LocalView.current
+    val hasRichSliderPrimitives =
+        remember(context) {
+            runCatching {
+                context
+                    .getSystemService(Vibrator::class.java)
+                    ?.areAllPrimitivesSupported(
+                        VibrationEffect.Composition.PRIMITIVE_LOW_TICK,
+                        VibrationEffect.Composition.PRIMITIVE_TICK,
+                    ) == true
+            }.getOrDefault(false)
+        }
+    // Boundary state: -1 at 0%, +1 at 100%, 0 inside range
+    var boundaryDetentState by remember { mutableIntStateOf(0) }
+    var isUserDragging by remember { mutableStateOf(false) }
 
     LaunchedEffect(interactionSource) {
         interactionSource.interactions.collect {
             when (it) {
-                is DragInteraction.Start -> viewModel.onSliderDragStarted()
-                is DragInteraction.Cancel -> viewModel.onSliderDragFinished()
-                is DragInteraction.Stop -> viewModel.onSliderDragFinished()
+                is DragInteraction.Start -> {
+                    isUserDragging = true
+                    viewModel.onSliderDragStarted()
+                }
+                is DragInteraction.Cancel -> {
+                    isUserDragging = false
+                    boundaryDetentState = 0
+                    viewModel.onSliderDragFinished()
+                }
+                is DragInteraction.Stop -> {
+                    isUserDragging = false
+                    boundaryDetentState = 0
+                    viewModel.onSliderDragFinished()
+                }
             }
         }
     }
@@ -175,11 +228,26 @@ private fun VolumeDialogSlider(
         value = sliderStateModel.value,
         valueRange = sliderStateModel.valueRange,
         onValueChanged = { value ->
+            val min = sliderStateModel.valueRange.start
+            val max = sliderStateModel.valueRange.endInclusive
             overscrollViewModel.setSlider(
                 value = value,
-                min = sliderStateModel.valueRange.start,
-                max = sliderStateModel.valueRange.endInclusive,
+                min = min,
+                max = max,
             )
+            if (isHapticsEnabled && isUserDragging && !hasRichSliderPrimitives && max > min) {
+                val fraction = ((value - min) / (max - min)).coerceIn(0f, 1f)
+                val nextDetent =
+                    when {
+                        fraction <= 0.01f -> -1
+                        fraction >= 0.99f -> 1
+                        else -> 0
+                    }
+                if (nextDetent != 0 && nextDetent != boundaryDetentState) {
+                    hostView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                }
+                boundaryDetentState = nextDetent
+            }
             viewModel.setStreamVolume(value, true)
         },
         onValueChangeFinished = { viewModel.onSliderChangeFinished(it) },
@@ -234,6 +302,7 @@ private fun VolumeDialogSlider(
                         isVisible = iconsState.isInactiveTrackEndIconVisible,
                     )
                 },
+                trackCornerSize = dimensions.trackSize / 2,
                 trackSize = dimensions.trackSize,
                 gradient = gradient,
             )
@@ -273,16 +342,16 @@ data class VolumeSliderDimensions(
             VolumeSliderDimensions(
                 iconSize = 20.dp,
                 thumbWidth = 52.dp,
-                thumbHeight = 4.dp,
-                trackSize = 40.dp,
+                thumbHeight = 5.dp,
+                trackSize = 42.dp,
             )
 
         val Horizontal =
             VolumeSliderDimensions(
                 iconSize = 24.dp,
-                thumbHeight = 40.dp,
-                thumbWidth = 3.dp,
-                trackSize = 32.dp,
+                thumbHeight = 42.dp,
+                thumbWidth = 5.dp,
+                trackSize = 36.dp,
             )
     }
 }
